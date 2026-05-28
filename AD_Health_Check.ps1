@@ -12,8 +12,8 @@
 .PARAMETER NoInteractive
     Ueberspringt das Menue (= Full Run).
 .NOTES
-    Autor   : R_Super Entwickler CS4.7
-    Version : 2.1 (42 Checks, erweitert um 5 Identity-/DNS-Checks)
+    Autor   : Rocco Ammon
+    Version : 2.0 (42 Checks, erweitert um 5 Identity-/DNS-Checks)
     LogPfad : C:\ScriptLog
 .EXAMPLE
     .\AD_HealthCheck.ps1
