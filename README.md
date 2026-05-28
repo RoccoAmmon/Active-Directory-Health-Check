@@ -3,7 +3,7 @@
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.1-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.0-brightgreen.svg)]()
 [![Checks](https://img.shields.io/badge/Checks-42-orange.svg)]()
 
 > Ein umfassendes PowerShell-Skript zur automatisierten Überprüfung der Gesundheit und Sicherheit einer Active Directory-Umgebung. Mit Best-Practice-Bewertung, farbcodiertem HTML-Report und CSV-Export.
