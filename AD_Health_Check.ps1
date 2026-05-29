@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Umfassender Active Directory Health Check v2.1 mit Best-Practice-Bewertung.
 .DESCRIPTION
@@ -13,7 +13,7 @@
     Ueberspringt das Menue (= Full Run).
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.0 (42 Checks, erweitert um 5 Identity-/DNS-Checks)
+    Version : 2.1 (42 Checks, erweitert um 5 Identity-/DNS-Checks)
     LogPfad : C:\ScriptLog
 .EXAMPLE
     .\AD_HealthCheck.ps1
