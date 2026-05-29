@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.1 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.2 mit Best-Practice-Bewertung.
 .DESCRIPTION
     42 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
@@ -13,7 +13,7 @@
     Ueberspringt das Menue (= Full Run).
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.1 (42 Checks, erweitert um 5 Identity-/DNS-Checks)
+    Version : 2.2 (42 Checks, WPF-GUI, erweiterte Ausgabepfad-Wahl)
     LogPfad : C:\ScriptLog
 .EXAMPLE
     .\AD_HealthCheck.ps1
@@ -25,16 +25,17 @@
 param(
     [switch]$FullRun,
     [string[]]$OnlyChecks,
-    [switch]$NoInteractive
+    [switch]$NoInteractive,
+    [string]$OutputPath
 )
 
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.1"
+$Global:ScriptVersion   = "2.2"
 $Global:Timestamp       = Get-Date -Format "yyyyMMdd_HHmmss"
-$Global:LogDirectory    = "C:\ScriptLog"
-$Global:ReportDirectory = "C:\ScriptLog\AD_HealthCheck_$Global:Timestamp"
+$Global:LogDirectory    = if ($OutputPath) { $OutputPath } else { "C:\ScriptLog" }
+$Global:ReportDirectory = Join-Path $Global:LogDirectory "AD_HealthCheck_$Global:Timestamp"
 $Global:LogFile         = Join-Path $Global:LogDirectory "$Global:ScriptName`_$Global:Timestamp.log"
 $Global:HtmlReport      = Join-Path $Global:ReportDirectory "AD_HealthCheck_Report_$Global:Timestamp.html"
 $Global:CsvDirectory    = Join-Path $Global:ReportDirectory "CSV"
@@ -169,7 +170,467 @@ function Write-Log {
 
 #endregion
 
-#region ============= INTERAKTIVES MENUE =====================================
+#region ============= INTERAKTIVES MENUE / GUI ================================
+
+function Show-HealthCheckGUI {
+    <#
+    .SYNOPSIS
+        Zeigt eine moderne WPF-GUI (Light-Theme) zur Auswahl der Checks, Gruppen und des Ausgabepfads.
+    .OUTPUTS
+        PSCustomObject mit Properties: SelectedChecks, OutputPath, Cancelled
+    #>
+    Add-Type -AssemblyName PresentationFramework
+    Add-Type -AssemblyName PresentationCore
+    Add-Type -AssemblyName WindowsBase
+    Add-Type -AssemblyName System.Windows.Forms  # fuer FolderBrowserDialog
+
+    # Check-Gruppen definieren
+    $checkGroups = [ordered]@{
+        'DC-Infrastruktur' = @(
+            '01_DCSystemInfo','02_Services','03_DCDiag','04_Replication','04b_ReplicationFailures',
+            '05_FSMO','06_DNS','07_SYSVOL','08_Database','34_TimeSync','35_Backup'
+        )
+        'Security & Hardening' = @(
+            '09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity',
+            '15_WindowsFirewall','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates'
+        )
+        'Identity & Kerberos' = @(
+            '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
+            '20_KerberoastingRisk','38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP'
+        )
+        'AD-Topologie & Objekte' = @(
+            '25_Sites','26_Subnets','27_Trusts','28_ADRecycleBin','29_TombstoneLifetime',
+            '30_Levels','31_GPO','32a_InactiveUsers','32b_InactiveComputers','32c_PasswordNeverExpires'
+        )
+        'System & Updates' = @(
+            '33_EventLog','36_InstalledPrograms','37_WindowsUpdates','42_DNSHygiene'
+        )
+    }
+
+    # === XAML Definition (Light Theme) ===
+    [xml]$xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AD Health Check v$($Global:ScriptVersion)"
+        Width="860" Height="780"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResizeWithGrip"
+        Background="#F5F5F5">
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#1E1E1E"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#1E1E1E"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="Margin" Value="0,2,0,2"/>
+        </Style>
+        <Style x:Key="AccentButton" TargetType="Button">
+            <Setter Property="Background" Value="#0078D4"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="20,10"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#106EBE"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="QuickButton" TargetType="Button">
+            <Setter Property="Background" Value="#E8E8E8"/>
+            <Setter Property="Foreground" Value="#1E1E1E"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#D4D4D4"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="SuiteButton" TargetType="Button">
+            <Setter Property="Background" Value="#DFF0FF"/>
+            <Setter Property="Foreground" Value="#0050A0"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#A0C8F0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#C0DFFF"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="SecuritySuiteButton" TargetType="Button">
+            <Setter Property="Background" Value="#FFE0E0"/>
+            <Setter Property="Foreground" Value="#C02020"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#F0A0A0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FFC8C8"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="CancelButton" TargetType="Button">
+            <Setter Property="Background" Value="#E0E0E0"/>
+            <Setter Property="Foreground" Value="#333333"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="20,10"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#CCCCCC"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,18">
+            <TextBlock Text="AD Health Check" FontSize="24" FontWeight="Bold" Foreground="#0078D4"/>
+            <TextBlock Text="Waehlen Sie die gewuenschten Pruefungen und den Ausgabepfad." FontSize="12" Foreground="#555555" Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <!-- Ausgabepfad -->
+        <Border Grid.Row="1" Background="White" CornerRadius="6" Padding="14,10" Margin="0,0,0,14"
+                BorderBrush="#D0D0D0" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Ausgabepfad:" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12" FontWeight="SemiBold"/>
+                <TextBox x:Name="txtOutputPath" Grid.Column="1"
+                         Background="White" Foreground="#1E1E1E" BorderBrush="#C0C0C0"
+                         BorderThickness="1" Padding="8,6" FontSize="12" VerticalContentAlignment="Center"/>
+                <Button x:Name="btnBrowse" Grid.Column="2" Content="Durchsuchen..."
+                        Style="{StaticResource QuickButton}" Margin="8,0,0,0"/>
+            </Grid>
+        </Border>
+
+        <!-- Schnellauswahl: Alle / Keine -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8">
+            <Button x:Name="btnAll" Content="Alle auswaehlen" Style="{StaticResource QuickButton}" Margin="0,0,8,0"/>
+            <Button x:Name="btnNone" Content="Keine" Style="{StaticResource QuickButton}" Margin="0,0,24,0"/>
+            <TextBlock x:Name="lblCount" VerticalAlignment="Center" Foreground="#666666" FontSize="11"/>
+        </StackPanel>
+
+        <!-- Suite-Buttons -->
+        <WrapPanel Grid.Row="3" Margin="0,0,0,12">
+            <Button x:Name="btnSuiteDC" Content="DC-Infrastruktur" Style="{StaticResource SuiteButton}" Margin="0,0,6,4"/>
+            <Button x:Name="btnSuiteSecurity" Content="Security &amp; Hardening" Style="{StaticResource SecuritySuiteButton}" Margin="0,0,6,4"/>
+            <Button x:Name="btnSuiteIdentity" Content="Identity &amp; Kerberos" Style="{StaticResource SuiteButton}" Margin="0,0,6,4"/>
+            <Button x:Name="btnSuiteTopo" Content="AD-Topologie &amp; Objekte" Style="{StaticResource SuiteButton}" Margin="0,0,6,4"/>
+            <Button x:Name="btnSuiteSystem" Content="System &amp; Updates" Style="{StaticResource SuiteButton}" Margin="0,0,6,4"/>
+        </WrapPanel>
+
+        <!-- Check-Gruppen ScrollViewer -->
+        <Border Grid.Row="4" Background="White" CornerRadius="6" Padding="4"
+                BorderBrush="#D0D0D0" BorderThickness="1">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                <StackPanel x:Name="pnlChecks"/>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Footer Buttons -->
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="btnCancel" Content="Abbrechen" Style="{StaticResource CancelButton}" Margin="0,0,12,0"/>
+            <Button x:Name="btnStart" Content="Health Check starten" Style="{StaticResource AccentButton}"/>
+        </StackPanel>
+    </Grid>
+</Window>
+"@
+
+    # === Window aus XAML erstellen ===
+    $reader = New-Object System.Xml.XmlNodeReader $xaml
+    $window = [System.Windows.Markup.XamlReader]::Load($reader)
+
+    # Shared State (statt $script: - funktioniert zuverlaessig in Event-Handlern)
+    $state = @{
+        AllCheckBoxes   = @{}
+        GroupCheckBoxes = @{}
+        SuppressEvents  = $false
+        Result          = [PSCustomObject]@{ SelectedChecks=@(); OutputPath=''; Cancelled=$true }
+        Window          = $window
+        CheckGroups     = $checkGroups
+    }
+
+    # Controls referenzieren
+    $txtOutputPath  = $window.FindName('txtOutputPath')
+    $btnBrowse      = $window.FindName('btnBrowse')
+    $btnAll         = $window.FindName('btnAll')
+    $btnNone        = $window.FindName('btnNone')
+    $lblCount       = $window.FindName('lblCount')
+    $pnlChecks      = $window.FindName('pnlChecks')
+    $btnStart       = $window.FindName('btnStart')
+    $btnCancel      = $window.FindName('btnCancel')
+    $btnSuiteDC     = $window.FindName('btnSuiteDC')
+    $btnSuiteSecurity = $window.FindName('btnSuiteSecurity')
+    $btnSuiteIdentity = $window.FindName('btnSuiteIdentity')
+    $btnSuiteTopo   = $window.FindName('btnSuiteTopo')
+    $btnSuiteSystem = $window.FindName('btnSuiteSystem')
+
+    $txtOutputPath.Text = $Global:LogDirectory
+
+    # Hilfsfunktion: Anzahl aktualisieren
+    $updateCount = {
+        param($st, $lbl)
+        if ($st.SuppressEvents) { return }
+        $checked = 0; $total = 0
+        foreach ($c in $st.AllCheckBoxes.Values) {
+            $total++
+            if ($c.IsChecked -eq $true) { $checked++ }
+        }
+        $lbl.Text = "$checked / $total Checks ausgewaehlt"
+    }
+
+    # Suite-Aktivierung: Nur die Keys einer Gruppe anwaehlen
+    $activateSuite = {
+        param($st, $lbl, $groupName, $updateFn)
+        $st.SuppressEvents = $true
+        foreach ($cb in $st.AllCheckBoxes.Values) { $cb.IsChecked = $false }
+        foreach ($gb in $st.GroupCheckBoxes.Values) { $gb.IsChecked = $false }
+        $keys = $st.CheckGroups[$groupName]
+        foreach ($k in $keys) {
+            if ($st.AllCheckBoxes.ContainsKey($k)) { $st.AllCheckBoxes[$k].IsChecked = $true }
+        }
+        if ($st.GroupCheckBoxes.ContainsKey($groupName)) { $st.GroupCheckBoxes[$groupName].IsChecked = $true }
+        $st.SuppressEvents = $false
+        & $updateFn $st $lbl
+    }
+
+    # === Checkboxen dynamisch erzeugen ===
+    foreach ($groupName in $checkGroups.Keys) {
+        $expander = New-Object System.Windows.Controls.Expander
+        $expander.IsExpanded = $true
+        $expander.Margin = [System.Windows.Thickness]::new(0, 4, 0, 4)
+
+        # Header
+        $headerPanel = New-Object System.Windows.Controls.StackPanel
+        $headerPanel.Orientation = 'Horizontal'
+
+        $grpCb = New-Object System.Windows.Controls.CheckBox
+        $grpCb.IsChecked = $true
+        $grpCb.Tag = $groupName
+        $grpCb.VerticalAlignment = 'Center'
+        $headerPanel.Children.Add($grpCb) | Out-Null
+
+        $headerText = New-Object System.Windows.Controls.TextBlock
+        $headerText.Text = " $groupName"
+        $headerText.FontSize = 13
+        $headerText.FontWeight = 'SemiBold'
+        $headerText.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#0078D4')
+        $headerText.VerticalAlignment = 'Center'
+        $headerText.Margin = [System.Windows.Thickness]::new(6, 0, 0, 0)
+        $headerPanel.Children.Add($headerText) | Out-Null
+
+        $expander.Header = $headerPanel
+
+        # Content
+        $groupPanel = New-Object System.Windows.Controls.StackPanel
+        $groupPanel.Margin = [System.Windows.Thickness]::new(24, 2, 0, 2)
+
+        $checksInGroup = [System.Collections.ArrayList]::new()
+        foreach ($checkKey in $checkGroups[$groupName]) {
+            if (-not $Global:ReportTitles.Contains($checkKey)) { continue }
+            $cb = New-Object System.Windows.Controls.CheckBox
+            $cb.Content = $Global:ReportTitles[$checkKey]
+            $cb.Tag = $checkKey
+            $cb.IsChecked = $true
+            $cb.FontSize = 12
+            $cb.Add_Checked({ param($sender,$e); & $updateCount $state $lblCount }.GetNewClosure())
+            $cb.Add_Unchecked({ param($sender,$e); & $updateCount $state $lblCount }.GetNewClosure())
+            $groupPanel.Children.Add($cb) | Out-Null
+            $state.AllCheckBoxes[$checkKey] = $cb
+            $checksInGroup.Add($cb) | Out-Null
+        }
+        $expander.Content = $groupPanel
+        $pnlChecks.Children.Add($expander) | Out-Null
+        $state.GroupCheckBoxes[$groupName] = $grpCb
+
+        # Gruppen-Checkbox steuert Kinder
+        $childList = $checksInGroup.ToArray()
+        $grpCb.Add_Checked({
+            param($sender,$e)
+            $state.SuppressEvents = $true
+            foreach ($child in $childList) { $child.IsChecked = $true }
+            $state.SuppressEvents = $false
+            & $updateCount $state $lblCount
+        }.GetNewClosure())
+        $grpCb.Add_Unchecked({
+            param($sender,$e)
+            $state.SuppressEvents = $true
+            foreach ($child in $childList) { $child.IsChecked = $false }
+            $state.SuppressEvents = $false
+            & $updateCount $state $lblCount
+        }.GetNewClosure())
+    }
+
+    # Initial Count
+    & $updateCount $state $lblCount
+
+    # === Button-Events ===
+    $btnBrowse.Add_Click({
+        $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
+        $fbd.Description = 'Ausgabepfad waehlen'
+        $fbd.SelectedPath = $txtOutputPath.Text
+        if ($fbd.ShowDialog() -eq 'OK') { $txtOutputPath.Text = $fbd.SelectedPath }
+    }.GetNewClosure())
+
+    $btnAll.Add_Click({
+        param($sender,$e)
+        $state.SuppressEvents = $true
+        foreach ($cb in $state.AllCheckBoxes.Values) { $cb.IsChecked = $true }
+        foreach ($gb in $state.GroupCheckBoxes.Values) { $gb.IsChecked = $true }
+        $state.SuppressEvents = $false
+        & $updateCount $state $lblCount
+    }.GetNewClosure())
+
+    $btnNone.Add_Click({
+        param($sender,$e)
+        $state.SuppressEvents = $true
+        foreach ($cb in $state.AllCheckBoxes.Values) { $cb.IsChecked = $false }
+        foreach ($gb in $state.GroupCheckBoxes.Values) { $gb.IsChecked = $false }
+        $state.SuppressEvents = $false
+        & $updateCount $state $lblCount
+    }.GetNewClosure())
+
+    # Suite-Buttons
+    $btnSuiteDC.Add_Click({
+        param($sender,$e)
+        & $activateSuite $state $lblCount 'DC-Infrastruktur' $updateCount
+    }.GetNewClosure())
+
+    $btnSuiteSecurity.Add_Click({
+        param($sender,$e)
+        & $activateSuite $state $lblCount 'Security & Hardening' $updateCount
+    }.GetNewClosure())
+
+    $btnSuiteIdentity.Add_Click({
+        param($sender,$e)
+        & $activateSuite $state $lblCount 'Identity & Kerberos' $updateCount
+    }.GetNewClosure())
+
+    $btnSuiteTopo.Add_Click({
+        param($sender,$e)
+        & $activateSuite $state $lblCount 'AD-Topologie & Objekte' $updateCount
+    }.GetNewClosure())
+
+    $btnSuiteSystem.Add_Click({
+        param($sender,$e)
+        & $activateSuite $state $lblCount 'System & Updates' $updateCount
+    }.GetNewClosure())
+
+    # Start
+    $btnStart.Add_Click({
+        param($sender,$e)
+        $selected = @()
+        foreach ($k in $state.AllCheckBoxes.Keys) {
+            if ($state.AllCheckBoxes[$k].IsChecked) { $selected += $k }
+        }
+        if ($selected.Count -eq 0) {
+            [System.Windows.MessageBox]::Show('Bitte mindestens einen Check auswaehlen.', 'Hinweis',
+                [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning) | Out-Null
+            return
+        }
+        $state.Result = [PSCustomObject]@{
+            SelectedChecks = $selected
+            OutputPath     = $txtOutputPath.Text
+            Cancelled      = $false
+        }
+        $state.Window.Close()
+    }.GetNewClosure())
+
+    $btnCancel.Add_Click({ param($sender,$e); $state.Window.Close() }.GetNewClosure())
+
+    # === Window anzeigen ===
+    $window.ShowDialog() | Out-Null
+
+    return $state.Result
+}
 
 function Show-CheckList {
     Clear-Host
@@ -2850,7 +3311,24 @@ function Start-ADHealthCheck {
             $Global:SelectedChecks = @($Global:ReportTitles.Keys | Where-Object { $_ -ne '00_SkippedDCs' })
         }
         else {
-            Show-ScriptMenu
+            # GUI starten
+            $guiResult = Show-HealthCheckGUI
+            if ($guiResult.Cancelled) {
+                Write-Host "[!] Abbruch durch Benutzer." -ForegroundColor Yellow
+                return
+            }
+            $Global:SelectedChecks = @($guiResult.SelectedChecks)
+            $Global:RunMode = if ($guiResult.SelectedChecks.Count -eq @($Global:ReportTitles.Keys | Where-Object { $_ -ne '00_SkippedDCs' }).Count) { 'Full' }
+                              elseif ($guiResult.SelectedChecks.Count -eq 1) { 'Single' }
+                              else { 'Multi' }
+            # Ausgabepfad uebernehmen
+            if ($guiResult.OutputPath -and $guiResult.OutputPath -ne $Global:LogDirectory) {
+                $Global:LogDirectory    = $guiResult.OutputPath
+                $Global:ReportDirectory = Join-Path $Global:LogDirectory "AD_HealthCheck_$Global:Timestamp"
+                $Global:LogFile         = Join-Path $Global:LogDirectory "$Global:ScriptName`_$Global:Timestamp.log"
+                $Global:HtmlReport      = Join-Path $Global:ReportDirectory "AD_HealthCheck_Report_$Global:Timestamp.html"
+                $Global:CsvDirectory    = Join-Path $Global:ReportDirectory "CSV"
+            }
         }
 
         # --- Banner ---

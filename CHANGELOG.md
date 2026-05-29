@@ -4,6 +4,24 @@ Alle wesentlichen Änderungen an diesem Projekt werden hier dokumentiert.
 
 ---
 
+## [2.2] – 2026-05-29
+
+### Hinzugefügt
+- **WPF-GUI** (Light Theme) ersetzt das interaktive Shell-Menü
+  - Moderne Oberfläche mit Segoe UI, abgerundeten Buttons, Hover-Effekten
+  - Ausgabepfad-Wahl per FolderBrowserDialog
+  - 5 Check-Gruppen als aufklappbare Expander mit Gruppen-Checkboxen
+  - Suite-Buttons: DC-Infrastruktur, Security & Hardening, Identity & Kerberos, AD-Topologie & Objekte, System & Updates
+  - Schnellauswahl: Alle / Keine
+  - Echtzeit-Zähler "X / Y Checks ausgewählt"
+- Neuer Parameter `-OutputPath` zur Angabe des Ausgabepfads per Kommandozeile
+
+### Geändert
+- Version auf 2.2 erhöht
+- Shell-Menü bleibt als Fallback für `-NoInteractive` / `-FullRun` erhalten
+
+---
+
 ## [2.1] – 2026-05-29
 
 ### Verbessert
