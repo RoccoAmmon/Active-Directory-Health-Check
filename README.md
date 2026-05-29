@@ -1,9 +1,9 @@
-# 🛡️ Active Directory Health Check v2.1
+# 🛡️ Active Directory Health Check v2.2
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.1-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.2-brightgreen.svg)]()
 [![Checks](https://img.shields.io/badge/Checks-42-orange.svg)]()
 
 > Ein umfassendes PowerShell-Skript zur automatisierten Überprüfung der Gesundheit und Sicherheit einer Active Directory-Umgebung. Mit Best-Practice-Bewertung, farbcodiertem HTML-Report und CSV-Export.
@@ -28,10 +28,12 @@
 ## ✨ Features
 
 - 🎯 **42 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring)
+- 🖼️ **Moderne WPF-GUI** (Light Theme) mit Gruppen-Auswahl, Suite-Buttons und Ausgabepfad-Wahl
 - 🎨 **Farbcodierter HTML-Report** mit Executive Dashboard (OK / WARN / KRITISCH / INFO)
 - 📊 **CSV-Export** aller Check-Ergebnisse
-- 🖥️ **Interaktives Startmenü** mit 7 Optionen (Full, Einzel, Security-Suite etc.)
+- 🖥️ **Interaktives Startmenü** als Fallback für Konsolen-Betrieb
 - ⚡ **Parameter-basierte Ausführung** für Scheduled Tasks / Automatisierung
+- 📁 **Frei wählbarer Ausgabepfad** per GUI oder `-OutputPath` Parameter
 - 🔍 **DCDiag mit Einzeltest-Parsing** (DE/EN sprachunabhängig)
 - 🔄 **Loopback-Erkennung** für lokale DCs (nutzt `localhost` statt FQDN)
 - 📡 **Ping-Skip-Logik** für nicht erreichbare DCs mit Fallback auf WinRM
@@ -136,3 +138,107 @@
 # Repository klonen
 git clone https://github.com/RoccoAmmon/Active-Directory-Health-Check.git
 cd Active-Directory-Health-Check
+
+# Skript ausführen (interaktiv)
+.\AD_Health_Check.ps1
+
+# Oder automatisiert (alle 42 Checks)
+.\AD_Health_Check.ps1 -FullRun
+```
+
+## ⚙️ Verwendung
+
+```powershell
+# Interaktive WPF-GUI (Standard)
+.\AD_Health_Check.ps1
+
+# Vollständiger Lauf ohne GUI (für Scheduled Tasks)
+.\AD_Health_Check.ps1 -FullRun
+
+# Nur bestimmte Checks ausführen
+.\AD_Health_Check.ps1 -OnlyChecks '22_PrintSpooler','19_Unconstrained'
+
+# Ohne Interaktion
+.\AD_Health_Check.ps1 -NoInteractive
+
+# Eigenen Ausgabepfad angeben
+.\AD_Health_Check.ps1 -OutputPath 'D:\Reports\AD'
+```
+
+## 📸 Screenshots
+
+> Screenshots des HTML-Reports folgen.
+
+## ⚙️ Konfiguration
+
+Alle Schwellwerte sind im Variablen-Block am Anfang des Skripts konfigurierbar:
+
+| Variable | Standard | Beschreibung |
+|---|---|---|
+| `InactiveDaysUser` | 90 | Tage ohne Login → User inaktiv |
+| `InactiveDaysComputer` | 90 | Tage ohne Login → Computer inaktiv |
+| `CertExpiryWarnDays` | 60 | Zertifikat-Ablauf Warnung |
+| `CertExpiryCritDays` | 14 | Zertifikat-Ablauf Kritisch |
+| `KrbtgtMaxAgeDays` | 180 | Max. krbtgt-Passwort-Alter |
+| `BackupMaxAgeDays` | 7 | Backup-Alter Warnung |
+| `BackupCritAgeDays` | 14 | Backup-Alter Kritisch |
+| `WUMaxAgeDaysWarn` | 35 | Windows Update Alter Warnung |
+| `WUMaxAgeDaysCrit` | 60 | Windows Update Alter Kritisch |
+
+Vollständige Konfigurationsreferenz: [Wiki → Schwellwerte](https://github.com/RoccoAmmon/Active-Directory-Health-Check/wiki/Konfiguration)
+
+## 📄 Report-Ausgabe
+
+Ergebnisse werden unter `C:\ScriptLog` gespeichert:
+- **HTML-Report** mit Executive Dashboard (farbcodiert)
+- **CSV-Exporte** pro Check (für Excel/Power BI/SIEM)
+- **Log-Datei** mit Ausführungsprotokoll
+
+## 🏗️ Architektur
+
+- Modularer Aufbau mit einzeln aufrufbaren Check-Funktionen
+- Loopback-Erkennung für lokale DCs
+- Sprachunabhängig via Well-Known SIDs (DE/EN)
+- WinRM-basierte Remote-Abfragen mit Ping-Fallback
+
+## 🔧 Troubleshooting
+
+Siehe [Wiki → Troubleshooting](https://github.com/RoccoAmmon/Active-Directory-Health-Check/wiki/Troubleshooting)
+
+## 🤝 Contributing
+
+1. Fork erstellen
+2. Feature-Branch anlegen (`git checkout -b feature/mein-feature`)
+3. Änderungen committen (`git commit -m 'Add: Mein Feature'`)
+4. Branch pushen (`git push origin feature/mein-feature`)
+5. Pull Request erstellen
+
+## 📋 Changelog
+
+### v2.2 (aktuell)
+- **Moderne WPF-GUI** (Light Theme) mit Check-Gruppen, Suite-Buttons und Ausgabepfad-Wahl
+- Neuer Parameter `-OutputPath`
+- Shell-Menü bleibt als Fallback erhalten
+
+### v2.1
+- Verbessertes Loopback-Handling für lokale DCs
+- Erweiterte Ping-Skip-Logik mit WinRM-Fallback
+- Performance-Optimierungen bei der DC-Discovery
+- Bugfixes im HTML-Report-Rendering
+- Wiki-Dokumentation erstellt
+
+### v2.0
+- **5 neue Checks** (38–42): SPN-Dubletten, AS-REP-Roasting, AdminSDHolder, FGPP, DNS-Hygiene
+- Executive Dashboard im HTML-Report
+- Interaktives Startmenü mit 7 Optionen
+- Parameter-basierte Ausführung (`-FullRun`, `-OnlyChecks`, `-NoInteractive`)
+- CSV-Export aller Check-Ergebnisse
+- Progress-Tracking während der Ausführung
+
+### v1.0
+- Initiale Version mit 37 Checks
+- Basis-HTML-Report und Logging
+
+## 📜 License
+
+Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
