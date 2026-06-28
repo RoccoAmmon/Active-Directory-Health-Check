@@ -1,17 +1,17 @@
-# 🛡️ Active Directory Health Check v2.2
+# 🛡️ Active Directory Health Check v2.3
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.2-brightgreen.svg)]()
-[![Checks](https://img.shields.io/badge/Checks-42-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.3-brightgreen.svg)]()
+[![Checks](https://img.shields.io/badge/Checks-44-orange.svg)]()
 
 > Ein umfassendes PowerShell-Skript zur automatisierten Überprüfung der Gesundheit und Sicherheit einer Active Directory-Umgebung. Mit Best-Practice-Bewertung, farbcodiertem HTML-Report und CSV-Export.
 
 ## 📑 Inhaltsverzeichnis
 
 - [Features](#-features)
-- [Die 42 Checks](#-die-42-checks)
+- [Die 44 Checks](#-die-44-checks)
 - [Systemanforderungen](#-systemanforderungen)
 - [Installation](#-installation)
 - [Verwendung](#-verwendung)
@@ -27,7 +27,7 @@
 
 ## ✨ Features
 
-- 🎯 **42 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring)
+- 🎯 **44 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring)
 - 🖼️ **Moderne WPF-GUI** (Light Theme) mit Gruppen-Auswahl, Suite-Buttons und Ausgabepfad-Wahl
 - 🎨 **Farbcodierter HTML-Report** mit Executive Dashboard (OK / WARN / KRITISCH / INFO)
 - 📊 **CSV-Export** aller Check-Ergebnisse
@@ -41,7 +41,7 @@
 - 📝 **Ausführliches Logging** (`C:\ScriptLog`)
 - 🔧 **Modular aufgebaut** - einzelne Checks können gezielt ausgeführt werden
 
-## 📋 Die 42 Checks
+## 📋 Die 44 Checks
 
 ### 🏗️ DC-Basis-Infrastruktur
 | # | Check | Beschreibung |
@@ -119,6 +119,8 @@
 | 40 | **AdminSDHolder / AdminCount-Drift** | AdminCount=1 ohne aktuelle Schutzgruppen-Mitgliedschaft |
 | 41 | **Fine-Grained Password Policies** | FGPP-Haerte, Lockout und Zielgruppen-Zuordnung |
 | 42 | **DNS-Hygiene (Aging / Scavenging)** | Aging/Scavenging, Reverse-Zonen, Dynamic-Update-Risiken |
+| 43 | **LAPS-Konfiguration** | Local Admin Password Solution - Aktivierungsstatus, Computer-Abdeckung (ab Server 2019) |
+| 44 | **Konten ohne AES** | Findet Accounts mit RC4-only oder ohne AES-Verschluesselung (Sicherheitsrisiko) |
 
 ## 💻 Systemanforderungen
 
@@ -142,7 +144,7 @@ cd Active-Directory-Health-Check
 # Skript ausführen (interaktiv)
 .\AD_Health_Check.ps1
 
-# Oder automatisiert (alle 42 Checks)
+# Oder automatisiert (alle 44 Checks)
 .\AD_Health_Check.ps1 -FullRun
 ```
 
