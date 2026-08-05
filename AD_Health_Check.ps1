@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.2 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.3 mit Best-Practice-Bewertung.
 .DESCRIPTION
-    42 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
+    44 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
     interaktivem Startmenue.
 .PARAMETER FullRun
@@ -13,7 +13,7 @@
     Ueberspringt das Menue (= Full Run).
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.2 (42 Checks, WPF-GUI, erweiterte Ausgabepfad-Wahl)
+    Version : 2.3 (44 Checks: +43_LAPS +44_AccountsWithoutAES, WPF-GUI, erweiterte Ausgabepfad-Wahl)
     LogPfad : C:\ScriptLog
 .EXAMPLE
     .\AD_HealthCheck.ps1
@@ -32,7 +32,7 @@ param(
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.2"
+$Global:ScriptVersion   = "2.3"
 $Global:Timestamp       = Get-Date -Format "yyyyMMdd_HHmmss"
 $Global:LogDirectory    = if ($OutputPath) { $OutputPath } else { "C:\ScriptLog" }
 $Global:ReportDirectory = Join-Path $Global:LogDirectory "AD_HealthCheck_$Global:Timestamp"
@@ -137,6 +137,8 @@ $Global:ReportTitles = [ordered]@{
     '40_AdminSDHolderDrift'      = 'AdminSDHolder / AdminCount-Drift'
     '41_FGPP'                    = 'Fine-Grained Password Policies'
     '42_DNSHygiene'              = 'DNS-Hygiene (Aging / Scavenging)'
+    '43_LAPS'                    = 'LAPS-Konfiguration (Local Admin Password Solution)'
+    '44_AccountsWithoutAES'      = 'Konten ohne AES-Verschluesselung'
 }
 
 #endregion
@@ -196,7 +198,7 @@ function Show-HealthCheckGUI {
         )
         'Identity & Kerberos' = @(
             '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
-            '20_KerberoastingRisk','38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP'
+            '20_KerberoastingRisk','38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','43_LAPS','44_AccountsWithoutAES'
         )
         'AD-Topologie & Objekte' = @(
             '25_Sites','26_Subnets','27_Trusts','28_ADRecycleBin','29_TombstoneLifetime',
@@ -2431,6 +2433,220 @@ function Get-DNSHygiene {
     return $result
 }
 
+function Get-LAPSConfiguration {
+    <#
+    .SYNOPSIS
+        Prueft LAPS-Aktivierung im Forest und zeigt Computer ohne LAPS-Konfiguration.
+        Kennzeichnet Server 2016 und aelter als nicht unterstuetzt.
+    #>
+    $result = @()
+    try {
+        # Prüfung: LAPS im Forest aktiviert? (Schema-Erweiterung vorhanden)
+        $forest = Get-ADForest -ErrorAction Stop
+        $domain = Get-ADDomain -ErrorAction Stop
+        
+        # LAPS wird über ms-mcs-admpwd Attribut konfiguriert
+        # Prüfe, ob LAPS-Objekt im Konfigurationsbereich existiert
+        $lapsConfPath = "CN=ms-Mcs-AdmPwd,CN=Schema,CN=Configuration,$($forest.RootDomain.Replace('.',',DC='))"
+        $lapsExists = $false
+        try {
+            $lapsObj = Get-ADObject -Identity $lapsConfPath -ErrorAction Stop
+            $lapsExists = $true
+        } catch {}
+        
+        $lapsStatus = if ($lapsExists) { 'Aktiviert' } else { 'NICHT aktiviert' }
+        $result += [pscustomobject]@{
+            Type='Forest-Config'; Target='LAPS Schema-Extension'; LAPSEnabled=$lapsExists; ComputerCount=0; ConfiguredCount=0
+            UnconfiguredCount=0; ConfiguredPercent=0; OSUnsupported=0; Issue=if (-not $lapsExists) { 'LAPS Schema-Erweiterung nicht installiert' } else { 'OK' }
+        }
+        
+        # Wenn LAPS aktiviert, zähle konfigurierte vs. unkonfigurierte Computer
+        if ($lapsExists) {
+            try {
+                $allComps = @(Get-ADComputer -Filter * -Properties 'ms-mcs-admpwdexpirationtime','OperatingSystem' -ErrorAction Stop)
+                $configuredComps = @($allComps | Where-Object { $_.PSObject.Properties['ms-mcs-admpwdexpirationtime'].Value })
+                
+                # Zaehle Computer mit nicht unterstütztem OS (2016 oder aelter)
+                $osUnsupported = @($allComps | Where-Object { 
+                    $os = $_.OperatingSystem
+                    $os -match '2012|2008|2003' -or ($os -match '2016' -and $os -notmatch '2019|2022')
+                })
+                
+                $result += [pscustomobject]@{
+                    Type='Summary'; Target='Computer mit LAPS'; LAPSEnabled=$lapsExists; ComputerCount=$allComps.Count; ConfiguredCount=$configuredComps.Count
+                    UnconfiguredCount=($allComps.Count - $configuredComps.Count); ConfiguredPercent=if ($allComps.Count -gt 0) { [math]::Round(($configuredComps.Count / $allComps.Count) * 100, 2) } else { 0 }
+                    OSUnsupported=$osUnsupported.Count
+                    Issue=if ($allComps.Count -eq 0) { 'Keine Computer gefunden' } elseif ($configuredComps.Count -eq 0) { "WARNUNG: Kein Computer mit LAPS konfiguriert!" } else { "OK: $($configuredComps.Count)/$($allComps.Count) mit LAPS | $($osUnsupported.Count) mit nicht-unterstütztem OS (2016 oder älter)" }
+                }
+                
+                # Liste der unkonfigurierten Computer (nur Top 50 zum Log)
+                $unconfigured = @($allComps | Where-Object { -not $_.PSObject.Properties['ms-mcs-admpwdexpirationtime'].Value }) | Select-Object -First 50
+                foreach ($comp in $unconfigured) {
+                    $osCheck = if ($comp.OperatingSystem -match '2012|2008|2003' -or ($comp.OperatingSystem -match '2016' -and $comp.OperatingSystem -notmatch '2019|2022')) {
+                        " | OS NICHT UNTERSTUETZT (LAPS ab 2019)"
+                    } else { '' }
+                    $result += [pscustomobject]@{
+                        Type='Computer'; Target=$comp.Name; LAPSEnabled=$false; ComputerCount=1; ConfiguredCount=0
+                        UnconfiguredCount=1; ConfiguredPercent=0; OSUnsupported=0
+                        Issue="Nicht konfiguriert - OS: $($comp.OperatingSystem)$osCheck"
+                    }
+                }
+                
+                # Auch konfigurierte Computer mit älterem OS zeigen (Problem: läuft dort nicht)
+                $configuredWithOldOS = @($configuredComps | Where-Object {
+                    $os = $_.OperatingSystem
+                    $os -match '2012|2008|2003' -or ($os -match '2016' -and $os -notmatch '2019|2022')
+                }) | Select-Object -First 20
+                foreach ($comp in $configuredWithOldOS) {
+                    $result += [pscustomobject]@{
+                        Type='Computer'; Target=$comp.Name; LAPSEnabled=$true; ComputerCount=1; ConfiguredCount=1
+                        UnconfiguredCount=0; ConfiguredPercent=100; OSUnsupported=1
+                        Issue="KRITISCH: LAPS konfiguriert aber OS nicht unterstuetzt (OS: $($comp.OperatingSystem) - LAPS benoetigt 2019+)"
+                    }
+                }
+            } catch {
+                Write-Log "LAPS Computer-Abfrage: $_" -Level WARN -NoConsole
+            }
+        }
+    } catch {
+        Write-Log "LAPSConfiguration: $_" -Level WARN -NoConsole
+        $result += [pscustomobject]@{
+            Type='Error'; Target='LAPS-Abfrage'; LAPSEnabled=$null; ComputerCount=0; ConfiguredCount=0
+            UnconfiguredCount=0; ConfiguredPercent=0; OSUnsupported=0; Issue="Fehler: $_"
+        }
+    }
+    return $result
+}
+
+function Get-AccountsWithoutAES {
+    <#
+    .SYNOPSIS
+        Findet User und Computer, die mit RC4 (unsicher) verschluesselt sind ODER explizit NICHT auf AES konfiguriert.
+        Achte: Leere msds-SupportedEncryptionTypes = Default (meist OK). Problem: RC4 aktiviert OHNE AES!
+    #>
+    $result = @()
+    try {
+        # Encryption Type Flags
+        $aesFlags = 0x30      # AES128 (0x10) | AES256 (0x20)
+        $rc4Flag = 0x2        # RC4-HMAC-MD5 (unsicher)
+        $desFlag = 0x1        # DES (sehr unsicher)
+        
+        # Suche User mit explizit gesetzten Encryption Types (nicht null/leer)
+        try {
+            $users = @(Get-ADUser -Filter { msds-SupportedEncryptionTypes -like "*" } `
+                     -Properties msds-SupportedEncryptionTypes, LastLogonDate, PasswordLastSet -ErrorAction SilentlyContinue)
+            
+            foreach ($u in $users) {
+                $encTypes = $u.'msds-SupportedEncryptionTypes'
+                if (-not $encTypes) { continue }  # Skip wenn null/leer trotz Filter
+                
+                $encValue = [int]$encTypes
+                $hasAES = (($encValue -band $aesFlags) -ne 0)
+                $hasRC4 = (($encValue -band $rc4Flag) -ne 0)
+                $hasDES = (($encValue -band $desFlag) -ne 0)
+                
+                # KRITISCH: RC4 oder DES ohne AES
+                if ((-not $hasAES) -and ($hasRC4 -or $hasDES)) {
+                    $result += [pscustomobject]@{
+                        Type='User'; ObjectName=$u.SamAccountName; Enabled=$u.Enabled
+                        EncryptionTypes=$encTypes; HasAES=$hasAES; HasRC4=$hasRC4; HasDES=$hasDES
+                        LastLogon=$u.LastLogonDate; PasswordLastSet=$u.PasswordLastSet
+                        Risk='CRITICAL'
+                        Issue="KRITISCH: User mit RC4/DES OHNE AES! EncryptionTypes=0x$([Convert]::ToString($encValue,16))"
+                    }
+                }
+                # WARNUNG: Explizit AES disabled
+                elseif ((-not $hasAES) -and ($encValue -ne 0)) {
+                    $result += [pscustomobject]@{
+                        Type='User'; ObjectName=$u.SamAccountName; Enabled=$u.Enabled
+                        EncryptionTypes=$encTypes; HasAES=$hasAES; HasRC4=$hasRC4; HasDES=$hasDES
+                        LastLogon=$u.LastLogonDate; PasswordLastSet=$u.PasswordLastSet
+                        Risk='HIGH'
+                        Issue="User ohne AES konfiguriert (EncryptionTypes=0x$([Convert]::ToString($encValue,16)))"
+                    }
+                }
+                # WARNUNG: RC4 als Option zusammen mit AES (Legacy-Support)
+                elseif ($hasRC4 -and $hasAES) {
+                    $result += [pscustomobject]@{
+                        Type='User'; ObjectName=$u.SamAccountName; Enabled=$u.Enabled
+                        EncryptionTypes=$encTypes; HasAES=$hasAES; HasRC4=$hasRC4; HasDES=$hasDES
+                        LastLogon=$u.LastLogonDate; PasswordLastSet=$u.PasswordLastSet
+                        Risk='MEDIUM'
+                        Issue="User mit RC4+AES: Ermoeglicht Downgrade-Angriffe (EncryptionTypes=0x$([Convert]::ToString($encValue,16)))"
+                    }
+                }
+            }
+        } catch { Write-Log "AES User-Abfrage: $_" -Level WARN -NoConsole }
+        
+        # Suche Computer mit explizit gesetzten Encryption Types
+        try {
+            $comps = @(Get-ADComputer -Filter { msds-SupportedEncryptionTypes -like "*" } `
+                     -Properties msds-SupportedEncryptionTypes, LastLogonDate, OperatingSystem -ErrorAction SilentlyContinue)
+            
+            foreach ($c in $comps) {
+                $encTypes = $c.'msds-SupportedEncryptionTypes'
+                if (-not $encTypes) { continue }  # Skip wenn null/leer trotz Filter
+                
+                $encValue = [int]$encTypes
+                $hasAES = (($encValue -band $aesFlags) -ne 0)
+                $hasRC4 = (($encValue -band $rc4Flag) -ne 0)
+                $hasDES = (($encValue -band $desFlag) -ne 0)
+                
+                # KRITISCH: RC4 oder DES ohne AES
+                if ((-not $hasAES) -and ($hasRC4 -or $hasDES)) {
+                    $result += [pscustomobject]@{
+                        Type='Computer'; ObjectName=$c.Name; Enabled=$c.Enabled
+                        EncryptionTypes=$encTypes; HasAES=$hasAES; HasRC4=$hasRC4; HasDES=$hasDES
+                        LastLogon=$c.LastLogonDate; OperatingSystem=$c.OperatingSystem
+                        Risk='CRITICAL'
+                        Issue="KRITISCH: Computer mit RC4/DES OHNE AES! EncryptionTypes=0x$([Convert]::ToString($encValue,16))"
+                    }
+                }
+                # WARNUNG: Explizit AES disabled
+                elseif ((-not $hasAES) -and ($encValue -ne 0)) {
+                    $result += [pscustomobject]@{
+                        Type='Computer'; ObjectName=$c.Name; Enabled=$c.Enabled
+                        EncryptionTypes=$encTypes; HasAES=$hasAES; HasRC4=$hasRC4; HasDES=$hasDES
+                        LastLogon=$c.LastLogonDate; OperatingSystem=$c.OperatingSystem
+                        Risk='HIGH'
+                        Issue="Computer ohne AES konfiguriert (EncryptionTypes=0x$([Convert]::ToString($encValue,16)))"
+                    }
+                }
+                # WARNUNG: RC4 als Option zusammen mit AES
+                elseif ($hasRC4 -and $hasAES) {
+                    $result += [pscustomobject]@{
+                        Type='Computer'; ObjectName=$c.Name; Enabled=$c.Enabled
+                        EncryptionTypes=$encTypes; HasAES=$hasAES; HasRC4=$hasRC4; HasDES=$hasDES
+                        LastLogon=$c.LastLogonDate; OperatingSystem=$c.OperatingSystem
+                        Risk='MEDIUM'
+                        Issue="Computer mit RC4+AES: Ermoeglicht Downgrade-Angriffe (EncryptionTypes=0x$([Convert]::ToString($encValue,16)))"
+                    }
+                }
+            }
+        } catch { Write-Log "AES Computer-Abfrage: $_" -Level WARN -NoConsole }
+        
+        # Summary bei keine Probleme gefunden
+        if ($result.Count -eq 0) {
+            $result += [pscustomobject]@{
+                Type='Summary'; ObjectName='(alle Konten)'; Enabled=$true
+                EncryptionTypes='OK'; HasAES=$true; HasRC4=$false; HasDES=$false
+                LastLogon=$null; OperatingSystem=$null
+                Risk='OK'
+                Issue='Alle Konten: Standard-Verschluesselung (AES) aktiv, keine RC4-Only Konfiguration'
+            }
+        }
+    } catch {
+        Write-Log "AccountsWithoutAES: $_" -Level WARN -NoConsole
+        $result += [pscustomobject]@{
+            Type='Error'; ObjectName='(Fehler)'; Enabled=$null
+            EncryptionTypes=$null; HasAES=$null; HasRC4=$null; HasDES=$null
+            LastLogon=$null; OperatingSystem=$null; Risk='UNKNOWN'
+            Issue="Abfrage fehlgeschlagen: $_"
+        }
+    }
+    return $result
+}
+
 #endregion
 
 #region ============= ASSESSMENT-ENGINE ======================================
@@ -2966,6 +3182,124 @@ function Test-Check-DNSHygiene {
     New-Assessment -OverallStatus $s -Summary "$(@($data).Count) DNS-Hygiene-Pruefpunkt(e)" -Findings $f -RowFlags $rf
 }
 
+function Test-Check-LAPS {
+    param($data); if (-not $data) { return New-Assessment -OverallStatus 'INFO' -Summary 'LAPS-Daten nicht verfuegbar' }
+    $f=@(); $rf=@{}; $c=$false; $w=$false
+    
+    # Auswerten der Ergebnisse
+    $configRow = @($data | Where-Object { $_.Type -eq 'Summary' }) | Select-Object -First 1
+    
+    if ($configRow) {
+        if ($configRow.LAPSEnabled -eq $false) {
+            $c = $true
+            $f += "KRITISCH: LAPS Schema-Erweiterung ist NICHT installiert!"
+            $rf['Forest-Config'] = 'CRITICAL'
+        } else {
+            $rf['Forest-Config'] = 'OK'
+            
+            # Pruefe auf Computer mit nicht unterstütztem OS
+            if ($configRow.OSUnsupported -gt 0) {
+                $c = $true
+                $f += "KRITISCH: $($configRow.OSUnsupported) Computer mit nicht-unterstütztem OS (Server 2016 oder aelter)"
+            }
+            
+            if ($configRow.ComputerCount -gt 0) {
+                $percent = $configRow.ConfiguredPercent
+                if ($percent -eq 100 -and $configRow.OSUnsupported -eq 0) {
+                    $f += "OPTIMAL: 100% der Computer ($($configRow.ComputerCount)) haben LAPS konfiguriert (alle Systeme unterstützen LAPS)"
+                    $rf['Summary'] = 'OK'
+                } elseif ($percent -ge 90 -and $configRow.OSUnsupported -eq 0) {
+                    $w = $true
+                    $f += "WARNUNG: $percent% ($($configRow.ConfiguredCount)/$($configRow.ComputerCount)) der Computer mit LAPS konfiguriert. Unconfigured: $($configRow.UnconfiguredCount)"
+                    $rf['Summary'] = 'WARN'
+                } else {
+                    if ($c -eq $false) { $c = $true }  # Wenn OSUnsupported > 0, ist bereits CRITICAL
+                    $f += "KRITISCH: Nur $percent% ($($configRow.ConfiguredCount)/$($configRow.ComputerCount)) der Computer mit LAPS konfiguriert!"
+                    $rf['Summary'] = 'CRITICAL'
+                }
+            }
+        }
+    }
+    
+    # Details Computer mit kritischen OS-Problemen (konfiguriert aber OS nicht unterstuetzt)
+    $osProblems = @($data | Where-Object { $_.Type -eq 'Computer' -and $_.OSUnsupported -eq 1 -and $_.LAPSEnabled -eq $true })
+    foreach ($op in $osProblems) {
+        $c = $true
+        $rf[$op.Target] = 'CRITICAL'
+        $f += "  [CRITICAL] $($op.Target): $($op.Issue)"
+    }
+    
+    # Details unkonfigurierter Computer (falls vorhanden)
+    $unconfigured = @($data | Where-Object { $_.Type -eq 'Computer' -and $_.LAPSEnabled -eq $false })
+    if ($unconfigured.Count -gt 0 -and $unconfigured.Count -le 50) {
+        foreach ($uc in $unconfigured) {
+            # Prüfe ob OS-Problem in der Issue-Beschreibung ist
+            if ($uc.Issue -match 'NICHT UNTERSTUETZT') {
+                $rf[$uc.Target] = 'CRITICAL'
+            } else {
+                $rf[$uc.Target] = 'WARN'
+            }
+            $f += "  [$($uc.Target)] $($uc.Issue)"
+        }
+    } elseif ($unconfigured.Count -gt 50) {
+        $f += "  [und $($unconfigured.Count - 50) weitere Systeme ohne LAPS]"
+    }
+    
+    $s = if ($c) { 'CRITICAL' } elseif ($w) { 'WARN' } else { 'OK' }
+    $summary = if ($configRow) { "LAPS: $($configRow.Issue)" } else { "LAPS-Status unbekannt" }
+    New-Assessment -OverallStatus $s -Summary $summary -Findings $f -RowFlags $rf
+}
+
+function Test-Check-AccountsWithoutAES {
+    param($data); if (-not $data) { return New-Assessment -OverallStatus 'INFO' -Summary 'Keine AES-Daten verfuegbar' }
+    $f=@(); $rf=@{}; $c=$false; $w=$false
+    
+    # Gruppiere nach Risk-Level
+    $critical = @($data | Where-Object { $_.Type -in 'User','Computer' -and $_.Risk -eq 'CRITICAL' })
+    $high     = @($data | Where-Object { $_.Type -in 'User','Computer' -and $_.Risk -eq 'HIGH' })
+    $medium   = @($data | Where-Object { $_.Type -in 'User','Computer' -and $_.Risk -eq 'MEDIUM' })
+    $summary  = @($data | Where-Object { $_.Type -eq 'Summary' }) | Select-Object -First 1
+    
+    # CRITICAL: RC4/DES ohne AES
+    foreach ($row in $critical) {
+        $c = $true
+        $id = "$($row.Type)|$($row.ObjectName)"
+        $rf[$id] = 'CRITICAL'
+        $f += "  [CRITICAL] $($row.Type) '$($row.ObjectName)': $($row.Issue)"
+    }
+    
+    # HIGH: Explizit AES disabled
+    foreach ($row in $high) {
+        $c = $true
+        $id = "$($row.Type)|$($row.ObjectName)"
+        $rf[$id] = 'CRITICAL'
+        $f += "  [CRITICAL] $($row.Type) '$($row.ObjectName)': $($row.Issue)"
+    }
+    
+    # MEDIUM: RC4+AES (Downgrade moeglich)
+    foreach ($row in $medium) {
+        $w = $true
+        $id = "$($row.Type)|$($row.ObjectName)"
+        $rf[$id] = 'WARN'
+        $f += "  [WARN] $($row.Type) '$($row.ObjectName)': $($row.Issue)"
+    }
+    
+    # Summary
+    if ($summary) {
+        if ($summary.Risk -eq 'OK') {
+            $f += "Verschluesselung: Standard-AES aktiv, keine RC4-Only Konfigurationen gefunden"
+        }
+    }
+    
+    # Zusammenfassung
+    $accountsCount = @($data | Where-Object { $_.Type -in 'User','Computer' }).Count
+    $criticalHighCount = $critical.Count + $high.Count
+    $summary_text = "$accountsCount Konten geprueft | CRITICAL: $criticalHighCount | MEDIUM: $($medium.Count)"
+    
+    $s = if ($c) { 'CRITICAL' } elseif ($w) { 'WARN' } else { 'OK' }
+    New-Assessment -OverallStatus $s -Summary $summary_text -Findings $f -RowFlags $rf
+}
+
 function Invoke-AllAssessments {
     Write-Host "`n==== BEST-PRACTICE-BEWERTUNG ====" -ForegroundColor Magenta
     $map = @{
@@ -3019,6 +3353,8 @@ function Invoke-AllAssessments {
         '40_AdminSDHolderDrift'      = { Test-Check-AdminSDHolderDrift      $Global:Results['40_AdminSDHolderDrift'] }
         '41_FGPP'                    = { Test-Check-FGPP                    $Global:Results['41_FGPP'] }
         '42_DNSHygiene'              = { Test-Check-DNSHygiene              $Global:Results['42_DNSHygiene'] }
+        '43_LAPS'                    = { Test-Check-LAPS                    $Global:Results['43_LAPS'] }
+        '44_AccountsWithoutAES'      = { Test-Check-AccountsWithoutAES      $Global:Results['44_AccountsWithoutAES'] }
     }
     $toAssess = @()
     foreach ($k in $Global:ReportTitles.Keys) {
@@ -3408,7 +3744,7 @@ function Start-ADHealthCheck {
         $selForest = @('04b_ReplicationFailures','05_FSMO','16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos',
                        '19_UnconstrainedDelegation','20_KerberoastingRisk','25_Sites','26_Subnets','27_Trusts',
                                              '28_ADRecycleBin','29_TombstoneLifetime','30_Levels','31_GPO','35_Backup',
-                                             '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene') |
+                                             '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES') |
                      Where-Object { $Global:SelectedChecks -contains $_ }
         $selInact = if ((Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')) { 1 } else { 0 }
         $Global:ProgressStats.TotalChecks = ($selPerDC.Count * $dcCountReachable) + $selForest.Count + $selInact + $dcCount
@@ -3471,6 +3807,8 @@ function Start-ADHealthCheck {
         if (Test-IsCheckSelected '40_AdminSDHolderDrift')      { $r = Invoke-TimedCheck -CheckKey '40_AdminSDHolderDrift'      -ScriptBlock { Get-AdminSDHolderDrift };      $Global:Results['40_AdminSDHolderDrift']      = @($r) }
         if (Test-IsCheckSelected '41_FGPP')                    { $r = Invoke-TimedCheck -CheckKey '41_FGPP'                    -ScriptBlock { Get-FGPPOverview };            $Global:Results['41_FGPP']                    = @($r) }
         if (Test-IsCheckSelected '42_DNSHygiene')              { $r = Invoke-TimedCheck -CheckKey '42_DNSHygiene'              -ScriptBlock { Get-DNSHygiene };              $Global:Results['42_DNSHygiene']              = @($r) }
+        if (Test-IsCheckSelected '43_LAPS')                    { $r = Invoke-TimedCheck -CheckKey '43_LAPS'                    -ScriptBlock { Get-LAPSConfiguration };       $Global:Results['43_LAPS']                    = @($r) }
+        if (Test-IsCheckSelected '44_AccountsWithoutAES')      { $r = Invoke-TimedCheck -CheckKey '44_AccountsWithoutAES'      -ScriptBlock { Get-AccountsWithoutAES };      $Global:Results['44_AccountsWithoutAES']      = @($r) }
 
         # Inaktive Accounts - einmaliger Aufruf fuer 3 Check-Keys
         $wantInact = (Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')
