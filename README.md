@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-2.2-brightgreen.svg)]()
 [![Checks](https://img.shields.io/badge/Checks-42-orange.svg)]()
+[![Downloads](https://img.shields.io/github/downloads/RoccoAmmon/Active-Directory-Health-Check/total.svg)](https://github.com/RoccoAmmon/Active-Directory-Health-Check/releases)
 
 > Ein umfassendes PowerShell-Skript zur automatisierten Überprüfung der Gesundheit und Sicherheit einer Active Directory-Umgebung. Mit Best-Practice-Bewertung, farbcodiertem HTML-Report und CSV-Export.
 
