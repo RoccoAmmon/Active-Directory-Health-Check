@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-2.3-brightgreen.svg)]()
 [![Checks](https://img.shields.io/badge/Checks-44-orange.svg)]()
-[![Downloads](https://img.shields.io/github/downloads/RoccoAmmon/Active-Directory-Health-Check/total.svg)](https://github.com/RoccoAmmon/Active-Directory-Health-Check/releases)
+[![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
 > Ein umfassendes PowerShell-Skript zur automatisierten Überprüfung der Gesundheit und Sicherheit einer Active Directory-Umgebung. Mit Best-Practice-Bewertung, farbcodiertem HTML-Report und CSV-Export.
 
@@ -139,7 +139,7 @@
 
 ```powershell
 # Repository klonen
-git clone https://github.com/RoccoAmmon/Active-Directory-Health-Check.git
+git clone https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check.git
 cd Active-Directory-Health-Check
 
 # Skript ausführen (interaktiv)
@@ -188,7 +188,7 @@ Alle Schwellwerte sind im Variablen-Block am Anfang des Skripts konfigurierbar:
 | `WUMaxAgeDaysWarn` | 35 | Windows Update Alter Warnung |
 | `WUMaxAgeDaysCrit` | 60 | Windows Update Alter Kritisch |
 
-Vollständige Konfigurationsreferenz: [Wiki → Schwellwerte](https://github.com/RoccoAmmon/Active-Directory-Health-Check/wiki/Konfiguration)
+Vollständige Konfigurationsreferenz: [Wiki → Schwellwerte](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/wikis/Konfiguration)
 
 ## 📄 Report-Ausgabe
 
@@ -206,7 +206,7 @@ Ergebnisse werden unter `C:\ScriptLog` gespeichert:
 
 ## 🔧 Troubleshooting
 
-Siehe [Wiki → Troubleshooting](https://github.com/RoccoAmmon/Active-Directory-Health-Check/wiki/Troubleshooting)
+Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/wikis/Troubleshooting)
 
 ## 🤝 Contributing
 
