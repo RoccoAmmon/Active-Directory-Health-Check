@@ -1,10 +1,10 @@
-# 🛡️ Active Directory Health Check v2.3
+# 🛡️ Active Directory Health Check v2.5
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.3-brightgreen.svg)]()
-[![Checks](https://img.shields.io/badge/Checks-44-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.5-brightgreen.svg)]()
+[![Checks](https://img.shields.io/badge/Checks-54-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
 > Ein umfassendes PowerShell-Skript zur automatisierten Überprüfung der Gesundheit und Sicherheit einer Active Directory-Umgebung. Mit Best-Practice-Bewertung, farbcodiertem HTML-Report und CSV-Export.
@@ -12,7 +12,7 @@
 ## 📑 Inhaltsverzeichnis
 
 - [Features](#-features)
-- [Die 44 Checks](#-die-44-checks)
+- [Die 54 Checks](#-die-54-checks)
 - [Systemanforderungen](#-systemanforderungen)
 - [Installation](#-installation)
 - [Verwendung](#-verwendung)
@@ -28,7 +28,7 @@
 
 ## ✨ Features
 
-- 🎯 **44 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring)
+- 🎯 **54 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring)
 - 🖼️ **Moderne WPF-GUI** (Light Theme) mit Gruppen-Auswahl, Suite-Buttons und Ausgabepfad-Wahl
 - 🎨 **Farbcodierter HTML-Report** mit Executive Dashboard (OK / WARN / KRITISCH / INFO)
 - 📊 **CSV-Export** aller Check-Ergebnisse
@@ -42,7 +42,7 @@
 - 📝 **Ausführliches Logging** (`C:\ScriptLog`)
 - 🔧 **Modular aufgebaut** - einzelne Checks können gezielt ausgeführt werden
 
-## 📋 Die 44 Checks
+## 📋 Die 54 Checks
 
 ### 🏗️ DC-Basis-Infrastruktur
 | # | Check | Beschreibung |
@@ -111,6 +111,8 @@
 | 35 | **AD-Backup-Status** | via `repadmin /showbackup` |
 | 36 | **Installierte Programme** | Inventory pro DC |
 | 37 | **Windows Updates** | Letzte 20 Updates, Altersbewertung |
+| 45 | **Installierte Windows Features** | Installierte Rollen & Features pro DC (ServerManager) |
+| 46 | **SMB-Freigaben (Shares)** | Alle Freigaben inkl. Pfade, Berechtigungen und Verschlüsselung |
 
 ### 🧬 Identity & DNS (neu)
 | # | Check | Beschreibung |
@@ -122,6 +124,18 @@
 | 42 | **DNS-Hygiene (Aging / Scavenging)** | Aging/Scavenging, Reverse-Zonen, Dynamic-Update-Risiken |
 | 43 | **LAPS-Konfiguration** | Local Admin Password Solution - Aktivierungsstatus, Computer-Abdeckung (ab Server 2019) |
 | 44 | **Konten ohne AES** | Findet Accounts mit RC4-only oder ohne AES-Verschluesselung (Sicherheitsrisiko) |
+
+### 🎯 Security: Angriffsvektoren 2025/2026
+| # | Check | Beschreibung |
+|---|---|---|
+| 47 | **RC4 → AES Migrations-Audit** | Konten ohne AES vor der RC4-Abschaltung 2026 (CVE-2026-20833) + KDC-Registry der DCs |
+| 48 | **DCSync-Berechtigungen** | Replikations-Rechte ausserhalb der DCs (Passwort-Hash-Extraktions-Risiko) |
+| 49 | **RBCD & Constrained Delegation** | `msDS-AllowedToActOnBehalfOfOtherIdentity` und `msDS-AllowedToDelegateTo` inkl. Protokollwechsel |
+| 50 | **dMSA / BadSuccessor** | Delegated Managed Service Accounts (Server 2025) und Superseding-Muster |
+| 51 | **MachineAccountQuota** | `ms-DS-MachineAccountQuota` (Best Practice: 0) |
+| 52 | **Anonymer LDAP-Zugriff** | Anonymer Bind-Test gegen PDC + dSHeuristics |
+| 53 | **GPP/cpassword in SYSVOL** | Klartext-dechiffrierbare Passwörter in GPP-XMLs (MS14-025) |
+| 54 | **Protected Users Audit** | Alle privilegierten Konten in der Protected-Users-Gruppe? |
 
 ## 💻 Systemanforderungen
 
@@ -145,7 +159,7 @@ cd Active-Directory-Health-Check
 # Skript ausführen (interaktiv)
 .\AD_Health_Check.ps1
 
-# Oder automatisiert (alle 44 Checks)
+# Oder automatisiert (alle 54 Checks)
 .\AD_Health_Check.ps1 -FullRun
 ```
 
@@ -218,7 +232,27 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ## 📋 Changelog
 
-### v2.2 (aktuell)
+### v2.5 (aktuell)
+- **8 neue Checks** (47–54): RC4→AES-Migrations-Audit, DCSync-Rechte, RBCD & Constrained Delegation, dMSA/BadSuccessor, MachineAccountQuota, anonymer LDAP, GPP/cpassword, Protected Users
+- Check 47: RC4→AES-Migrations-Audit (CVE-2026-20833) – Konten ohne AES, SPN-Dienstkonten mit KDC-RC4-Default, RC4-only/DES, KDC-Registry aller DCs
+- Check 48: Wer hat „Replicating Directory Changes All" ausserhalb der DCs? (DCSync = Hash-Extraktion)
+- Check 49: RBCD-Einträge (Warnung bei User-Prinzipalen) + Constrained Delegation inkl. Protokollwechsel (S4U2Self)
+- Check 50: dMSA-Objekte und BadSuccessor-Muster (`msDS-DelegatedMSAState=2` mit privilegiertem übernommenem Konto = kritisch)
+- Check 53: Sucht SYSVOL nach `cpassword`-Attributen in GPP-XMLs (MS14-025)
+- **Bugfix Check 44**: Korrekte Bitmasken für `msDS-SupportedEncryptionTypes` (RC4=0x04, AES=0x18, DES=0x03 statt vorher 0x02/0x30/0x01) – AES128-only-Konten werden nicht mehr fälschlich als „ohne AES" gemeldet
+- **Bugfix Check 02 (Dienste)**: NTDS auf lokalen DCs wird zuverlässig erkannt – 4-stufiges Matching (Name → DE/EN-Anzeigename → ASCII-Patterns → direkte CIM-Abfrage + lokaler Get-Service); Datei jetzt UTF-8 mit BOM (PS 5.1 liest Umlaut-Strings korrekt)
+- Menüpunkte „Forest" und „Security" enthielten die Checks 43/44 nicht – ergänzt
+
+### v2.4
+- **2 neue Checks** (45–46): Installierte Windows Features, SMB-Freigaben (Shares)
+- Check 45: Installierte Rollen & Features pro DC via `Get-WindowsFeature` (Fallback: `Get-WindowsOptionalFeature`)
+- Check 46: Alle SMB-Freigaben inkl. Pfade, Berechtigungen (`Get-SmbShareAccess`) und Verschlüsselung (Fallback: `Win32_Share`); Standard-Freigaben (SYSVOL, NETLOGON, ADMIN$) werden nicht beanstandet
+- **HTML-Report nach GUI-Kategorien gruppiert** (Kategorie-Banner + gruppierte Übersicht)
+- Dienste-Check per CIM/WinRM mit DE/EN-Anzeigenamen (NTDS „Active Directory-Domänendienste" wird erkannt)
+- NTFRS gestoppt = Best Practice (grün), nur NTFRS aktiv wird gewarnt
+- Beide Checks in der Gruppe „System & Updates" (GUI) und in den per-DC-Checks
+
+### v2.2
 - **Moderne WPF-GUI** (Light Theme) mit Check-Gruppen, Suite-Buttons und Ausgabepfad-Wahl
 - Neuer Parameter `-OutputPath`
 - Shell-Menü bleibt als Fallback erhalten

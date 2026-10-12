@@ -1,8 +1,8 @@
-<#
+﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.3 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.5 mit Best-Practice-Bewertung.
 .DESCRIPTION
-    44 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
+    54 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
     interaktivem Startmenue.
 .PARAMETER FullRun
@@ -13,7 +13,8 @@
     Ueberspringt das Menue (= Full Run).
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.3 (44 Checks: +43_LAPS +44_AccountsWithoutAES, WPF-GUI, erweiterte Ausgabepfad-Wahl)
+    Version : 2.5 (54 Checks: +47_RCAESMigration +48_DCSyncPermissions +49_RBCDDelegation
+                    +50_dMSA +51_MachineAccountQuota +52_AnonymousLDAP +53_GPPPasswords +54_ProtectedUsers)
     LogPfad : C:\ScriptLog
 .EXAMPLE
     .\AD_HealthCheck.ps1
@@ -32,7 +33,7 @@ param(
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.3"
+$Global:ScriptVersion   = "2.5"
 $Global:Timestamp       = Get-Date -Format "yyyyMMdd_HHmmss"
 $Global:LogDirectory    = if ($OutputPath) { $OutputPath } else { "C:\ScriptLog" }
 $Global:ReportDirectory = Join-Path $Global:LogDirectory "AD_HealthCheck_$Global:Timestamp"
@@ -79,14 +80,41 @@ $Global:ProgressStats = [ordered]@{
 }
 
 # Dienste mit Beschreibung
+# Patterns = ASCII-sichere Regex-Muster (unabhaengig von Datei-Encoding UND OS-Sprache)
 $Global:ServiceMap = [ordered]@{
-    'NTDS'     = @{ Names=@('NTDS');      Description='Active Directory Domain Services - Kerndienst.' }
-    'DNS'      = @{ Names=@('DNS');       Description='DNS Server - Namensaufloesung, SRV-Records.' }
-    'Netlogon' = @{ Names=@('Netlogon');  Description='Netlogon - Sicherer Kanal, Authentifizierung.' }
-    'KDC'      = @{ Names=@('Kdc','KDC'); Description='Kerberos KDC - Stellt Kerberos-Tickets aus.' }
-    'W32Time'  = @{ Names=@('W32Time');   Description='Windows-Zeit - Kerberos-Pflicht.' }
-    'DFSR'     = @{ Names=@('DFSR');      Description='DFS Replication - Repliziert SYSVOL.' }
-    'NTFRS'    = @{ Names=@('NtFrs');     Description='File Replication (LEGACY).' }
+    'NTDS'     = @{ Names=@('NTDS');      DisplayNames=@('Active Directory Domain Services','Active Directory-Domänendienste'); Patterns=@('^Active Directory'); Description='Active Directory Domain Services - Kerndienst.' }
+    'DNS'      = @{ Names=@('DNS');       DisplayNames=@('DNS Server','DNS-Server'); Patterns=@('^DNS.Server','^DNS-Server'); Description='DNS Server - Namensaufloesung, SRV-Records.' }
+    'Netlogon' = @{ Names=@('Netlogon');  DisplayNames=@('Netlogon','Netlogon (Anmeldedienst)','Anmeldedienst'); Patterns=@('^Netlogon','Anmeldedienst'); Description='Netlogon - Sicherer Kanal, Authentifizierung.' }
+    'KDC'      = @{ Names=@('Kdc','KDC'); DisplayNames=@('Kerberos Key Distribution Center','Kerberos-Schlüsselverteilungscenter'); Patterns=@('^Kerberos'); Description='Kerberos KDC - Stellt Kerberos-Tickets aus.' }
+    'W32Time'  = @{ Names=@('W32Time');   DisplayNames=@('Windows Time','Windows-Zeitgeber','Windows-Zeit'); Patterns=@('Windows[- ]Zeit'); Description='Windows-Zeit - Kerberos-Pflicht.' }
+    'DFSR'     = @{ Names=@('DFSR');      DisplayNames=@('DFS Replication','DFS-Replikation'); Patterns=@('^DFS[- ]Replication','^DFS-Replikation'); Description='DFS Replication - Repliziert SYSVOL.' }
+    'NTFRS'    = @{ Names=@('NtFrs');     DisplayNames=@('File Replication Service','Dateireplikationsdienst'); Patterns=@('File Replication','Dateireplikation'); Description='File Replication (LEGACY).' }
+}
+
+# Check-Gruppen fuer GUI UND HTML-Report (identisch, thematisch sortiert)
+$Global:CheckGroups = [ordered]@{
+    'DC-Infrastruktur' = @(
+        '01_DCSystemInfo','02_Services','03_DCDiag','04_Replication','04b_ReplicationFailures',
+        '05_FSMO','06_DNS','07_SYSVOL','08_Database','34_TimeSync','35_Backup'
+    )
+    'Security & Hardening' = @(
+        '09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity',
+        '15_WindowsFirewall','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
+        '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords'
+    )
+    'Identity & Kerberos' = @(
+        '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
+        '20_KerberoastingRisk','38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','43_LAPS','44_AccountsWithoutAES',
+        '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA','54_ProtectedUsers'
+    )
+    'AD-Topologie & Objekte' = @(
+        '25_Sites','26_Subnets','27_Trusts','28_ADRecycleBin','29_TombstoneLifetime',
+        '30_Levels','31_GPO','32a_InactiveUsers','32b_InactiveComputers','32c_PasswordNeverExpires'
+    )
+    'System & Updates' = @(
+        '33_EventLog','36_InstalledPrograms','37_WindowsUpdates','42_DNSHygiene',
+        '45_WindowsFeatures','46_Shares'
+    )
 }
 
 # Report-Titel - THEMATISCH sortiert
@@ -139,6 +167,16 @@ $Global:ReportTitles = [ordered]@{
     '42_DNSHygiene'              = 'DNS-Hygiene (Aging / Scavenging)'
     '43_LAPS'                    = 'LAPS-Konfiguration (Local Admin Password Solution)'
     '44_AccountsWithoutAES'      = 'Konten ohne AES-Verschluesselung'
+    '45_WindowsFeatures'         = 'Installierte Windows Features'
+    '46_Shares'                  = 'SMB-Freigaben (Shares)'
+    '47_RCAESMigration'          = 'RC4 -> AES Migrations-Audit (CVE-2026-20833)'
+    '48_DCSyncPermissions'       = 'DCSync-Berechtigungen (Replikations-Rechte)'
+    '49_RBCDDelegation'          = 'RBCD & Constrained Delegation'
+    '50_dMSA'                    = 'dMSA / BadSuccessor (Delegated MSA)'
+    '51_MachineAccountQuota'     = 'MachineAccountQuota (ms-DS-MachineAccountQuota)'
+    '52_AnonymousLDAP'           = 'Anonymer LDAP-Zugriff'
+    '53_GPPPasswords'            = 'GPP/cpassword in SYSVOL'
+    '54_ProtectedUsers'          = 'Protected Users Audit'
 }
 
 #endregion
@@ -186,28 +224,8 @@ function Show-HealthCheckGUI {
     Add-Type -AssemblyName WindowsBase
     Add-Type -AssemblyName System.Windows.Forms  # fuer FolderBrowserDialog
 
-    # Check-Gruppen definieren
-    $checkGroups = [ordered]@{
-        'DC-Infrastruktur' = @(
-            '01_DCSystemInfo','02_Services','03_DCDiag','04_Replication','04b_ReplicationFailures',
-            '05_FSMO','06_DNS','07_SYSVOL','08_Database','34_TimeSync','35_Backup'
-        )
-        'Security & Hardening' = @(
-            '09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity',
-            '15_WindowsFirewall','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates'
-        )
-        'Identity & Kerberos' = @(
-            '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
-            '20_KerberoastingRisk','38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','43_LAPS','44_AccountsWithoutAES'
-        )
-        'AD-Topologie & Objekte' = @(
-            '25_Sites','26_Subnets','27_Trusts','28_ADRecycleBin','29_TombstoneLifetime',
-            '30_Levels','31_GPO','32a_InactiveUsers','32b_InactiveComputers','32c_PasswordNeverExpires'
-        )
-        'System & Updates' = @(
-            '33_EventLog','36_InstalledPrograms','37_WindowsUpdates','42_DNSHygiene'
-        )
-    }
+    # Check-Gruppen aus globaler Definition (identisch zum HTML-Report)
+    $checkGroups = $Global:CheckGroups
 
     # === XAML Definition (Light Theme) ===
     [xml]$xaml = @"
@@ -696,16 +714,21 @@ function Show-ScriptMenu {
     $perDC = @('01_DCSystemInfo','02_Services','03_DCDiag','04_Replication','06_DNS','07_SYSVOL','08_Database',
                '09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
                '21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
-               '33_EventLog','34_TimeSync','36_InstalledPrograms','37_WindowsUpdates')
+               '33_EventLog','34_TimeSync','36_InstalledPrograms','37_WindowsUpdates',
+               '45_WindowsFeatures','46_Shares')
     $forest = @('04b_ReplicationFailures','05_FSMO','16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos',
                 '19_UnconstrainedDelegation','20_KerberoastingRisk','25_Sites','26_Subnets','27_Trusts',
                 '28_ADRecycleBin','29_TombstoneLifetime','30_Levels','31_GPO','32a_InactiveUsers',
                 '32b_InactiveComputers','32c_PasswordNeverExpires','35_Backup','38_SPNDuplicates',
-                '39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene')
+                '39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
+                '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
+                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers')
     $sec = @('09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
              '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
              '20_KerberoastingRisk','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
-             '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP')
+             '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','43_LAPS','44_AccountsWithoutAES',
+             '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
+             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers')
 
     while ($true) {
         Clear-Host
@@ -831,6 +854,28 @@ function Get-ReportKeys {
         if ($Global:SelectedChecks -contains $k) { $out += $k }
     }
     return $out
+}
+
+function Get-GroupedReportKeys {
+    <#
+    .SYNOPSIS
+        Liefert die Report-Keys nach GUI-Kategorien gruppiert ([ordered] KatName -> Keys).
+        Keys ohne Kategorie (z.B. 00_SkippedDCs) stehen in der Gruppe 'Allgemein'.
+    #>
+    $reportKeys = @(Get-ReportKeys)
+    $grouped = [ordered]@{}
+    $assigned = @()
+    foreach ($cat in $Global:CheckGroups.Keys) {
+        $keys = @($reportKeys | Where-Object { $Global:CheckGroups[$cat] -contains $_ })
+        if ($keys.Count -gt 0) { $grouped[$cat] = $keys; $assigned += $keys }
+    }
+    $rest = @($reportKeys | Where-Object { $assigned -notcontains $_ })
+    if ($rest.Count -gt 0) {
+        $tmp = [ordered]@{ 'Allgemein' = $rest }
+        foreach ($k in $grouped.Keys) { $tmp[$k] = $grouped[$k] }
+        $grouped = $tmp
+    }
+    return $grouped
 }
 
 function Initialize-ResultKeys {
@@ -978,19 +1023,78 @@ function Get-DCSystemInfo {
 
 function Get-DCServiceStatus {
     param([Parameter(Mandatory)][string]$DC)
-    $res = @()
-    foreach ($svc in $Global:ServiceMap.Keys) {
-        $cfg = $Global:ServiceMap[$svc]; $ok = $false
-        foreach ($n in $cfg.Names) {
-            try {
-                $s = Get-Service -ComputerName $DC -Name $n -ErrorAction Stop
-                $res += [pscustomobject]@{ DCName=$DC; Service=$svc; Description=$cfg.Description; RealName=$s.Name; Status=$s.Status; StartType=$s.StartType }
-                $ok=$true; break
-            } catch {}
+    $sb = {
+        param($map)
+        $rows = @()
+        # Alle Dienste in EINER CIM-Abfrage holen (ueber WinRM - kein RPC noetig)
+        $all = @(Get-CimInstance -ClassName Win32_Service -ErrorAction SilentlyContinue)
+        if ($all.Count -eq 0) {
+            # Fallback: Get-Service in der Remoting-Session
+            $all = @(Get-Service -ErrorAction SilentlyContinue |
+                Select-Object Name, DisplayName, @{n='State';e={ "$($_.Status)" }}, @{n='StartMode';e={ "$($_.StartType)" }})
         }
-        if (-not $ok) { $res += [pscustomobject]@{ DCName=$DC; Service=$svc; Description=$cfg.Description; RealName='N/A'; Status='NotFound'; StartType='N/A' } }
+        foreach ($svc in $map.Keys) {
+            $cfg = $map[$svc]
+            $names = @($cfg.Names); $displays = @($cfg.DisplayNames); $patterns = @($cfg.Patterns)
+            # Stufe 1: Matching per Service-Name (sprachunabhaengig) ODER Display-Name (DE/EN)
+            $found = $all | Where-Object { $names -contains $_.Name -or $displays -contains $_.DisplayName } | Select-Object -First 1
+            # Stufe 2: ASCII-sichere Prefix/Regex-Muster (unabhaengig von Datei-Encoding und OS-Sprache)
+            if (-not $found -and $patterns.Count -gt 0) {
+                $found = $all | Where-Object {
+                    $dn = "$($_.DisplayName)"; $nm = "$($_.Name)"
+                    @($patterns | Where-Object { $dn -match $_ -or $nm -match $_ }).Count -gt 0
+                } | Select-Object -First 1
+            }
+            # Stufe 3: Direkte CIM-Einzelabfrage per Name-Filter (umgeht jegliches Listen-Matching)
+            if (-not $found) {
+                foreach ($n in $names) {
+                    try {
+                        $found = Get-CimInstance -ClassName Win32_Service -Filter "Name='$n'" -ErrorAction SilentlyContinue | Select-Object -First 1
+                        if ($found) { break }
+                    } catch {}
+                }
+            }
+            # Stufe 4: Lokaler Get-Service in der Session (funktioniert auch, wenn CIM eingeschraenkt ist)
+            if (-not $found) {
+                foreach ($n in $names) {
+                    try {
+                        $s = Get-Service -Name $n -ErrorAction Stop
+                        $found = [pscustomobject]@{ Name=$s.Name; DisplayName=$s.DisplayName; State="$($s.Status)"; StartMode="$($s.StartType)" }
+                        break
+                    } catch {}
+                }
+            }
+            if ($found) {
+                $st = "$($found.State)"; $sm = "$($found.StartMode)"
+                if ($sm -eq 'Auto') { $sm = 'Automatic' }
+                $rows += [pscustomobject]@{
+                    Service=$svc; Description=$cfg.Description; RealName=$found.Name
+                    DisplayName=$found.DisplayName; Status=$st; StartType=$sm
+                }
+            } else {
+                $rows += [pscustomobject]@{ Service=$svc; Description=$cfg.Description; RealName='N/A'; DisplayName='-'; Status='NotFound'; StartType='N/A' }
+            }
+        }
+        $rows
     }
-    $res
+    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb -ArgumentList @($Global:ServiceMap)
+    if (-not $data) {
+        # Letzter Fallback: Get-Service ueber RPC (alter Ansatz)
+        $res = @()
+        foreach ($svc in $Global:ServiceMap.Keys) {
+            $cfg = $Global:ServiceMap[$svc]; $ok = $false
+            foreach ($n in $cfg.Names) {
+                try {
+                    $s = Get-Service -ComputerName $DC -Name $n -ErrorAction Stop
+                    $res += [pscustomobject]@{ DCName=$DC; Service=$svc; Description=$cfg.Description; RealName=$s.Name; DisplayName=$s.DisplayName; Status="$($s.Status)"; StartType="$($s.StartType)" }
+                    $ok=$true; break
+                } catch {}
+            }
+            if (-not $ok) { $res += [pscustomobject]@{ DCName=$DC; Service=$svc; Description=$cfg.Description; RealName='N/A'; DisplayName='-'; Status='NotFound'; StartType='N/A' } }
+        }
+        return $res
+    }
+    $data | ForEach-Object { $_ | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force }
 }
 
 function Invoke-DCDiag {
@@ -1553,19 +1657,78 @@ function Get-DCSystemInfo {
 
 function Get-DCServiceStatus {
     param([Parameter(Mandatory)][string]$DC)
-    $res = @()
-    foreach ($svc in $Global:ServiceMap.Keys) {
-        $cfg = $Global:ServiceMap[$svc]; $ok = $false
-        foreach ($n in $cfg.Names) {
-            try {
-                $s = Get-Service -ComputerName $DC -Name $n -ErrorAction Stop
-                $res += [pscustomobject]@{ DCName=$DC; Service=$svc; Description=$cfg.Description; RealName=$s.Name; Status=$s.Status; StartType=$s.StartType }
-                $ok=$true; break
-            } catch {}
+    $sb = {
+        param($map)
+        $rows = @()
+        # Alle Dienste in EINER CIM-Abfrage holen (ueber WinRM - kein RPC noetig)
+        $all = @(Get-CimInstance -ClassName Win32_Service -ErrorAction SilentlyContinue)
+        if ($all.Count -eq 0) {
+            # Fallback: Get-Service in der Remoting-Session
+            $all = @(Get-Service -ErrorAction SilentlyContinue |
+                Select-Object Name, DisplayName, @{n='State';e={ "$($_.Status)" }}, @{n='StartMode';e={ "$($_.StartType)" }})
         }
-        if (-not $ok) { $res += [pscustomobject]@{ DCName=$DC; Service=$svc; Description=$cfg.Description; RealName='N/A'; Status='NotFound'; StartType='N/A' } }
+        foreach ($svc in $map.Keys) {
+            $cfg = $map[$svc]
+            $names = @($cfg.Names); $displays = @($cfg.DisplayNames); $patterns = @($cfg.Patterns)
+            # Stufe 1: Matching per Service-Name (sprachunabhaengig) ODER Display-Name (DE/EN)
+            $found = $all | Where-Object { $names -contains $_.Name -or $displays -contains $_.DisplayName } | Select-Object -First 1
+            # Stufe 2: ASCII-sichere Prefix/Regex-Muster (unabhaengig von Datei-Encoding und OS-Sprache)
+            if (-not $found -and $patterns.Count -gt 0) {
+                $found = $all | Where-Object {
+                    $dn = "$($_.DisplayName)"; $nm = "$($_.Name)"
+                    @($patterns | Where-Object { $dn -match $_ -or $nm -match $_ }).Count -gt 0
+                } | Select-Object -First 1
+            }
+            # Stufe 3: Direkte CIM-Einzelabfrage per Name-Filter (umgeht jegliches Listen-Matching)
+            if (-not $found) {
+                foreach ($n in $names) {
+                    try {
+                        $found = Get-CimInstance -ClassName Win32_Service -Filter "Name='$n'" -ErrorAction SilentlyContinue | Select-Object -First 1
+                        if ($found) { break }
+                    } catch {}
+                }
+            }
+            # Stufe 4: Lokaler Get-Service in der Session (funktioniert auch, wenn CIM eingeschraenkt ist)
+            if (-not $found) {
+                foreach ($n in $names) {
+                    try {
+                        $s = Get-Service -Name $n -ErrorAction Stop
+                        $found = [pscustomobject]@{ Name=$s.Name; DisplayName=$s.DisplayName; State="$($s.Status)"; StartMode="$($s.StartType)" }
+                        break
+                    } catch {}
+                }
+            }
+            if ($found) {
+                $st = "$($found.State)"; $sm = "$($found.StartMode)"
+                if ($sm -eq 'Auto') { $sm = 'Automatic' }
+                $rows += [pscustomobject]@{
+                    Service=$svc; Description=$cfg.Description; RealName=$found.Name
+                    DisplayName=$found.DisplayName; Status=$st; StartType=$sm
+                }
+            } else {
+                $rows += [pscustomobject]@{ Service=$svc; Description=$cfg.Description; RealName='N/A'; DisplayName='-'; Status='NotFound'; StartType='N/A' }
+            }
+        }
+        $rows
     }
-    $res
+    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb -ArgumentList @($Global:ServiceMap)
+    if (-not $data) {
+        # Letzter Fallback: Get-Service ueber RPC (alter Ansatz)
+        $res = @()
+        foreach ($svc in $Global:ServiceMap.Keys) {
+            $cfg = $Global:ServiceMap[$svc]; $ok = $false
+            foreach ($n in $cfg.Names) {
+                try {
+                    $s = Get-Service -ComputerName $DC -Name $n -ErrorAction Stop
+                    $res += [pscustomobject]@{ DCName=$DC; Service=$svc; Description=$cfg.Description; RealName=$s.Name; DisplayName=$s.DisplayName; Status="$($s.Status)"; StartType="$($s.StartType)" }
+                    $ok=$true; break
+                } catch {}
+            }
+            if (-not $ok) { $res += [pscustomobject]@{ DCName=$DC; Service=$svc; Description=$cfg.Description; RealName='N/A'; DisplayName='-'; Status='NotFound'; StartType='N/A' } }
+        }
+        return $res
+    }
+    $data | ForEach-Object { $_ | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force }
 }
 
 function Invoke-DCDiag {
@@ -1956,6 +2119,84 @@ function Get-WindowsUpdates {
     }
     $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
     if (-not $data) { return @([pscustomobject]@{ DCName=$DC; HotFixID='(keine Daten)'; Description='-'; InstalledOn=$null; InstalledBy='-'; DaysAgo=$null }) }
+    $data | ForEach-Object { $_ | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force }
+}
+
+function Get-WindowsFeatures {
+    <#
+    .SYNOPSIS
+        Installierte Windows Features (Rollen & Features) pro DC.
+    #>
+    param([Parameter(Mandatory)][string]$DC)
+    $sb = {
+        $out = @()
+        try {
+            Import-Module ServerManager -ErrorAction Stop
+            $out = @(Get-WindowsFeature -ErrorAction Stop | Where-Object { $_.Installed } |
+                ForEach-Object {
+                    [pscustomobject]@{
+                        Name=$_.Name; DisplayName=$_.DisplayName; FeatureType=$_.FeatureType
+                        Installed=$_.Installed; InstallState="$($_.InstallState)"
+                    }
+                })
+        } catch {
+            # Fallback, falls ServerManager-Modul nicht verfuegbar ist
+            try {
+                $out = @(Get-WindowsOptionalFeature -Online -ErrorAction Stop |
+                    Where-Object { $_.State -eq 'Enabled' } |
+                    ForEach-Object {
+                        [pscustomobject]@{
+                            Name=$_.FeatureName; DisplayName=$_.FeatureName; FeatureType='OptionalFeature'
+                            Installed=$true; InstallState="$($_.State)"
+                        }
+                    })
+            } catch {}
+        }
+        $out | Sort-Object DisplayName
+    }
+    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
+    if (-not $data) { return @([pscustomobject]@{ DCName=$DC; Name='(keine Daten)'; DisplayName='-'; FeatureType='-'; Installed=$null; InstallState='-' }) }
+    $data | ForEach-Object { $_ | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force }
+}
+
+function Get-Shares {
+    <#
+    .SYNOPSIS
+        Alle SMB-Freigaben (Shares) pro DC inkl. Freigabeberechtigungen.
+    #>
+    param([Parameter(Mandatory)][string]$DC)
+    $sb = {
+        $rows = @()
+        $shares = $null
+        try { $shares = Get-SmbShare -ErrorAction Stop } catch {}
+        if ($shares) {
+            foreach ($s in $shares) {
+                $perm = ''
+                try {
+                    $perm = ((Get-SmbShareAccess -Name $s.Name -ErrorAction Stop) |
+                        ForEach-Object { "$($_.AccountName): $($_.AccessRight)/$($_.AccessControlType)" }) -join '; '
+                } catch {}
+                $rows += [pscustomobject]@{
+                    Name=$s.Name; Path=$s.Path; Description=$s.Description; ScopeName=$s.ScopeName
+                    CachingMode="$($s.CachingMode)"; EncryptData=$s.EncryptData
+                    CurrentUsers=$s.CurrentUsers; Permissions=$perm
+                }
+            }
+        }
+        if ($rows.Count -eq 0) {
+            # Fallback ueber CIM (Win32_Share)
+            foreach ($s in @(Get-CimInstance -ClassName Win32_Share -ErrorAction SilentlyContinue)) {
+                $rows += [pscustomobject]@{
+                    Name=$s.Name; Path=$s.Path; Description=$s.Description; ScopeName='-'
+                    CachingMode='-'; EncryptData=$null
+                    CurrentUsers=$null; Permissions=''
+                }
+            }
+        }
+        $rows
+    }
+    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
+    if (-not $data) { return @([pscustomobject]@{ DCName=$DC; Name='(keine Daten)'; Path='-'; Description='-'; ScopeName='-'; CachingMode='-'; EncryptData=$null; CurrentUsers=$null; Permissions='' }) }
     $data | ForEach-Object { $_ | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force }
 }
 
@@ -2526,10 +2767,11 @@ function Get-AccountsWithoutAES {
     #>
     $result = @()
     try {
-        # Encryption Type Flags
-        $aesFlags = 0x30      # AES128 (0x10) | AES256 (0x20)
-        $rc4Flag = 0x2        # RC4-HMAC-MD5 (unsicher)
-        $desFlag = 0x1        # DES (sehr unsicher)
+        # Encryption Type Flags (msDS-SupportedEncryptionTypes Bitmaske):
+        #   0x01 DES-CBC-CRC | 0x02 DES-CBC-MD5 | 0x04 RC4-HMAC | 0x08 AES128 | 0x10 AES256
+        $aesFlags = 0x18      # AES128 (0x08) | AES256 (0x10)
+        $rc4Flag  = 0x04      # RC4-HMAC (unsicher)
+        $desFlag  = 0x03      # DES-CBC-CRC | DES-CBC-MD5 (sehr unsicher)
         
         # Suche User mit explizit gesetzten Encryption Types (nicht null/leer)
         try {
@@ -2647,6 +2889,645 @@ function Get-AccountsWithoutAES {
     return $result
 }
 
+function Get-RCAESMigration {
+    <#
+    .SYNOPSIS
+        RC4 -> AES Migrations-Audit (CVE-2026-20833): Microsoft schaltet RC4 im
+        Kerberos ab 2026 ab (Juli-Updates). Zeigt Konten ohne AES-Unterstuetzung
+        (= koennten nach der Abschaltung nicht mehr authentifizieren) und die
+        KDC-Registry der DCs.
+    #>
+    $result = @()
+    $aesBits = 0x18   # AES128 (0x08) | AES256 (0x10)
+    $rc4Bit  = 0x04   # RC4-HMAC
+    $desBits = 0x03   # DES-CBC-CRC (0x01) | DES-CBC-MD5 (0x02)
+
+    function ConvertTo-EtypeName {
+        param([int]$Enc)
+        if ($Enc -eq 0) { return 'nicht gesetzt' }
+        $p = @()
+        if ($Enc -band 0x01) { $p += 'DES-CBC-CRC' }
+        if ($Enc -band 0x02) { $p += 'DES-CBC-MD5' }
+        if ($Enc -band 0x04) { $p += 'RC4' }
+        if ($Enc -band 0x08) { $p += 'AES128' }
+        if ($Enc -band 0x10) { $p += 'AES256' }
+        if ($Enc -band 0x20) { $p += 'CompoundId' }
+        if ($Enc -band 0x40) { $p += 'Claims' }
+        if ($p.Count -eq 0) { return "unbekannteBits(0x$($Enc.ToString('X')))" }
+        return ($p -join '+')
+    }
+
+    $userTotal=0; $unsetUsers=0; $aesUsers=0; $problemUsers=0
+    $compTotal=0; $unsetComps=0; $aesComps=0; $problemComps=0
+
+    # --- User ---
+    try {
+        $users = @(Get-ADUser -Filter * -Properties msDS-SupportedEncryptionTypes, AdminCount, Enabled, ServicePrincipalName -ErrorAction Stop)
+        foreach ($u in $users) {
+            $userTotal++
+            $enc = 0
+            try { if ($null -ne $u.'msDS-SupportedEncryptionTypes') { $enc = [int]$u.'msDS-SupportedEncryptionTypes' } } catch {}
+            $hasAES = (($enc -band $aesBits) -ne 0)
+            $hasRC4 = (($enc -band $rc4Bit)  -ne 0)
+            $hasDES = (($enc -band $desBits) -ne 0)
+            $isPriv = ($u.AdminCount -eq 1)
+            $hasSpn = (@($u.ServicePrincipalName).Count -gt 0)
+            $objType = if ($hasSpn) { 'Dienst (SPN)' } else { 'User' }
+            if ($enc -eq 0 -or (-not $hasAES -and -not $hasRC4 -and -not $hasDES)) {
+                $unsetUsers++
+                if ($hasSpn) {
+                    # SPN-Konto ohne AES-Attribute: KDC stellt derzeit RC4-TGS aus -> bricht nach RC4-Ende
+                    $problemUsers++
+                    $result += [pscustomobject]@{
+                        Kind='Konto'; Name=$u.SamAccountName; ObjektTyp=$objType
+                        EncryptionTypes='nicht gesetzt'; AES='Nein'; RC4='(KDC-Default)'; DES='Nein'
+                        Privilegiert=$(if ($isPriv) { 'Ja' } else { 'Nein' })
+                        Aktiv=$(if ($u.Enabled) { 'Ja' } else { 'Nein' })
+                        Detail='Dienstkonto (SPN) OHNE msDS-SupportedEncryptionTypes - KDC stellt derzeit RC4-Tickets aus, Ausfall nach RC4-Abschaltung (Juli 2026). AES aktivieren + Passwort/PwdLastSet aktualisieren'
+                        Risk=$(if ($isPriv) { 'HIGH' } else { 'MEDIUM' })
+                    }
+                }
+                continue
+            }
+            if ($hasAES -and -not $hasRC4 -and -not $hasDES) { $aesUsers++; continue }
+            # Problemfaellig: RC4/DES gesetzt
+            $problemUsers++
+            $etype = ConvertTo-EtypeName -Enc $enc
+            if ($hasDES) {
+                $risk = if ($isPriv) { 'CRITICAL' } else { 'HIGH' }
+                $detail = "Konto unterstuetzt DES ($etype) - bricht nach RC4/DES-Abschaltung, AES ist Pflicht"
+            } elseif ($hasRC4 -and -not $hasAES) {
+                $risk = if ($isPriv) { 'CRITICAL' } else { 'HIGH' }
+                $detail = "RC4-only ($etype): KEIN AES - bricht nach RC4-Abschaltung (Juli 2026). Migration: AES aktivieren, Passwort zuruecksetzen"
+            } else {
+                $risk = 'MEDIUM'
+                $detail = "RC4+AES ($etype): ermoeglicht Downgrade auf RC4 - nach AES-Migration RC4-Flag entfernen"
+            }
+            $result += [pscustomobject]@{
+                Kind='Konto'; Name=$u.SamAccountName; ObjektTyp=$objType
+                EncryptionTypes=$etype; AES=$(if ($hasAES) { 'Ja' } else { 'Nein' }); RC4=$(if ($hasRC4) { 'Ja' } else { 'Nein' }); DES=$(if ($hasDES) { 'Ja' } else { 'Nein' })
+                Privilegiert=$(if ($isPriv) { 'Ja' } else { 'Nein' })
+                Aktiv=$(if ($u.Enabled) { 'Ja' } else { 'Nein' })
+                Detail=$detail; Risk=$risk
+            }
+        }
+    } catch { Write-Log "RCAESMigration User: $_" -Level WARN -NoConsole }
+
+    # --- Computer ---
+    try {
+        $comps = @(Get-ADComputer -Filter * -Properties msDS-SupportedEncryptionTypes, AdminCount, Enabled, OperatingSystem -ErrorAction Stop)
+        foreach ($c in $comps) {
+            $compTotal++
+            $enc = 0
+            try { if ($null -ne $c.'msDS-SupportedEncryptionTypes') { $enc = [int]$c.'msDS-SupportedEncryptionTypes' } } catch {}
+            $hasAES = (($enc -band $aesBits) -ne 0)
+            $hasRC4 = (($enc -band $rc4Bit)  -ne 0)
+            $hasDES = (($enc -band $desBits) -ne 0)
+            $isPriv = ($c.AdminCount -eq 1)
+            $oldOS  = ("$($c.OperatingSystem)" -match '2003|2008|2012')
+            if ($enc -eq 0 -or (-not $hasAES -and -not $hasRC4 -and -not $hasDES)) {
+                $unsetComps++
+                if ($oldOS) {
+                    # Alter Client ohne AES-Attribute: nutzt vermutlich RC4
+                    $problemComps++
+                    $result += [pscustomobject]@{
+                        Kind='Konto'; Name=$c.Name; ObjektTyp='Computer'
+                        EncryptionTypes='nicht gesetzt'; AES='Nein'; RC4='(KDC-Default)'; DES='Nein'
+                        Privilegiert=$(if ($isPriv) { 'Ja' } else { 'Nein' })
+                        Aktiv=$(if ($c.Enabled) { 'Ja' } else { 'Nein' })
+                        Detail="Alter Client ($($c.OperatingSystem)) ohne AES-Attribute - nutzt vermutlich RC4, nach RC4-Abschaltung pruefen/migrieren"
+                        Risk='MEDIUM'
+                    }
+                }
+                continue
+            }
+            if ($hasAES -and -not $hasRC4 -and -not $hasDES) { $aesComps++; continue }
+            $problemComps++
+            $etype = ConvertTo-EtypeName -Enc $enc
+            if ($hasDES) {
+                $risk = 'HIGH'
+                $detail = "Computer unterstuetzt DES ($etype) - bricht nach RC4/DES-Abschaltung"
+            } elseif ($hasRC4 -and -not $hasAES) {
+                $risk = 'HIGH'
+                $detail = "Computer RC4-only ($etype): KEIN AES - bricht nach RC4-Abschaltung (Juli 2026)"
+            } else {
+                $risk = 'MEDIUM'
+                $detail = "Computer RC4+AES ($etype): Downgrade auf RC4 moeglich"
+            }
+            $result += [pscustomobject]@{
+                Kind='Konto'; Name=$c.Name; ObjektTyp='Computer'
+                EncryptionTypes=$etype; AES=$(if ($hasAES) { 'Ja' } else { 'Nein' }); RC4=$(if ($hasRC4) { 'Ja' } else { 'Nein' }); DES=$(if ($hasDES) { 'Ja' } else { 'Nein' })
+                Privilegiert=$(if ($isPriv) { 'Ja' } else { 'Nein' })
+                Aktiv=$(if ($c.Enabled) { 'Ja' } else { 'Nein' })
+                Detail=$detail; Risk=$risk
+            }
+        }
+    } catch { Write-Log "RCAESMigration Computer: $_" -Level WARN -NoConsole }
+
+    # --- KDC-Registry auf DCs (HKLM SupportedEncryptionTypes) ---
+    foreach ($dcName in @($Global:DCConnectivity.Keys)) {
+        $conn = $Global:DCConnectivity[$dcName]
+        if (-not $conn -or -not $conn.Reachable) { continue }
+        $sb = {
+            try {
+                $v = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\Kerberos\Parameters' -Name 'SupportedEncryptionTypes' -ErrorAction Stop).SupportedEncryptionTypes
+                [pscustomobject]@{ Found=$true; Value=[int]$v }
+            } catch { [pscustomobject]@{ Found=$false; Value=0 } }
+        }
+        $reg = Invoke-RemoteCommand -ComputerName $dcName -ScriptBlock $sb
+        if (-not $reg) {
+            $result += [pscustomobject]@{
+                Kind='KDC-Registry'; Name=$dcName; ObjektTyp='KDC'
+                EncryptionTypes='(nicht lesbar)'; AES='-'; RC4='-'; DES='-'
+                Privilegiert='-'; Aktiv='-'
+                Detail="Registry-Wert 'SupportedEncryptionTypes' nicht auslesbar (kein WinRM)"
+                Risk='-'
+            }
+            continue
+        }
+        if (-not $reg.Found) {
+            $result += [pscustomobject]@{
+                Kind='KDC-Registry'; Name=$dcName; ObjektTyp='KDC'
+                EncryptionTypes='nicht gesetzt'; AES='(Default)'; RC4='(Default)'; DES='(Default)'
+                Privilegiert='-'; Aktiv='-'
+                Detail='KDC nutzt Windows-Default-Etypes (nach RC4-Abschaltung: AES) - OK'
+                Risk='OK'
+            }
+        } else {
+            $enc = [int]$reg.Value
+            $hasRC4 = (($enc -band $rc4Bit) -ne 0)
+            $etype = ConvertTo-EtypeName -Enc $enc
+            $risk = if ($hasRC4) { 'MEDIUM' } else { 'OK' }
+            $detail = if ($hasRC4) { "KDC erlaubt explizit RC4 ($etype) - nach Migration auf AES-only (0x18) setzen" } else { "KDC-Registry gesetzt: $etype" }
+            $result += [pscustomobject]@{
+                Kind='KDC-Registry'; Name=$dcName; ObjektTyp='KDC'
+                EncryptionTypes=$etype; AES=$(if ($enc -band $aesBits) { 'Ja' } else { 'Nein' }); RC4=$(if ($hasRC4) { 'Ja' } else { 'Nein' }); DES=$(if ($enc -band $desBits) { 'Ja' } else { 'Nein' })
+                Privilegiert='-'; Aktiv='-'
+                Detail=$detail; Risk=$risk
+            }
+        }
+    }
+
+    # --- Summary ---
+    $result += [pscustomobject]@{
+        Kind='Summary'; Name='(Gesamt)'; ObjektTyp='-'
+        EncryptionTypes='-'; AES='-'; RC4='-'; DES='-'; Privilegiert='-'; Aktiv='-'
+        Detail=("User: {0} geprueft | ohne AES-Attribute: {1} | AES-ready: {2} | problembehaftet: {3} || Computer: {4} geprueft | ohne AES-Attribute: {5} | AES-ready: {6} | problembehaftet: {7} || WICHTIG: RC4 wird 2026 abgeschaltet (CVE-2026-20833) - alle problembehafteten Konten VORHER auf AES migrieren" `
+                -f $userTotal, $unsetUsers, $aesUsers, $problemUsers, $compTotal, $unsetComps, $aesComps, $problemComps)
+        Risk='OK'
+    }
+    return $result
+}
+
+function Get-DCSyncPermissions {
+    <#
+    .SYNOPSIS
+        Findet Objekte mit Replikations-Rechten (DCSync) auf dem Domain-Naming
+        Context. Ausserhalb der Standard-traeger (SYSTEM, Administrators, Domain
+        Controllers) erlauben diese Rechte die Extraktion ALLER Passwort-Hashes.
+    #>
+    $result = @()
+    try {
+        $domain = Get-ADDomain -ErrorAction Stop
+        $domainSID = $domain.DomainSID.Value
+        $acl = Get-Acl -Path "AD:$($domain.DistinguishedName)" -ErrorAction Stop
+        $rightMap = @{
+            '1131f6ad-9c07-11d1-f79f-00c04fc2dcd2' = 'Replicate-Changes'
+            '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2' = 'Replicate-Changes-All'
+            '89e95b76-444d-4c62-991a-0facbeda640c' = 'Replicate-Changes-FilteredSet'
+        }
+        $expectedSids = @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-9', "$domainSID-516")
+        $bySid = @{}
+        foreach ($ace in $acl.Access) {
+            if ($ace.AccessControlType -ne 'Allow') { continue }
+            $guid = if ($ace.ObjectType) { $ace.ObjectType.ToString().ToLower() } else { '' }
+            if (-not $rightMap.ContainsKey($guid)) { continue }
+            $sid = ''
+            try { $sid = $ace.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }
+            catch { $sid = "$($ace.IdentityReference)" }
+            if (-not $bySid.ContainsKey($sid)) { $bySid[$sid] = @{ Rights = @{}; Name = "$($ace.IdentityReference)" } }
+            $bySid[$sid].Rights[$rightMap[$guid]] = $true
+        }
+        foreach ($sid in ($bySid.Keys | Sort-Object)) {
+            $entry = $bySid[$sid]
+            $rights = @($entry.Rights.Keys | Sort-Object)
+            $hasAll = $entry.Rights.ContainsKey('Replicate-Changes-All')
+            $isExpected = ($expectedSids -contains $sid)
+            if ($isExpected) {
+                $risk = 'OK'
+                $detail = 'Standard-Rechteinhaber (DCs/SYSTEM/Administrators) - OK'
+            } elseif ($hasAll) {
+                $risk = 'CRITICAL'
+                $detail = "NICHT-Standard-Principal mit 'DS-Replication-Get-Changes-All' - volle DCSync-Faehigkeit: alle Passwort-Hashes der Domain extrahierbar!"
+            } else {
+                $risk = 'WARN'
+                $detail = "Replikations-Rechte ohne 'Get-Changes-All' - kein Hash-Zugriff, aber Replikation lesbar. Rechtnotwendigkeit pruefen"
+            }
+            $result += [pscustomobject]@{
+                Kind='DCSync-Recht'
+                Identity=$entry.Name; SID=$sid
+                Rechte=($rights -join '; ')
+                HatGetChangesAll=$(if ($hasAll) { 'Ja' } else { 'Nein' })
+                IstStandardTraeger=$(if ($isExpected) { 'Ja' } else { 'Nein' })
+                Detail=$detail; Risk=$risk
+            }
+        }
+        if ($result.Count -eq 0) {
+            $result += [pscustomobject]@{
+                Kind='Summary'; Identity='(keine)'; SID='-'; Rechte='-'
+                HatGetChangesAll='Nein'; IstStandardTraeger='Ja'
+                Detail='Keine Replikations-Rechte auf dem Domain-NC gefunden' ; Risk='OK'
+            }
+        }
+    } catch {
+        Write-Log "DCSyncPermissions: $_" -Level WARN -NoConsole
+        $result += [pscustomobject]@{
+            Kind='Error'; Identity='(Abfrage)'; SID='-'; Rechte='-'
+            HatGetChangesAll='-'; IstStandardTraeger='-'
+            Detail="ACL-Abfrage fehlgeschlagen: $_"; Risk='-'
+        }
+    }
+    return $result
+}
+
+function Get-RBCDDelegation {
+    <#
+    .SYNOPSIS
+        RBCD (resource-based constrained delegation) und Constrained Delegation.
+        RBCD-Eintrag = Prinzipal darf auf diesen Computer delegieren (PrivEsc-Pfad).
+        Constrained Delegation = Objekt darf auf bestimmte Dienste delegieren.
+    #>
+    $result = @()
+    # --- RBCD ---
+    try {
+        $comps = @(Get-ADComputer -Filter * -Properties msDS-AllowedToActOnBehalfOfOtherIdentity, OperatingSystem -ErrorAction Stop)
+        foreach ($c in $comps) {
+            $sd = $c.'msDS-AllowedToActOnBehalfOfOtherIdentity'
+            if (-not $sd) { continue }
+            $rules = @()
+            try { $rules = @($sd.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])) } catch {}
+            foreach ($rule in $rules) {
+                $sid = $rule.IdentityReference.Value
+                $name = $sid; $cls = 'unbekannt'
+                try { $name = ([System.Security.Principal.SecurityIdentifier]$sid).Translate([System.Security.Principal.NTAccount]).Value } catch {}
+                try { $cls = (Get-ADObject -Identity $sid -Properties objectClass -ErrorAction Stop).objectClass } catch {}
+                if ($cls -eq 'user') {
+                    $risk = 'HIGH'
+                    $detail = "USER mit RBCD-Recht auf '$($c.Name)' - kompromittierte User-Credentials erlauben Delegation/PrivEsc auf diesen Computer"
+                } else {
+                    $risk = 'MEDIUM'
+                    $detail = "RBCD-Prinzipal ($cls) darf auf '$($c.Name)' delegieren - uebliche Bastion/Management-Konfiguration, Noetigkeit pruefen"
+                }
+                $result += [pscustomobject]@{
+                    Kind='RBCD'; Name=$c.Name; ObjektTyp='Computer'; OS=$c.OperatingSystem
+                    Prinzipal=$name; PrinzipalTyp=$cls; Rechte='msDS-AllowedToActOnBehalfOfOtherIdentity'
+                    Protokollwechsel='-'; Detail=$detail; Risk=$risk
+                }
+            }
+        }
+    } catch { Write-Log "RBCD: $_" -Level WARN -NoConsole }
+
+    # --- Constrained Delegation ---
+    foreach ($kind in 'User','Computer') {
+        try {
+            if ($kind -eq 'User') {
+                $objs = @(Get-ADUser -Filter { msDS-AllowedToDelegateTo -like '*' } -Properties msDS-AllowedToDelegateTo, TrustedToAuthForDelegation -ErrorAction Stop)
+            } else {
+                $objs = @(Get-ADComputer -Filter { msDS-AllowedToDelegateTo -like '*' } -Properties msDS-AllowedToDelegateTo, TrustedToAuthForDelegation -ErrorAction Stop)
+            }
+            foreach ($o in $objs) {
+                $targets = (@($o.'msDS-AllowedToDelegateTo') -join '; ')
+                $trans = ($o.TrustedToAuthForDelegation -eq $true)
+                $risk = if ($kind -eq 'User' -and $trans) { 'HIGH' }
+                         elseif ($kind -eq 'User' -or $trans) { 'MEDIUM' }
+                         else { 'LOW' }
+                $detail = "Constrained Delegation an: $targets | Protokollwechsel (S4U2Self): $(if ($trans) { 'AKTIV' } else { 'Nein' })"
+                if ($trans) { $detail += ' - Protokollwechsel ermoeglicht TGT-Erwerb ohne Passwort, Ziel-SPNs pruefen' }
+                $result += [pscustomobject]@{
+                    Kind='Constrained'; Name=$o.SamAccountName; ObjektTyp=$kind; OS='-'
+                    Prinzipal=$targets; PrinzipalTyp='Ziel-SPNs'; Rechte='msDS-AllowedToDelegateTo'
+                    Protokollwechsel=$(if ($trans) { 'Ja' } else { 'Nein' }); Detail=$detail; Risk=$risk
+                }
+            }
+        } catch { Write-Log "ConstrainedDelegation $kind : $_" -Level WARN -NoConsole }
+    }
+    return $result
+}
+
+function Get-dMSAObjects {
+    <#
+    .SYNOPSIS
+        BadSuccessor (dMSA): Findet Delegated Managed Service Accounts und prueft,
+        ob msDS-DelegatedMSAState=2 (Migration abgeschlossen) gesetzt ist - dann
+        werden Kerberos-Tickets des dMSA mit den Rechten des uebernommenen Kontos
+        ausgestellt (BadSuccessor-Muster, 2025).
+    #>
+    $result = @()
+    try {
+        $schemaNC = (Get-ADRootDSE -ErrorAction Stop).schemaNamingContext
+        $class = Get-ADObject -LDAPFilter '(lDAPDisplayName=msDS-DelegatedManagedServiceAccount)' -SearchBase $schemaNC -SearchScope Subtree -ErrorAction Stop
+        if (-not $class) {
+            $result += [pscustomobject]@{
+                Kind='Schema'; Name='msDS-DelegatedManagedServiceAccount'; State='-'
+                UebernommenesKonto='-'; KontoPrivilegiert='-'
+                Detail='Schema-Klasse nicht vorhanden (kein Windows Server 2025 Schema) - BadSuccessor nicht anwendbar'
+                Risk='OK'
+            }
+            return $result
+        }
+        $dmsas = @()
+        try {
+            $dmsas = @(Get-ADObject -Filter "objectClass -eq 'msDS-DelegatedManagedServiceAccount'" -Properties msDS-DelegatedMSAState, msDS-SupersededServiceAccountState, msDS-ManagedAccountPrecededByLink -ErrorAction Stop)
+        } catch {
+            try { $dmsas = @(Get-ADObject -Filter "objectClass -eq 'msDS-DelegatedManagedServiceAccount'" -Properties msDS-DelegatedMSAState -ErrorAction Stop) }
+            catch { $dmsas = @(Get-ADObject -Filter "objectClass -eq 'msDS-DelegatedManagedServiceAccount'" -ErrorAction Stop) }
+        }
+        if ($dmsas.Count -eq 0) {
+            $result += [pscustomobject]@{
+                Kind='Summary'; Name='(keine dMSA)'; State='-'
+                UebernommenesKonto='-'; KontoPrivilegiert='-'
+                Detail='Schema vorhanden, aber keine dMSA-Objekte gefunden - BadSuccessor-Angriffsvektor derzeit nicht genutzt'
+                Risk='OK'
+            }
+            return $result
+        }
+        foreach ($o in $dmsas) {
+            $state = -1
+            try { $state = [int]$o.'msDS-DelegatedMSAState' } catch {}
+            $supDn = ''
+            try { $supDn = "$($o.'msDS-ManagedAccountPrecededByLink')" } catch {}
+            $supName = $supDn; $supPriv = '-'
+            if ($supDn) {
+                try {
+                    $sup = Get-ADUser -Identity $supDn -Properties adminCount -ErrorAction Stop
+                    $supName = $sup.SamAccountName
+                    $supPriv = if ($sup.adminCount -eq 1) { 'Ja' } else { 'Nein' }
+                } catch { $supName = $supDn }
+            }
+            $stateTxt = switch ($state) {
+                2 { '2 (Migration abgeschlossen - Superseding AKTIV)' }
+                1 { '1 (Migration angegeben)' }
+                0 { '0 (keine Migration)' }
+                default { "$state (unbekannt)" }
+            }
+            if ($state -eq 2) {
+                if ($supPriv -eq 'Ja') {
+                    $risk = 'CRITICAL'
+                    $detail = "BADSUCCESSOR-MUSTER: dMSA uebernimmt PRIVILEGIELIERTES Konto '$supName' (adminCount=1) - Tickets des dMSA gelten mit dessen Rechten! Objekt pruefen und ggf. loeschen"
+                } elseif ($supDn) {
+                    $risk = 'WARN'
+                    $detail = "dMSA uebernimmt Konto '$supName' (Migration abgeschlossen) - legitim nur wenn beabsichtigt, sonst Takeover-Pfad"
+                } else {
+                    $risk = 'WARN'
+                    $detail = 'Superseding AKTIV, aber kein uebernommenes Konto lesbar - Zustand pruefen'
+                }
+            } else {
+                $risk = 'MEDIUM'
+                $detail = "dMSA existiert (State=$state) - dMSA-Objekte sind neue Angriffsflaechen: Wer darf sie erstellen/aendern? (Write-Rechte auf Ziel-OU pruefen)"
+            }
+            $result += [pscustomobject]@{
+                Kind='dMSA'; Name=$o.Name; State=$stateTxt
+                UebernommenesKonto=$supName; KontoPrivilegiert=$supPriv
+                Detail=$detail; Risk=$risk
+            }
+        }
+    } catch {
+        Write-Log "dMSA: $_" -Level WARN -NoConsole
+        $result += [pscustomobject]@{
+            Kind='Error'; Name='(Abfrage)'; State='-'
+            UebernommenesKonto='-'; KontoPrivilegiert='-'
+            Detail="Abfrage fehlgeschlagen: $_"; Risk='-'
+        }
+    }
+    return $result
+}
+
+function Get-MachineAccountQuota {
+    <#
+    .SYNOPSIS
+        ms-DS-MachineAccountQuota: Default 10 erlaubt jedem beliebigen Benutzer,
+        bis zu 10 Computerkonten zu erstellen (Missbrauch fuer Enrollment-/
+        Delegation/ADCS-Angriffe). Best Practice: 0.
+    #>
+    $result = @()
+    try {
+        $domain = Get-ADDomain -ErrorAction Stop
+        $root = Get-ADObject -Identity $domain.DistinguishedName -Properties ms-DS-MachineAccountQuota -ErrorAction Stop
+        $q = -1
+        try { $q = [int]$root.'ms-DS-MachineAccountQuota' } catch {}
+        $note = ''
+        if ($q -lt 0) { $q = 10; $note = ' (Wert nicht lesbar - Default 10 angenommen)' }
+        if ($q -eq 0) {
+            $risk = 'OK'
+            $detail = 'MAQ=0 - Benutzer koennen keine Computerkonten erstellen (Best Practice)'
+        } else {
+            $risk = 'WARN'
+            $detail = "MAQ=$q$note - bis zu $q Computerkonten pro Benutzer erstellbar. Angreifer koennen so eigene Computerkonten fuer Enrollment/Delegation/ADCS-Angriffe anlegen. Empfehlung: Set-ADObject `"$($domain.DistinguishedName)`" -Replace @{'ms-DS-MachineAccountQuota'='0'}"
+        }
+        $result += [pscustomobject]@{
+            Einstellung='ms-DS-MachineAccountQuota'; Domain=$domain.DNSRoot; Wert=$q
+            Detail=$detail; Risk=$risk
+        }
+    } catch {
+        Write-Log "MachineAccountQuota: $_" -Level WARN -NoConsole
+        $result += [pscustomobject]@{
+            Einstellung='ms-DS-MachineAccountQuota'; Domain='-'; Wert=-1
+            Detail="Abfrage fehlgeschlagen: $_"; Risk='-'
+        }
+    }
+    return $result
+}
+
+function Get-AnonymousLDAP {
+    <#
+    .SYNOPSIS
+        Anonymer LDAP-Zugriff: Testet per anonymem Bind, ob ohne Anmeldung
+        Domain-Informationen lesbar sind, und zeigt die dSHeuristics.
+    #>
+    $result = @()
+    $pdc = $null
+    try { $pdc = (Get-ADDomain -ErrorAction Stop).PDCEmulator } catch {}
+    if (-not $pdc) { try { $pdc = (Get-ADRootDSE).dnsHostName } catch {} }
+
+    # --- Funktionaler Test: anonymer RootDSE-Bind ---
+    $ncExposed = $false
+    try {
+        $de = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$pdc/rootDSE", $null, $null, [System.DirectoryServices.AuthenticationTypes]::Anonymous)
+        $nc  = $de.Properties['defaultNamingContext'].Value
+        $ncs = @($de.Properties['namingContexts'] | ForEach-Object { $_.Value })
+        if ($nc) { $ncExposed = $true }
+        if ($ncs.Count -gt 0) { $ncExposed = $true }
+        if ($ncExposed) {
+            $risk = 'WARN'
+            $detail = "Anonym ohne Anmeldung lesbar: defaultNamingContext='$nc' / namingContexts=$($ncs.Count) - AD-Struktur fuer Angreifer ausforschbar"
+            $werte = 'NC-Informationen lesbar'
+        } else {
+            $risk = 'OK'
+            $detail = 'Anonyme RootDSE-Abfrage liefert keine NC-Informationen (Windows-Default) - OK'
+            $werte = 'nur RootDSE-Basis'
+        }
+        $result += [pscustomobject]@{ Test='Anonymer LDAP-Bind (funktional)'; Ziel=$pdc; Wert=$werte; Detail=$detail; Risk=$risk }
+    } catch {
+        $result += [pscustomobject]@{ Test='Anonymer LDAP-Bind (funktional)'; Ziel=$pdc; Wert='abgelehnt'; Detail="Anonymer LDAP-Bind wurde abgelehnt (Default ab Server 2003) - OK"; Risk='OK' }
+    }
+
+    # --- dSHeuristics aus Konfigurations-NC ---
+    try {
+        $confNC = (Get-ADRootDSE -ErrorAction Stop).configurationNamingContext
+        $ds = Get-ADObject -Identity "CN=Directory Service,CN=Windows NT,CN=Services,$confNC" -Properties dSHeuristics -ErrorAction Stop
+        $heur = $ds.dSHeuristics
+        if ($heur) {
+            $result += [pscustomobject]@{ Test='dSHeuristics'; Ziel='Directory Service'; Wert=$heur; Detail="dSHeuristics gesetzt: '$heur' - Heuristiken koennen u.a. anonymen LDAP-Zugriff erweitern (Position 7). Noetigkeit pruefen"; Risk='MEDIUM' }
+        } else {
+            $result += [pscustomobject]@{ Test='dSHeuristics'; Ziel='Directory Service'; Wert='(nicht gesetzt)'; Detail='dSHeuristics nicht gesetzt (Windows-Default) - OK'; Risk='OK' }
+        }
+    } catch {
+        $result += [pscustomobject]@{ Test='dSHeuristics'; Ziel='Directory Service'; Wert='-'; Detail="Abfrage fehlgeschlagen: $_"; Risk='-' }
+    }
+    return $result
+}
+
+function Get-GPPPasswords {
+    <#
+    .SYNOPSIS
+        Sucht in SYSVOL nach Group Policy Preferences XMLs mit cpassword-Attribut
+        (MS14-025): Die AES-Klartextschluessel sind oeffentlich, Passworte sind
+        damit fuer jedes domaeneangemeldete Konto entschluesselbar.
+    #>
+    $result = @()
+    try {
+        $domain = Get-ADDomain -ErrorAction Stop
+        $polPath = "\\$($domain.DNSRoot)\SYSVOL\$($domain.DNSRoot)\Policies"
+        if (-not (Test-Path -LiteralPath $polPath)) {
+            $result += [pscustomobject]@{ Kind='Error'; Datei='(SYSVOL)'; Benutzer='-'; Detail="SYSVOL-Pfad nicht erreichbar: $polPath"; Risk='-' }
+            return $result
+        }
+        $files = @(Get-ChildItem -LiteralPath $polPath -Recurse -File -Filter '*.xml' -ErrorAction SilentlyContinue)
+        $hits = 0; $maxRows = 200
+        foreach ($file in $files) {
+            $content = $null
+            try { $content = [System.IO.File]::ReadAllText($file.FullName) } catch { continue }
+            if (-not $content) { continue }
+            if ($content -match 'cpassword\s*=\s*"([^"]+)"') {
+                $cp = $Matches[1]
+                if ([string]::IsNullOrWhiteSpace($cp)) { continue }   # leeres Attribut = kein Passwort hinterlegt
+                $hits++
+                if ($hits -gt $maxRows) { continue }
+                $user = ''
+                if ($content -match 'userName\s*=\s*"([^"]*)"') { $user = $Matches[1] }
+                $rel = $file.FullName.Substring($polPath.Length).TrimStart('\')
+                $result += [pscustomobject]@{
+                    Kind='Fund'; Datei=$rel; Benutzer=$(if ($user) { $user } else { '(siehe Datei)' })
+                    Detail='Klartext-dechiffrierbares Passwort in GPP-XML (cpassword) - entschluesselbar durch JEDES domaeneangemeldete Konto (MS14-025). Passwort SOFORT setzen und Datei bereinigen'
+                    Risk='CRITICAL'
+                }
+            }
+        }
+        if ($hits -eq 0) {
+            $result += [pscustomobject]@{ Kind='Summary'; Datei='(SYSVOL)'; Benutzer='-'; Detail="Keine cpassword-Eintraege in $($files.Count) GPP-XML-Dateien gefunden - OK"; Risk='OK' }
+        } elseif ($hits -gt $maxRows) {
+            $result += [pscustomobject]@{ Kind='Summary'; Datei='(SYSVOL)'; Benutzer='-'; Detail="GESAMT $hits Funde - Anzeige auf $maxRows Zeilen begrenzt, uebrige Funde nicht aufgelistet"; Risk='CRITICAL' }
+        }
+    } catch {
+        Write-Log "GPPPasswords: $_" -Level WARN -NoConsole
+        $result += [pscustomobject]@{ Kind='Error'; Datei='(SYSVOL)'; Benutzer='-'; Detail="Abfrage fehlgeschlagen: $_"; Risk='-' }
+    }
+    return $result
+}
+
+function Get-ProtectedUsersAudit {
+    <#
+    .SYNOPSIS
+        Prueft, ob alle privilegierten Konten (Domain/Enterprise/Schema Admins,
+        BUILTIN Administrators, Built-in Administrator) Mitglied der Gruppe
+        'Protected Users' sind (Best Practice ab Server 2012).
+    #>
+    $result = @()
+    try {
+        $domain = Get-ADDomain -ErrorAction Stop
+        $forest = Get-ADForest -ErrorAction Stop
+        $domainSID = $domain.DomainSID.Value
+        $rootDomainSID = $null
+        try { $rootDomainSID = (Get-ADDomain -Identity $forest.RootDomain -ErrorAction Stop).DomainSID.Value } catch { $rootDomainSID = $domainSID }
+
+        # Protected Users per Well-Known RID 525 (sprachunabhaengig)
+        $protSids = @{}
+        $protGroup = $null
+        try { $protGroup = Get-ADGroup -Identity "$domainSID-525" -ErrorAction Stop } catch {}
+        if ($protGroup) {
+            try {
+                foreach ($m in @(Get-ADGroupMember -Identity $protGroup -Recursive -ErrorAction Stop)) { $protSids[$m.SID.Value] = $true }
+            } catch { Write-Log "ProtectedUsers Mitglieder: $_" -Level WARN -NoConsole }
+        }
+
+        $targets = @(
+            @{ Name='Domain Admins';       SID="$domainSID-512" }
+            @{ Name='Enterprise Admins';   SID="$rootDomainSID-519" }
+            @{ Name='Schema Admins';       SID="$rootDomainSID-518" }
+            @{ Name='BUILTIN Administrators'; SID="$domainSID-544" }
+        )
+        $seen = @{}
+        foreach ($t in $targets) {
+            $grp = $null
+            try { $grp = Get-ADGroup -Identity $t.SID -ErrorAction Stop } catch {}
+            if (-not $grp) { continue }
+            $members = @()
+            try { $members = @(Get-ADGroupMember -Identity $grp -Recursive -ErrorAction Stop) }
+            catch {
+                $result += [pscustomobject]@{
+                    Kind='Gruppe'; Account="($($t.Name))"; Gruppen='-'; InProtectedUsers='-'; Aktiv='-'
+                    Detail="Mitglieder von '$($t.Name)' nicht auslesbar (fremde Domain/Vertrauensstellung?): $_"
+                    Risk='MEDIUM'
+                }
+                continue
+            }
+            foreach ($m in $members) {
+                if ($m.objectClass -ne 'user') { continue }
+                if ($m.SamAccountName -ieq 'krbtgt') { continue }
+                $sid = $m.SID.Value
+                if ($seen.ContainsKey($sid)) { $seen[$sid].Groups += $t.Name; continue }
+                $inProt = $protSids.ContainsKey($sid)
+                $enabled = '-'
+                try { $enabled = if ((Get-ADUser -Identity $sid -Properties Enabled -ErrorAction Stop).Enabled) { 'Ja' } else { 'Nein' } } catch {}
+                $isBreakGlass = ($sid -eq "$domainSID-500")
+                if ($inProt) {
+                    $risk = 'OK'
+                    $detail = 'In Protected Users - OK'
+                } elseif ($isBreakGlass) {
+                    $risk = 'WARN'
+                    $detail = 'Built-in Administrator NICHT in Protected Users (Break-Glass - Ausnahme oft beabsichtigt, trotzdem dokumentieren)'
+                } else {
+                    $risk = 'WARN'
+                    $detail = 'Privilegiertes Konto NICHT in Protected Users - erhaelt weiterhin volle NTLM/NetNTLM/DES-Faehigkeiten. Empfehlung: aufnehmen (Ausnahme: dokumentiertes Break-Glass-Konto)'
+                }
+                $seen[$sid] = @{ Name=$m.SamAccountName; Groups=@($t.Name); InProt=$inProt; Enabled=$enabled; Risk=$risk; Detail=$detail }
+            }
+        }
+        foreach ($sid in ($seen.Keys | Sort-Object)) {
+            $e = $seen[$sid]
+            $result += [pscustomobject]@{
+                Kind='Konto'; Account=$e.Name; Gruppen=(@($e.Groups) -join ', ')
+                InProtectedUsers=$(if ($e.InProt) { 'Ja' } else { 'Nein' })
+                Aktiv=$e.Enabled; Detail=$e.Detail; Risk=$e.Risk
+            }
+        }
+        if (-not $protGroup) {
+            $result += [pscustomobject]@{
+                Kind='Summary'; Account='(Protected Users)'; Gruppen='-'; InProtectedUsers='-'; Aktiv='-'
+                Detail='Gruppe mit RID 525 nicht gefunden - Domain Level < 2012? Protected Users nicht verfuegbar'
+                Risk='WARN'
+            }
+        }
+    } catch {
+        Write-Log "ProtectedUsers: $_" -Level WARN -NoConsole
+        $result += [pscustomobject]@{
+            Kind='Error'; Account='(Abfrage)'; Gruppen='-'; InProtectedUsers='-'; Aktiv='-'
+            Detail="Abfrage fehlgeschlagen: $_"; Risk='-'
+        }
+    }
+    return $result
+}
+
 #endregion
 
 #region ============= ASSESSMENT-ENGINE ======================================
@@ -2673,12 +3554,30 @@ function Test-Check-Services {
     $f=@(); $rf=@{}; $c=$false
     foreach ($s in $data) {
         $id="$($s.DCName)|$($s.Service)"
-        if ($s.Status -eq 'NotFound' -and $s.Service -in 'NTDS','Netlogon','KDC','W32Time','DNS') { $f += "KRIT: $($s.Service) auf $($s.DCName) fehlt"; $rf[$id]='CRITICAL'; $c=$true }
-        elseif ($s.Status -ne 'Running' -and $s.Status -ne 'NotFound') { $f += "$($s.Service) auf $($s.DCName): $($s.Status)"; $rf[$id]='WARN' }
-        else { $rf[$id]='OK' }
+        switch ($s.Service) {
+            { $_ -in 'NTDS','Netlogon','KDC','W32Time','DNS' } {
+                if ($s.Status -eq 'NotFound') { $f += "KRIT: $($_) auf $($s.DCName) fehlt"; $rf[$id]='CRITICAL'; $c=$true }
+                elseif ($s.Status -ne 'Running') { $f += "$($_) auf $($s.DCName): $($s.Status)"; $rf[$id]='WARN' }
+                else { $rf[$id]='OK' }
+            }
+            'DFSR' {
+                # SYSVOL-Replikation via DFSR = Best Practice
+                if ($s.Status -eq 'Running') { $rf[$id]='OK' }
+                else { $f += "DFSR auf $($s.DCName): $($s.Status) - SYSVOL-Replizierung betroffen!"; $rf[$id]='WARN' }
+            }
+            'NTFRS' {
+                # Legacy-FRS: Gestoppt/Disabled/NotFound = OPTIMAL (DFSR uebernimmt SYSVOL)
+                if ($s.Status -eq 'Running') { $f += "NTFRS (LEGACY) laeuft auf $($s.DCName) - nur noetig, wenn SYSVOL noch via FRS repliziert wird"; $rf[$id]='WARN' }
+                else { $rf[$id]='OK' }
+            }
+            default {
+                if ($s.Status -ne 'Running' -and $s.Status -ne 'NotFound') { $f += "$($s.Service) auf $($s.DCName): $($s.Status)"; $rf[$id]='WARN' }
+                else { $rf[$id]='OK' }
+            }
+        }
     }
     $st = if ($c) { 'CRITICAL' } elseif ($f.Count) { 'WARN' } else { 'OK' }
-    New-Assessment -OverallStatus $st -Summary $(if($st -eq 'OK'){'Alle Dienste OK'}else{"$($f.Count) Problem(e)"}) -Findings $f -RowFlags $rf
+    New-Assessment -OverallStatus $st -Summary $(if($st -eq 'OK'){'Alle Dienste OK (NTFRS gestoppt = Best Practice)'}else{"$($f.Count) Problem(e)"}) -Findings $f -RowFlags $rf
 }
 
 function Test-Check-DCDiag {
@@ -3112,6 +4011,37 @@ function Test-Check-WindowsUpdates {
     New-Assessment -OverallStatus $s -Summary $(if($s -eq 'OK'){'Alle aktuell'}else{"$($f.Count) veraltet"}) -Findings $f -RowFlags $rf
 }
 
+function Test-Check-WindowsFeatures {
+    param($data); if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $total = @($data).Count
+    $per = $data | Group-Object DCName | ForEach-Object { "$($_.Name): $($_.Count)" }
+    New-Assessment -OverallStatus 'INFO' -Summary "Gesamt $total installierte Feature(s) | $($per -join ' | ')"
+}
+
+function Test-Check-Shares {
+    param($data); if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $f=@(); $rf=@{}; $w=$false
+    # Standard-Freigaben auf DCs: SYSVOL/NETLOGON haben per Default 'Everyone'-Rechte (nur Lesen auf Freigabenebene,
+    # die eigentliche Steuerung erfolgt ueber NTFS). ADMIN$/C$/IPC$ sind System-Freigaben.
+    $stdShares = @('SYSVOL','NETLOGON','ADMIN$','C$','D$','E$','IPC$','print$','FAX$')
+    foreach ($row in $data) {
+        $id = "$($row.DCName)|$($row.Name)"
+        if (-not $row.Name -or $row.Name -eq '(keine Daten)') { continue }
+        $rf[$id]='OK'
+        # Warnung nur bei NICHT-Standard-Freigaben mit Everyone/Gast + Full/Change
+        if ($stdShares -notcontains $row.Name -and $row.Permissions -and
+            $row.Permissions -match '(?i)(everyone|jeder|anonymous|anonym|gast|guest).*(full|change|vollzugriff|ändern|aendern)') {
+            $f += "$($row.DCName): Freigabe '$($row.Name)' erlaubt 'Everyone' mit Full/Change-Zugriff"
+            $rf[$id]='WARN'; $w=$true
+        }
+    }
+    $custom = @($data | Where-Object { $stdShares -notcontains $_.Name -and $_.Name -ne '(keine Daten)' })
+    $per = $data | Group-Object DCName | ForEach-Object { "$($_.Name): $($_.Count)" }
+    $sum = "Gesamt $($data.Count) Freigabe(n), davon $($custom.Count) benutzerdefiniert | $($per -join ' | ')"
+    $s = if ($w) { 'WARN' } else { 'INFO' }
+    New-Assessment -OverallStatus $s -Summary $sum -Findings $f -RowFlags $rf
+}
+
 function Test-Check-SPNDuplicates {
     param($data); if (-not $data -or @($data).Count -eq 0) { return New-Assessment -OverallStatus 'OK' -Summary 'Keine SPN-Dubletten' }
     $f=@(); $rf=@{}
@@ -3300,6 +4230,136 @@ function Test-Check-AccountsWithoutAES {
     New-Assessment -OverallStatus $s -Summary $summary_text -Findings $f -RowFlags $rf
 }
 
+function Test-Check-RCAESMigration {
+    param($data); if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine RC4/AES-Migrationsdaten' }
+    $f=@(); $rf=@{}; $c=$false; $w=$false; $critN=0; $warnN=0
+    foreach ($row in $data) {
+        $id = "$($row.Kind)|$($row.Name)"
+        if ($row.Kind -eq 'Summary') { $rf[$id]='OK'; continue }
+        switch ($row.Risk) {
+            'CRITICAL' { $rf[$id]='CRITICAL'; $c=$true; $critN++; if ($f.Count -lt 30) { $f += "  [KRITISCH] $($row.Name) ($($row.ObjektTyp)): $($row.Detail)" } }
+            'HIGH'     { $rf[$id]='CRITICAL'; $c=$true; $critN++; if ($f.Count -lt 30) { $f += "  [KRITISCH] $($row.Name) ($($row.ObjektTyp)): $($row.Detail)" } }
+            'MEDIUM'   { $rf[$id]='WARN'; $w=$true; $warnN++; if ($f.Count -lt 30) { $f += "  [WARN] $($row.Name) ($($row.ObjektTyp)): $($row.Detail)" } }
+            'WARN'     { $rf[$id]='WARN'; $w=$true; $warnN++; if ($f.Count -lt 30) { $f += "  [WARN] $($row.Name) ($($row.ObjektTyp)): $($row.Detail)" } }
+            default    { $rf[$id]='OK' }
+        }
+    }
+    if (($critN + $warnN) -gt 30) { $f += "  ... und $($critN + $warnN - 30) weitere Befunde (siehe Detailtabelle/CSV)" }
+    $s = if ($c) { 'CRITICAL' } elseif ($w) { 'WARN' } else { 'OK' }
+    New-Assessment -OverallStatus $s -Summary "$critN kritische | $warnN Warnung(en) - RC4-Migration (CVE-2026-20833, RC4-Ende 2026)" -Findings $f -RowFlags $rf
+}
+
+function Test-Check-DCSyncPermissions {
+    param($data); if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine DCSync-Daten' }
+    $f=@(); $rf=@{}; $c=$false; $w=$false
+    $bad    = @($data | Where-Object { $_.IstStandardTraeger -eq 'Nein' })
+    $crit   = @($bad    | Where-Object { $_.HatGetChangesAll -eq 'Ja' })
+    $warner = @($bad    | Where-Object { $_.HatGetChangesAll -ne 'Ja' })
+    foreach ($row in $data) {
+        $id = "$($row.Kind)|$($row.SID)"
+        $rf[$id] = switch ($row.Risk) { 'CRITICAL' { 'CRITICAL' } 'WARN' { 'WARN' } 'OK' { 'OK' } default { '' } }
+    }
+    foreach ($row in $crit) { $c=$true; $f += "  [KRITISCH] '$($row.Identity)' ($($row.SID)): DCSync-Rechte ausserhalb der DCs - Hash-Extraktion moeglich!" }
+    foreach ($row in $warner) { $w=$true; $f += "  [WARN] '$($row.Identity)' ($($row.SID)): $($row.Rechte)" }
+    $s = if ($c) { 'CRITICAL' } elseif ($w) { 'WARN' } else { 'OK' }
+    New-Assessment -OverallStatus $s -Summary "$(@($data).Count) Rechteinhaber | Nicht-Standard: $($bad.Count) (davon mit Get-Changes-All: $($crit.Count))" -Findings $f -RowFlags $rf
+}
+
+function Test-Check-RBCDDelegation {
+    param($data); if (-not $data -or @($data).Count -eq 0) { return New-Assessment -OverallStatus 'OK' -Summary 'Keine RBCD/Constrained-Delegation-Eintraege' }
+    $f=@(); $rf=@{}; $c=$false; $w=$false; $critN=0; $warnN=0
+    foreach ($row in $data) {
+        $id = "$($row.Kind)|$($row.Name)|$($row.Prinzipal)"
+        switch ($row.Risk) {
+            'HIGH'   { $rf[$id]='CRITICAL'; $c=$true; $critN++;   if ($f.Count -lt 30) { $f += "  [KRITISCH] [$($row.Kind)] $($row.Name) -> $($row.Prinzipal): $($row.Detail)" } }
+            'MEDIUM' { $rf[$id]='WARN';     $w=$true; $warnN++;   if ($f.Count -lt 30) { $f += "  [WARN] [$($row.Kind)] $($row.Name) -> $($row.Prinzipal)" } }
+            default  { $rf[$id]='OK' }
+        }
+    }
+    if (($critN + $warnN) -gt 30) { $f += "  ... und $($critN + $warnN - 30) weitere Eintraege (siehe Detailtabelle/CSV)" }
+    $s = if ($c) { 'CRITICAL' } elseif ($w) { 'WARN' } else { 'INFO' }
+    New-Assessment -OverallStatus $s -Summary "$(@($data).Count) Eintraege (RBCD + Constrained Delegation) | KRITISCH: $critN | WARN: $warnN" -Findings $f -RowFlags $rf
+}
+
+function Test-Check-dMSA {
+    param($data); if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine dMSA-Daten' }
+    $f=@(); $rf=@{}; $c=$false; $w=$false; $dmsaN=0
+    $schemaRow = @($data | Where-Object { $_.Kind -eq 'Schema' }) | Select-Object -First 1
+    foreach ($row in $data) {
+        $id = "$($row.Kind)|$($row.Name)"
+        switch ($row.Risk) {
+            'CRITICAL' { $rf[$id]='CRITICAL'; $c=$true; $f += "  [KRITISCH] $($row.Name): $($row.Detail)" }
+            'WARN'     { $rf[$id]='WARN';     $w=$true; $f += "  [WARN] $($row.Name): $($row.Detail)" }
+            'MEDIUM'   { $rf[$id]='';         $dmsaN++; if ($f.Count -lt 20) { $f += "  [INFO] $($row.Name): $($row.Detail)" } }
+            default    { $rf[$id]='OK' }
+        }
+    }
+    $s = if ($c) { 'CRITICAL' } elseif ($w) { 'WARN' } elseif ($dmsaN -gt 0) { 'INFO' } else { 'OK' }
+    $sum = if ($schemaRow)     { 'Schema-Klasse nicht vorhanden - BadSuccessor nicht anwendbar' }
+           elseif ($c -or $w)  { 'dMSA mit Superseding gefunden - BADSUCCESSOR-MUSTER PRUEFEN!' }
+           elseif ($dmsaN -gt 0) { "$dmsaN dMSA-Objekt(e), kein Superseding aktiv - Objekte auf Missbrauch pruefen" }
+           else                { 'Keine dMSA-Objekte - BadSuccessor-Vektor nicht vorhanden' }
+    New-Assessment -OverallStatus $s -Summary $sum -Findings $f -RowFlags $rf
+}
+
+function Test-Check-MachineAccountQuota {
+    param($data); if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine MAQ-Daten' }
+    $f=@(); $rf=@{}
+    $row = @($data) | Select-Object -First 1
+    $rf['ms-DS-MachineAccountQuota'] = switch ($row.Risk) { 'WARN' { 'WARN' } 'OK' { 'OK' } default { '' } }
+    if ($row.Risk -eq 'WARN') { $f += "  [WARN] $($row.Detail)" } else { $f += "  $($row.Detail)" }
+    $s = if ($row.Risk -in 'OK','WARN') { $row.Risk } else { 'NODATA' }
+    New-Assessment -OverallStatus $s -Summary "MachineAccountQuota = $($row.Wert)" -Findings $f -RowFlags $rf
+}
+
+function Test-Check-AnonymousLDAP {
+    param($data); if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine LDAP-Anonym-Daten' }
+    $f=@(); $rf=@{}; $c=$false; $w=$false
+    foreach ($row in $data) {
+        $rf[$row.Test] = switch ($row.Risk) { 'CRITICAL' { 'CRITICAL' } 'WARN' { 'WARN' } 'MEDIUM' { 'WARN' } 'OK' { 'OK' } default { '' } }
+        if ($row.Risk -eq 'CRITICAL') { $c=$true; $f += "  [KRITISCH] $($row.Test): $($row.Detail)" }
+        elseif ($row.Risk -in 'WARN','MEDIUM') { $w=$true; $f += "  [WARN] $($row.Test): $($row.Detail)" }
+        else { $f += "  $($row.Test): $($row.Detail)" }
+    }
+    $s = if ($c) { 'CRITICAL' } elseif ($w) { 'WARN' } else { 'OK' }
+    New-Assessment -OverallStatus $s -Summary "$(@($data).Count) Pruefpunkt(e) - anonymer LDAP-Zugriff" -Findings $f -RowFlags $rf
+}
+
+function Test-Check-GPPPasswords {
+    param($data); if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine SYSVOL-Daten' }
+    $f=@(); $rf=@{}
+    $hits = @($data | Where-Object { $_.Kind -eq 'Fund' })
+    foreach ($row in $hits) {
+        $rf[$row.Datei] = 'CRITICAL'
+        if ($f.Count -lt 20) {
+            $who = if ($row.Benutzer -ne '(siehe Datei)') { " ($($row.Benutzer))" } else { '' }
+            $f += "  [KRITISCH] $($row.Datei)$who - cpassword gefunden"
+        }
+    }
+    if ($hits.Count -gt 20) { $f += "  ... und $($hits.Count - 20) weitere Funde" }
+    $s = if ($hits.Count -gt 0) { 'CRITICAL' } else { 'OK' }
+    $sum = if ($hits.Count -gt 0) { "$($hits.Count) GPP-XML(s) mit entschluesselbarem cpassword (MS14-025)" } else { 'Keine cpassword-Eintraege in SYSVOL' }
+    New-Assessment -OverallStatus $s -Summary $sum -Findings $f -RowFlags $rf
+}
+
+function Test-Check-ProtectedUsers {
+    param($data); if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Protected-Users-Daten' }
+    $f=@(); $rf=@{}; $w=$false
+    $accounts = @($data | Where-Object { $_.Kind -eq 'Konto' })
+    $inProt   = @($accounts | Where-Object { $_.InProtectedUsers -eq 'Ja' })
+    $missing  = @($accounts | Where-Object { $_.InProtectedUsers -eq 'Nein' })
+    foreach ($row in $data) {
+        $rf[$row.Account] = switch ($row.Risk) { 'WARN' { 'WARN' } 'MEDIUM' { 'WARN' } 'OK' { 'OK' } default { '' } }
+        if ($row.Risk -in 'WARN','MEDIUM') {
+            $w = $true
+            if ($f.Count -lt 25) { $f += "  [WARN] $($row.Account) ($($row.Gruppen)): $($row.Detail)" }
+        }
+    }
+    if ($missing.Count -gt 25) { $f += "  ... und $($missing.Count - 25) weitere Konten ohne Protected-Users-Mitgliedschaft" }
+    $s = if ($w) { 'WARN' } else { 'OK' }
+    New-Assessment -OverallStatus $s -Summary "$($inProt.Count)/$($accounts.Count) privilegierte Konten in Protected Users" -Findings $f -RowFlags $rf
+}
+
 function Invoke-AllAssessments {
     Write-Host "`n==== BEST-PRACTICE-BEWERTUNG ====" -ForegroundColor Magenta
     $map = @{
@@ -3355,6 +4415,16 @@ function Invoke-AllAssessments {
         '42_DNSHygiene'              = { Test-Check-DNSHygiene              $Global:Results['42_DNSHygiene'] }
         '43_LAPS'                    = { Test-Check-LAPS                    $Global:Results['43_LAPS'] }
         '44_AccountsWithoutAES'      = { Test-Check-AccountsWithoutAES      $Global:Results['44_AccountsWithoutAES'] }
+        '45_WindowsFeatures'         = { Test-Check-WindowsFeatures         $Global:Results['45_WindowsFeatures'] }
+        '46_Shares'                  = { Test-Check-Shares                  $Global:Results['46_Shares'] }
+        '47_RCAESMigration'          = { Test-Check-RCAESMigration          $Global:Results['47_RCAESMigration'] }
+        '48_DCSyncPermissions'       = { Test-Check-DCSyncPermissions       $Global:Results['48_DCSyncPermissions'] }
+        '49_RBCDDelegation'          = { Test-Check-RBCDDelegation          $Global:Results['49_RBCDDelegation'] }
+        '50_dMSA'                    = { Test-Check-dMSA                    $Global:Results['50_dMSA'] }
+        '51_MachineAccountQuota'     = { Test-Check-MachineAccountQuota     $Global:Results['51_MachineAccountQuota'] }
+        '52_AnonymousLDAP'           = { Test-Check-AnonymousLDAP           $Global:Results['52_AnonymousLDAP'] }
+        '53_GPPPasswords'            = { Test-Check-GPPPasswords            $Global:Results['53_GPPPasswords'] }
+        '54_ProtectedUsers'          = { Test-Check-ProtectedUsers          $Global:Results['54_ProtectedUsers'] }
     }
     $toAssess = @()
     foreach ($k in $Global:ReportTitles.Keys) {
@@ -3463,6 +4533,8 @@ tr:nth-child(even){background:#fafafa;}
 .findings ul{margin:5px 0 5px 20px;}
 tr.row-warn{background:#fff3cd !important;}
 tr.row-crit{background:#f8d7da !important;}
+.group-banner{background:#003366;color:#fff;padding:10px 12px;margin-top:30px;border-radius:6px;font-size:16px;font-weight:bold;}
+tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
 .overview tbody tr:hover { background:#8ecdfa; cursor:pointer; }
 .footer{margin-top:40px;padding:15px;color:#777;font-size:11px;text-align:center;border-top:1px solid #ddd;}
 </style>
@@ -3487,24 +4559,30 @@ tr.row-crit{background:#f8d7da !important;}
         [void]$sb.AppendLine("<div class='dash-tile dash-info'><span class='n'>$($cI+$cN)</span><span class='l'>INFO</span></div>")
         [void]$sb.AppendLine("</div></div>")
 
-        # --- Uebersichts-Tabelle (# = laufende Nummer) ---
+        # --- Uebersichts-Tabelle (gruppiert nach GUI-Kategorien) ---
         [void]$sb.AppendLine("<h2>Uebersicht aller Checks</h2>")
         [void]$sb.AppendLine("<table class='overview'><thead><tr><th style='width:40px;'>#</th><th>Check</th><th class='status-cell'>Status</th><th>Zusammenfassung</th></tr></thead><tbody>")
         $i = 0
-        foreach ($k in Get-ReportKeys) {
-            $t = $Global:ReportTitles[$k]
-            $a = $Global:Assessments[$k]
-            if (-not $a) { continue }
-            $i++
-            $b = Get-StatusBadgeHtml -Status $a.OverallStatus
-            $s = if ($a.Summary) { $a.Summary } else { '-' }
-            [void]$sb.AppendLine("<tr><td>$i</td><td><a href='#$k'>$t</a></td><td>$b</td><td>$s</td></tr>")
+        foreach ($cat in (Get-GroupedReportKeys).Keys) {
+            $catKeys = (Get-GroupedReportKeys)[$cat]
+            [void]$sb.AppendLine("<tr class='group-row'><td colspan='4'>$cat</td></tr>")
+            foreach ($k in $catKeys) {
+                $t = $Global:ReportTitles[$k]
+                $a = $Global:Assessments[$k]
+                if (-not $a) { continue }
+                $i++
+                $b = Get-StatusBadgeHtml -Status $a.OverallStatus
+                $s = if ($a.Summary) { $a.Summary } else { '-' }
+                [void]$sb.AppendLine("<tr><td>$i</td><td><a href='#$k'>$t</a></td><td>$b</td><td>$s</td></tr>")
+            }
         }
         [void]$sb.AppendLine("</tbody></table>")
 
-                # --- Detail-Abschnitte ---
+                # --- Detail-Abschnitte (gruppiert nach GUI-Kategorien) ---
         $j = 0
-        foreach ($k in Get-ReportKeys) {
+        foreach ($cat in (Get-GroupedReportKeys).Keys) {
+        [void]$sb.AppendLine("<div class='group-banner'>$cat</div>")
+        foreach ($k in (Get-GroupedReportKeys)[$cat]) {
             $t = $Global:ReportTitles[$k]
             $a = $Global:Assessments[$k]
             if (-not $a) { continue }
@@ -3571,6 +4649,16 @@ tr.row-crit{background:#f8d7da !important;}
                             '40_AdminSDHolderDrift'      { $row.SamAccount }
                             '41_FGPP'                    { $row.Name }
                             '42_DNSHygiene'              { "$($row.Kind)|$($row.Target)" }
+                            '45_WindowsFeatures'         { "$($row.DCName)|$($row.Name)" }
+                            '46_Shares'                  { "$($row.DCName)|$($row.Name)" }
+                            '47_RCAESMigration'          { "$($row.Kind)|$($row.Name)" }
+                            '48_DCSyncPermissions'       { "$($row.Kind)|$($row.SID)" }
+                            '49_RBCDDelegation'          { "$($row.Kind)|$($row.Name)|$($row.Prinzipal)" }
+                            '50_dMSA'                    { "$($row.Kind)|$($row.Name)" }
+                            '51_MachineAccountQuota'     { $row.Einstellung }
+                            '52_AnonymousLDAP'           { $row.Test }
+                            '53_GPPPasswords'            { $row.Datei }
+                            '54_ProtectedUsers'          { $row.Account }
                             default                      { '' }
                         }
                         $cls = ''
@@ -3600,6 +4688,7 @@ tr.row-crit{background:#f8d7da !important;}
                 [void]$sb.AppendLine("<pre>$($items | Out-String)</pre>")
                 Write-Host ("  [!] {0,-32} -> Fallback" -f $k) -ForegroundColor Yellow
             }
+        }
         }
 
         [void]$sb.AppendLine("<div class='footer'>Erzeugt von <b>$Global:ScriptName v$Global:ScriptVersion</b> &nbsp;|&nbsp; $(Get-Date -Format 'dd.MM.yyyy HH:mm:ss') &nbsp;|&nbsp; Laufzeit: $((New-TimeSpan -Start $Global:ProgressStats.StartTime -End (Get-Date)).ToString('hh\:mm\:ss'))</div>")
@@ -3739,12 +4828,15 @@ function Start-ADHealthCheck {
         $selPerDC  = @('01_DCSystemInfo','02_Services','03_DCDiag','04_Replication','06_DNS','07_SYSVOL','08_Database',
                        '09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
                        '21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
-                       '33_EventLog','34_TimeSync','36_InstalledPrograms','37_WindowsUpdates') |
+                       '33_EventLog','34_TimeSync','36_InstalledPrograms','37_WindowsUpdates',
+               '45_WindowsFeatures','46_Shares') |
                      Where-Object { $Global:SelectedChecks -contains $_ }
         $selForest = @('04b_ReplicationFailures','05_FSMO','16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos',
                        '19_UnconstrainedDelegation','20_KerberoastingRisk','25_Sites','26_Subnets','27_Trusts',
                                              '28_ADRecycleBin','29_TombstoneLifetime','30_Levels','31_GPO','35_Backup',
-                                             '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES') |
+                                             '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
+                                             '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
+                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers') |
                      Where-Object { $Global:SelectedChecks -contains $_ }
         $selInact = if ((Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')) { 1 } else { 0 }
         $Global:ProgressStats.TotalChecks = ($selPerDC.Count * $dcCountReachable) + $selForest.Count + $selInact + $dcCount
@@ -3781,6 +4873,8 @@ function Start-ADHealthCheck {
                 if (Test-IsCheckSelected '34_TimeSync')         { $r = Invoke-TimedCheck -CheckKey '34_TimeSync'         -DCName $dcName -ScriptBlock { Get-TimeSyncStatus        -DC $dcName -PDCEmulator $pdcEmulator }; if ($r) { $Global:Results['34_TimeSync'] += $r } }
                 if (Test-IsCheckSelected '36_InstalledPrograms'){ $r = Invoke-TimedCheck -CheckKey '36_InstalledPrograms'-DCName $dcName -ScriptBlock { Get-InstalledPrograms     -DC $dcName }; if ($r) { $Global:Results['36_InstalledPrograms'] += $r } }
                 if (Test-IsCheckSelected '37_WindowsUpdates')   { $r = Invoke-TimedCheck -CheckKey '37_WindowsUpdates'   -DCName $dcName -ScriptBlock { Get-WindowsUpdates        -DC $dcName }; if ($r) { $Global:Results['37_WindowsUpdates']  += $r } }
+                if (Test-IsCheckSelected '45_WindowsFeatures')  { $r = Invoke-TimedCheck -CheckKey '45_WindowsFeatures'  -DCName $dcName -ScriptBlock { Get-WindowsFeatures       -DC $dcName }; if ($r) { $Global:Results['45_WindowsFeatures'] += $r } }
+                if (Test-IsCheckSelected '46_Shares')           { $r = Invoke-TimedCheck -CheckKey '46_Shares'           -DCName $dcName -ScriptBlock { Get-Shares                -DC $dcName }; if ($r) { $Global:Results['46_Shares']          += $r } }
             }
         }
 
@@ -3809,6 +4903,14 @@ function Start-ADHealthCheck {
         if (Test-IsCheckSelected '42_DNSHygiene')              { $r = Invoke-TimedCheck -CheckKey '42_DNSHygiene'              -ScriptBlock { Get-DNSHygiene };              $Global:Results['42_DNSHygiene']              = @($r) }
         if (Test-IsCheckSelected '43_LAPS')                    { $r = Invoke-TimedCheck -CheckKey '43_LAPS'                    -ScriptBlock { Get-LAPSConfiguration };       $Global:Results['43_LAPS']                    = @($r) }
         if (Test-IsCheckSelected '44_AccountsWithoutAES')      { $r = Invoke-TimedCheck -CheckKey '44_AccountsWithoutAES'      -ScriptBlock { Get-AccountsWithoutAES };      $Global:Results['44_AccountsWithoutAES']      = @($r) }
+        if (Test-IsCheckSelected '47_RCAESMigration')          { $r = Invoke-TimedCheck -CheckKey '47_RCAESMigration'          -ScriptBlock { Get-RCAESMigration };          $Global:Results['47_RCAESMigration']          = @($r) }
+        if (Test-IsCheckSelected '48_DCSyncPermissions')       { $r = Invoke-TimedCheck -CheckKey '48_DCSyncPermissions'       -ScriptBlock { Get-DCSyncPermissions };       $Global:Results['48_DCSyncPermissions']       = @($r) }
+        if (Test-IsCheckSelected '49_RBCDDelegation')          { $r = Invoke-TimedCheck -CheckKey '49_RBCDDelegation'          -ScriptBlock { Get-RBCDDelegation };          $Global:Results['49_RBCDDelegation']          = @($r) }
+        if (Test-IsCheckSelected '50_dMSA')                    { $r = Invoke-TimedCheck -CheckKey '50_dMSA'                    -ScriptBlock { Get-dMSAObjects };             $Global:Results['50_dMSA']                    = @($r) }
+        if (Test-IsCheckSelected '51_MachineAccountQuota')     { $r = Invoke-TimedCheck -CheckKey '51_MachineAccountQuota'     -ScriptBlock { Get-MachineAccountQuota };     $Global:Results['51_MachineAccountQuota']     = @($r) }
+        if (Test-IsCheckSelected '52_AnonymousLDAP')           { $r = Invoke-TimedCheck -CheckKey '52_AnonymousLDAP'           -ScriptBlock { Get-AnonymousLDAP };           $Global:Results['52_AnonymousLDAP']           = @($r) }
+        if (Test-IsCheckSelected '53_GPPPasswords')            { $r = Invoke-TimedCheck -CheckKey '53_GPPPasswords'            -ScriptBlock { Get-GPPPasswords };            $Global:Results['53_GPPPasswords']            = @($r) }
+        if (Test-IsCheckSelected '54_ProtectedUsers')          { $r = Invoke-TimedCheck -CheckKey '54_ProtectedUsers'          -ScriptBlock { Get-ProtectedUsersAudit };     $Global:Results['54_ProtectedUsers']          = @($r) }
 
         # Inaktive Accounts - einmaliger Aufruf fuer 3 Check-Keys
         $wantInact = (Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')
