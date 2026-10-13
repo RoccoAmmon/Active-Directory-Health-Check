@@ -1,24 +1,34 @@
 ﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.5 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.6 mit Best-Practice-Bewertung.
 .DESCRIPTION
     54 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
     interaktivem Startmenue.
+    Zweisprachig (Deutsch/Englisch): Die Ausgabesprache wird automatisch aus der
+    Betriebssystemsprache ermittelt, kann per Parameter -Language <de|en>
+    ueberschrieben werden und laesst sich in der GUI per DE/EN-Schalter live
+    umschalten (GUI, Konsolen-Ausgabe und HTML-Report folgen der Auswahl).
 .PARAMETER FullRun
     Fuehrt alle Checks ohne Menue aus (fuer Scheduled Tasks).
 .PARAMETER OnlyChecks
     Fuehrt nur die angegebenen Checks aus (z.B. '22_PrintSpooler','19_Unconstrained').
 .PARAMETER NoInteractive
     Ueberspringt das Menue (= Full Run).
+.PARAMETER OutputPath
+    Zielordner fuer Log, CSV-Exporte und HTML-Report (Standard: C:\ScriptLog).
+.PARAMETER Language
+    Ausgabesprache 'de' oder 'en'. Standard: automatische Erkennung aus der
+    Betriebssystemsprache (englische Windows-Oberflaeche => en, sonst de).
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.5 (54 Checks: +47_RCAESMigration +48_DCSyncPermissions +49_RBCDDelegation
-                    +50_dMSA +51_MachineAccountQuota +52_AnonymousLDAP +53_GPPPasswords +54_ProtectedUsers)
+    Version : 2.6 (54 Checks + Internationalisierung DE/EN mit GUI-Sprachumschalter)
+    Sprache : automatisch aus dem Betriebssystem, sonst -Language <de|en>
     LogPfad : C:\ScriptLog
 .EXAMPLE
     .\AD_HealthCheck.ps1
     .\AD_HealthCheck.ps1 -FullRun
+    .\AD_HealthCheck.ps1 -FullRun -Language en
     .\AD_HealthCheck.ps1 -OnlyChecks '22_PrintSpooler'
 #>
 
@@ -27,13 +37,17 @@ param(
     [switch]$FullRun,
     [string[]]$OnlyChecks,
     [switch]$NoInteractive,
-    [string]$OutputPath
+    [string]$OutputPath,
+    # Ausgabesprache (de/en). Standard: automatische Erkennung aus der Betriebssystemsprache.
+    # Ueberschreibung z.B. fuer Scheduled Tasks: -Language en
+    [ValidateSet('de','en')]
+    [string]$Language = ''
 )
 
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.5"
+$Global:ScriptVersion   = "2.6"
 $Global:Timestamp       = Get-Date -Format "yyyyMMdd_HHmmss"
 $Global:LogDirectory    = if ($OutputPath) { $OutputPath } else { "C:\ScriptLog" }
 $Global:ReportDirectory = Join-Path $Global:LogDirectory "AD_HealthCheck_$Global:Timestamp"
@@ -181,6 +195,590 @@ $Global:ReportTitles = [ordered]@{
 
 #endregion
 
+#region ==================== INTERNATIONALISIERUNG (DE/EN) ====================
+# Sprachwahl:
+#   1. Automatisch aus der Betriebssystemsprache (Get-UICulture)
+#      => englisches Windows: 'en', alles andere: 'de'
+#   2. Ueberschreibung per Parameter -Language <de|en> (z.B. Scheduled Tasks)
+#   3. Live-Umschaltung ueber die DE/EN-Schalter in der GUI
+# Alle sichtbaren deutschen Texte (GUI, Konsole, Log, HTML-Report) laufen durch
+# Format-L10n. Rohdaten und CSV-Export bleiben technisch unveraendert.
+
+function Get-SystemLanguage {
+    <# Ermittelt die Ausgabesprache aus der Betriebssystemsprache des Rechners. #>
+    try {
+        if ((Get-UICulture).TwoLetterISOLanguageName -ieq 'en') { return 'en' }
+    } catch { }
+    return 'de'
+}
+
+function Set-HealthCheckLanguage {
+    <# Setzt die Ausgabesprache zur Laufzeit (GUI-Schalter). #>
+    param([Parameter(Mandatory)][ValidateSet('de','en')][string]$Code)
+    $Global:Lang = $Code
+    return $Global:Lang
+}
+
+# Startsprache: Parameter hat Vorrang, sonst Betriebssystemsprache
+$Global:Lang = if ($Language) { $Language.ToLower() } else { Get-SystemLanguage }
+
+# --- Uebersetzungstabelle, Zeilenformat:  Deutsch=>English  ---
+$Global:L10nSource = @'
+# ---- Check-Titel (GUI, Konsole, HTML-Report) ----
+Uebersprungene DCs (nicht erreichbar)=>Skipped DCs (unreachable)
+DC System-Informationen=>DC System Information
+Dienste=>Services
+DCDiag-Tests (detailliert)=>DCDiag Tests (detailed)
+Replikation (Partner)=>Replication (partners)
+Replikations-Fehler (Forest)=>Replication failures (forest)
+FSMO-Rollen=>FSMO Roles
+DNS-Konfiguration=>DNS Configuration
+NTDS-Datenbank=>NTDS Database
+TLS-Protokolle (SCHANNEL)=>TLS Protocols (SCHANNEL)
+Cipher & Algorithmen=>Ciphers & algorithms
+LDAP-Security (Signing & Channel Binding)=>LDAP Security (Signing & Channel Binding)
+Privilegierte Accounts=>Privileged Accounts
+Password-Policy=>Password Policy
+Kerberoasting-Risiko (User mit SPN)=>Kerberoasting risk (users with SPN)
+Print Spooler auf DCs (PrintNightmare)=>Print Spooler on DCs (PrintNightmare)
+Secure Boot Zertifikats-Update (UEFI CA 2023)=>Secure Boot certificate update (UEFI CA 2023)
+Zertifikate=>Certificates
+AD-Sites=>AD Sites
+AD-Subnetze=>AD Subnets
+Vertrauensstellungen=>Trust relationships
+Forest-/Domain-Level=>Forest / domain level
+GPO-Health=>GPO Health
+Inaktive User=>Inactive users
+Inaktive Computer=>Inactive computers
+Passwort laeuft nie ab=>Passwords that never expire
+Event-Log-Auswertung=>Event log analysis
+Zeitsynchronisation=>Time synchronisation
+AD-Backup-Status=>AD backup status
+Installierte Programme=>Installed programs
+SPN-Dubletten=>Duplicate SPNs
+AS-REP-Roasting-Risiko=>AS-REP roasting risk
+DNS-Hygiene (Aging / Scavenging)=>DNS hygiene (aging / scavenging)
+LAPS-Konfiguration (Local Admin Password Solution)=>LAPS configuration (Local Admin Password Solution)
+Konten ohne AES-Verschluesselung=>Accounts without AES encryption
+Installierte Windows Features=>Installed Windows features
+SMB-Freigaben (Shares)=>SMB shares
+RC4 -> AES Migrations-Audit (CVE-2026-20833)=>RC4 -> AES migration audit (CVE-2026-20833)
+DCSync-Berechtigungen (Replikations-Rechte)=>DCSync permissions (replication rights)
+Anonymer LDAP-Zugriff=>Anonymous LDAP access
+# ---- Check-Gruppen / GUI-Kategorien ----
+DC-Infrastruktur=>DC Infrastructure
+AD-Topologie & Objekte=>AD topology & objects
+Allgemein=>General
+# ---- GUI ----
+Waehlen Sie die gewuenschten Pruefungen und den Ausgabepfad.=>Select the desired checks and the output path.
+Ausgabepfad:=>Output path:
+Ausgabepfad waehlen=>Select output path
+Durchsuchen...=>Browse...
+Alle auswaehlen=>Select all
+Checks ausgewaehlt=>checks selected
+Check(s)=>check(s)
+Checks=>checks
+Health Check starten=>Start Health Check
+Bitte mindestens einen Check auswaehlen.=>Please select at least one check.
+Hinweis=>Notice
+Sprache:=>Language:
+Abbrechen=>Cancel
+Keine=>No
+Keine Fehler=>No errors
+Keine erreichbaren DCs=>No reachable DCs
+fehlt=>missing
+dMSA mit Superseding gefunden=>dMSA with Superseding found
+uebersprungen=>skipped
+Bis zu =>up to 
+Alter Client (=>Old client (
+ ohne AES-Attribute - nutzt vermutlich RC4, nach RC4-Abschaltung pruefen/migrieren=> without AES attributes - probably uses RC4, review/migrate after the RC4 shutdown
+ ohne aktuelle geschuetzte Gruppenmitgliedschaft=> without current protected group membership
+DFS-Replikation=>DFS replication
+# ---- HTML-Report ----
+Erstellt:=>Created:
+Modus:=>Mode:
+Uebersicht aller Checks=>Overview of all checks
+Zusammenfassung:=>Summary:
+Zusammenfassung=>Summary
+Auffaelligkeiten / Handlungsempfehlungen:=>Findings / recommendations:
+Auffaelligkeiten=>findings
+Auffaelligkeit(en)=>finding(s)
+Keine Daten.=>No data.
+Erzeugt von=>Generated by
+Laufzeit:=>Runtime:
+WARNUNGEN=>WARNINGS
+WARNUNG=>WARNING
+KRITISCH=>CRITICAL
+Zeilen (Status:=>rows (status:
+-> leer=>-> empty
+Eintraege=>entries
+Keine Eintraege.=>No entries.
+# ---- Konsolen-Banner, Menue und Fortschritt ----
+VERFUEGBARE CHECKS=>AVAILABLE CHECKS
+AUSWAHLMENUE=>SELECTION MENU
+BEST-PRACTICE-BEWERTUNG=>BEST-PRACTICE ASSESSMENT
+CSV-EXPORT=>CSV EXPORT
+HTML-REPORT=>HTML REPORT
+DC-ERKENNUNG=>DC DISCOVERY
+CONNECTIVITY-TEST=>CONNECTIVITY TEST
+PRO-DC-CHECKS=>PER-DC CHECKS
+FOREST-WEITE CHECKS=>FOREST-WIDE CHECKS
+AD HEALTH CHECK ABGESCHLOSSEN=>AD HEALTH CHECK COMPLETED
+Gesamtdauer=>Total duration
+Ausgefuehrte Checks=>Completed checks
+Davon Fehler=>Of which failed
+Best-Practice-Bewertung=>Best-practice assessment
+UEBERSPRUNGENE DCs=>SKIPPED DCS
+UEBERSPRUNGEN:=>Skipped:
+CSV-Ordner=>CSV folder
+Log-Datei=>Log file
+Ausgewaehlte Checks:=>Selected checks:
+Gefundene DCs:=>DCs found:
+Gesamt:=>Total:
+Erreichbar:=>Reachable:
+Uebersprungen:=>Skipped:
+Methode:=>Method:
+kein Ping, aber WinRM OK=>no ping, but WinRM OK
+uebersprungen:=>skipped:
+Abbruch durch Benutzer.=>Cancelled by user.
+Ungueltige Check-Keys:=>Invalid check keys:
+Verfuegbar:=>Available:
+Full Run   - Alle Checks (empfohlen)=>Full Run   - all checks (recommended)
+Einzel     - Genau EINEN Check=>Single     - exactly ONE check
+Mehrere    - Mehrere Checks (Komma-Liste)=>Multiple   - several checks (comma separated)
+Forest     - Nur Forest-weite Checks=>Forest     - forest-wide checks only
+Pro-DC     - Nur DC-spezifische Checks=>Per-DC     - DC-specific checks only
+Security   - Komplette Security-Suite=>Security   - complete security suite
+Liste      - Alle verfuegbaren Checks=>List       - all available checks
+Quit       - Abbrechen=>Quit       - exit
+Ihre Auswahl=>Your selection
+[ENTER] fuer Menue=>[ENTER] for menu
+[!] Abbruch.=>[!] Cancelled.
+[X] Ungueltig=>[X] Invalid
+Erneut versuchen? (J/N)=>Try again? (Y/N)
+Geben Sie Nummer ODER Key ein (oder 'B' = zurueck):=>Enter number OR key (or 'B' = back):
+Geben Sie Nummern/Keys komma-getrennt ein (z.B. '1,3,5') oder 'B' = zurueck:=>Enter numbers/keys separated by commas (e.g. '1,3,5') or 'B' = back:
+[LOKAL]=>[LOCAL]
+[und =>[and 
+mehrdeutig:=>ambiguous:
+nicht erkannt=>not recognised
+Nummer=>Number
+ausserhalb (=>outside (
+Laufzeit:=>Runtime:
+Modul '=>Module '
+geladen.=>loaded.
+nicht ladbar:=>not loadable:
+# ---- Konnektivitaet / allgemeine Statusmeldungen ----
+Kein Ping=>No ping
+Alle Methoden fehlgeschlagen:=>All methods failed:
+Kein Ping UND kein WinRM/CIM/WMI=>No ping AND no WinRM/CIM/WMI
+WinRM/CIM/WMI alle fehlgeschlagen=>WinRM/CIM/WMI all failed
+Keine Daten=>No data
+Keine Bewertung=>No assessment
+Fehler:=>Error:
+FEHLER:=>ERROR:
+Fehler=>errors
+# ---- Spaltenueberschriften ----
+Aktiv=>Active
+Benutzer=>Users
+Datei=>File
+Einstellung=>Setting
+Gruppen=>Groups
+IstStandardTraeger=>IsStandardHolder
+KontoPrivilegiert=>AccountPrivileged
+ObjektTyp=>ObjectType
+Privilegiert=>Privileged
+Prinzipal=>Principal
+PrinzipalTyp=>PrincipalType
+Protokollwechsel=>ProtocolTransition
+Rechte=>Rights
+UebernommenesKonto=>SupersededAccount
+Wert=>Value
+Ziel=>Target
+# ---- Zellwerte und Statusmeldungen der Datensammlung ----
+NICHT KONFIGURIERT (= deaktiviert!)=>NOT CONFIGURED (= disabled!)
+NICHT KONFIGURIERT (Default=3)=>NOT CONFIGURED (default=3)
+NICHT KONFIGURIERT (Risiko!)=>NOT CONFIGURED (risk!)
+NICHT KONFIGURIERT=>NOT CONFIGURED
+(nicht gesetzt)=>(not set)
+nicht gesetzt=>not set
+Secure Boot nicht aktiv=>Secure Boot not active
+Registry-Fehler=>Registry error
+ gesetzt - wartet auf Reboot=> set - waiting for reboot
+nicht gesetzt=>not set
+Geraet NICHT faehig - Firmware-Update pruefen=>Device NOT capable - check firmware update
+Hinweis:=>Note:
+noch offen=>still pending
+Reboot empfohlen=>reboot recommended
+(keine Zertifikate)=>(no certificates)
+(keine Daten)=>(no data)
+Spooler gestoppt und deaktiviert - PrintNightmare-sicher=>Spooler stopped and disabled - PrintNightmare-safe
+Spooler LAEUFT auf DC! PrintNightmare-Risiko=>Spooler RUNNING on DC! PrintNightmare risk
+Enabled - aktiv=>Enabled - active
+RunAsPPL=1 - aktiv. Tipp: Auf 2 erhoehen=>RunAsPPL=1 - active. Tip: raise to 2
+RunAsPPL NICHT gesetzt - Default deaktiviert=>RunAsPPL NOT set - disabled by default
+SMB1 AKTIV (WannaCry-Risiko!)=>SMB1 ENABLED (WannaCry risk!)
+SMB-Signing NICHT erzwungen=>SMB signing not enforced
+ - OK, aber 5 ist besser=> - OK, but 5 is better
+AD Recycle Bin NICHT aktiv - kein Restore geloeschter Objekte (ausser Backup)=>AD Recycle Bin NOT enabled - no restore of deleted objects (except backup)
+AD Recycle Bin aktiv=>AD Recycle Bin enabled
+Abfrage-Fehler:=>Query error:
+Keine Zuordnung=>No mapping
+Server-weites Scavenging aktiviert=>Server-wide scavenging enabled
+Server-weites Scavenging deaktiviert=>Server-wide scavenging disabled
+nicht AD-integriert=>not AD-integrated
+Keine Reverse-Lookup-Zonen gefunden=>No reverse lookup zones found
+NICHT aktiviert=>NOT enabled
+Aktiviert=>Enabled
+LAPS Schema-Erweiterung nicht installiert=>LAPS schema extension not installed
+Computer mit LAPS=>Computers with LAPS
+Keine Computer gefunden=>No computers found
+WARNUNG: Kein Computer mit LAPS konfiguriert!=>WARNING: No computer with LAPS configured!
+ mit LAPS | => with LAPS | 
+mit nicht-unterstuetztem OS (2016 oder aelter)=>with unsupported OS (2016 or older)
+ | OS NICHT UNTERSTUETZT (LAPS ab 2019)=> | OS NOT SUPPORTED (LAPS requires 2019+)
+Nicht konfiguriert - OS: =>Not configured - OS: 
+KRITISCH: LAPS konfiguriert aber OS nicht unterstuetzt=>CRITICAL: LAPS configured but OS not supported
+LAPS benoetigt 2019+=>LAPS requires 2019+
+KRITISCH: User mit RC4/DES OHNE AES!=>CRITICAL: user with RC4/DES WITHOUT AES!
+User ohne AES konfiguriert=>User without AES configured
+User mit RC4+AES: Ermoeglicht Downgrade-Angriffe=>User with RC4+AES: allows downgrade attacks
+KRITISCH: Computer mit RC4/DES OHNE AES!=>CRITICAL: computer with RC4/DES WITHOUT AES!
+Computer ohne AES konfiguriert=>Computer without AES configured
+Computer mit RC4+AES: Ermoeglicht Downgrade-Angriffe=>Computer with RC4+AES: allows downgrade attacks
+(alle Konten)=>(all accounts)
+Alle Konten: Standard-Verschluesselung (AES) aktiv, keine RC4-Only Konfiguration=>All accounts: standard encryption (AES) enabled, no RC4-only configuration
+(Fehler)=>(error)
+Dienst (SPN)=>Service (SPN)
+Konto=>Account
+Konten=>accounts
+Dienstkonto (SPN) OHNE msDS-SupportedEncryptionTypes - KDC stellt derzeit RC4-Tickets aus, Ausfall nach RC4-Abschaltung (Juli 2026). AES aktivieren + Passwort/PwdLastSet aktualisieren=>Service account (SPN) WITHOUT msDS-SupportedEncryptionTypes - the KDC currently issues RC4 tickets, outage after the RC4 shutdown (July 2026). Enable AES and update password/PwdLastSet
+unterstuetzt DES (=>supports DES (
+ - bricht nach RC4/DES-Abschaltung, AES ist Pflicht=> - breaks after RC4/DES shutdown, AES is mandatory
+ - bricht nach RC4/DES-Abschaltung=> - breaks after RC4/DES shutdown
+: KEIN AES - bricht nach RC4-Abschaltung (Juli 2026). Migration: AES aktivieren, Passwort zuruecksetzen=>: NO AES - breaks after RC4 shutdown (July 2026). Migration: enable AES, reset password
+ermoeglicht Downgrade auf RC4 - nach AES-Migration RC4-Flag entfernen=>allows downgrade to RC4 - remove the RC4 flag after AES migration
+: Downgrade auf RC4 moeglich=>: downgrade to RC4 possible
+(nicht lesbar)=>(not readable)
+; Aktiv==>; Active=
+Registry-Wert 'SupportedEncryptionTypes' nicht auslesbar=>Registry value 'SupportedEncryptionTypes' not readable
+(kein WinRM)=>(no WinRM)
+KDC erlaubt explizit RC4=>KDC explicitly allows RC4
+ - nach Migration auf AES-only (0x18) setzen=> - set to AES-only (0x18) after migration
+ geprueft | ohne AES-Attribute: => checked | without AES attributes: 
+ problembehaftet: => with issues: 
+ || WICHTIG: => || IMPORTANT: 
+RC4 wird 2026 abgeschaltet=>RC4 will be shut down in 2026
+alle problembehafteten Konten VORHER auf AES migrieren=>migrate all affected accounts to AES beforehand
+Standard-Rechteinhaber=>Standard permission holders
+NICHT-Standard-Principal=>Non-standard principal
+volle DCSync-Faehigkeit: alle Passwort-Hashes der Domain extrahierbar!=>full DCSync capability: all domain password hashes can be extracted!
+Replikations-Rechte ohne=>Replication rights without
+kein Hash-Zugriff, aber Replikation lesbar=>no hash access, but replication readable
+Rechtnotwendigkeit pruefen=>review whether the rights are necessary
+(keine)=>(none)
+Keine Replikations-Rechte auf dem Domain-NC gefunden=>No replication rights found on the domain NC
+USER mit RBCD-Recht auf=>USER with RBCD right on
+kompromittierte User-Credentials erlauben Delegation/PrivEsc auf diesen Computer=>compromised user credentials allow delegation / privilege escalation on this computer
+RBCD-Prinzipal=>RBCD principal
+ darf auf => may delegate to 
+ uebliche Bastion/Management-Konfiguration, Noetigkeit pruefen=> common bastion/management configuration, review whether it is necessary
+Constrained Delegation an:=>Constrained delegation to:
+Protokollwechsel (S4U2Self):=>Protocol transition (S4U2Self):
+ - Protokollwechsel ermoeglicht TGT-Erwerb ohne Passwort, Ziel-SPNs pruefen=> - protocol transition allows TGT acquisition without a password, check the target SPNs
+Schema-Klasse nicht vorhanden (kein Windows Server 2025 Schema) - BadSuccessor nicht anwendbar=>Schema class not present (no Windows Server 2025 schema) - BadSuccessor not applicable
+(keine dMSA)=>(no dMSA)
+Schema vorhanden, aber keine dMSA-Objekte gefunden - BadSuccessor-Angriffsvektor derzeit nicht genutzt=>Schema present, but no dMSA objects found - BadSuccessor attack vector not in use at the moment
+2 (Migration abgeschlossen - Superseding AKTIV)=>2 (migration completed - superseding ACTIVE)
+0 (keine Migration)=>0 (no migration)
+BADSUCCESSOR-MUSTER: dMSA uebernimmt PRIVILEGIELIERTES Konto=>BADSUCCESSOR PATTERN: dMSA takes over a PRIVILEGED account
+(adminCount=1) - Tickets des dMSA gelten mit dessen Rechten! Objekt pruefen und ggf. loeschen=>(adminCount=1) - tickets of the dMSA carry those privileges! Review the object and delete it if necessary
+dMSA uebernimmt Konto=>dMSA takes over account
+(Migration abgeschlossen) - legitim nur wenn beabsichtigt, sonst Takeover-Pfad=>(migration completed) - legitimate only if intended, otherwise a takeover path
+Superseding AKTIV, aber kein uebernommenes Konto lesbar - Zustand pruefen=>Superseding ACTIVE, but no superseded account readable - check the state
+dMSA existiert (State=>dMSA exists (state=
+dMSA-Objekte sind neue Angriffsflaechen: Wer darf sie erstellen/aendern? (Write-Rechte auf Ziel-OU pruefen)=>dMSA objects are new attack surfaces: who may create/modify them? (check write permissions on the target OU)
+ (Wert nicht lesbar - Default 10 angenommen)=> (value not readable - assuming default 10)
+MAQ=0 - Benutzer koennen keine Computerkonten erstellen (Best Practice)=>MAQ=0 - users cannot create computer accounts (best practice)
+ Computerkonten pro Benutzer erstellbar. Angreifer koennen so eigene Computerkonten fuer Enrollment/Delegation/ADCS-Angriffe anlegen. Empfehlung: => computer accounts can be created per user. Attackers can create their own computer accounts for enrollment / delegation / ADCS attacks. Recommendation: 
+Anonym ohne Anmeldung lesbar=>Readable anonymously without authentication
+AD-Struktur fuer Angreifer ausforschbar=>AD structure can be enumerated by attackers
+Anonyme RootDSE-Abfrage liefert keine NC-Informationen (Windows-Default) - OK=>Anonymous RootDSE query returns no NC information (Windows default) - OK
+Anonymer LDAP-Bind wurde abgelehnt (Default ab Server 2003) - OK=>Anonymous LDAP bind was rejected (default since Server 2003) - OK
+dSHeuristics gesetzt: '=>dSHeuristics set: '
+Heuristiken koennen u.a. anonymen LDAP-Zugriff erweitern (Position 7). Noetigkeit pruefen=>heuristics can, among other things, extend anonymous LDAP access (position 7). Review whether they are necessary
+dSHeuristics nicht gesetzt (Windows-Default) - OK=>dSHeuristics not set (Windows default) - OK
+SYSVOL-Pfad nicht erreichbar=>SYSVOL path not reachable
+Klartext-dechiffrierbares Passwort in GPP-XML (cpassword) - entschluesselbar durch JEDES domaeneangemeldete Konto (MS14-025). Passwort SOFORT setzen und Datei bereinigen=>Password in GPP XML (cpassword) decryptable in clear text - decryptable by EVERY domain-joined account (MS14-025). Change the password IMMEDIATELY and clean up the file
+Keine cpassword-Eintraege in =>No cpassword entries in 
+ GPP-XML-Dateien gefunden - OK=> GPP-XML files found - OK
+GESAMT =>TOTAL 
+ Funde - Anzeige auf => matches - display limited to 
+ Zeilen begrenzt, uebrige Funde nicht aufgelistet=> rows, remaining matches not listed
+Mitglieder von '=>Members of '
+ nicht auslesbar (fremde Domain/Vertrauensstellung?): => not readable (foreign domain/trust?): 
+Built-in Administrator NICHT in Protected Users (Break-Glass - Ausnahme oft beabsichtigt, trotzdem dokumentieren)=>Built-in administrator NOT in Protected Users (break-glass - exception is often intentional, but document it anyway)
+Privilegiertes Konto NICHT in Protected Users - erhaelt weiterhin volle NTLM/NetNTLM/DES-Faehigkeiten. Empfehlung: aufnehmen (Ausnahme: dokumentiertes Break-Glass-Konto)=>Privileged account NOT in Protected Users - still has full NTLM/NetNTLM/DES capabilities. Recommendation: add it (exception: documented break-glass account)
+Gruppe mit RID 525 nicht gefunden - Domain Level < 2012? Protected Users nicht verfuegbar=>Group with RID 525 not found - domain level < 2012? Protected Users not available
+# ---- Bewertungen (Summary / Findings) ----
+Alle DCs erreichbar=>All DCs reachable
+DC(s) nicht erreichbar=>DC(s) not reachable
+KRIT:=>CRITICAL:
+KRITISCH:=>CRITICAL:
+WARN:=>WARNING:
+WARNUNG:=>WARNING:
+DC(s) OK=>DC(s) OK
+auf=>on
+und=>and
+nicht=>not
+mit=>with
+fuer=>for
+Alle Dienste OK (NTFRS gestoppt = Best Practice)=>All services OK (NTFRS stopped = best practice)
+DFSR auf =>DFSR on 
+ - SYSVOL-Replizierung betroffen!=> - SYSVOL replication affected!
+NTFRS (LEGACY) laeuft auf=>NTFRS (LEGACY) running on
+nur noetig, wenn SYSVOL noch via FRS repliziert wird=>only required if SYSVOL is still replicated via FRS
+Warnung=>Warning
+Alle =>All 
+Keine Partner=>No partners
+Fehler=>errors
+Alle synchron=>All in sync
+Replikations-Fehler=>replication failures
+Keine Zonen=>No zones
+SYSVOL/NETLOGON auf =>SYSVOL/NETLOGON on 
+nicht deaktiviert=>not disabled
+AKTIV=>ACTIVE
+nicht explizit aktiviert=>not explicitly enabled
+Keine Cipher (Defaults)=>No ciphers (defaults)
+Schwach:=>Weak:
+LLMNR/NetBIOS/WPAD aus=>LLMNR/NetBIOS/WPAD disabled
+Channel Binding NICHT aktiv=>Channel Binding NOT enabled
+LDAPS Port 636 NICHT erreichbar=>LDAPS port 636 NOT reachable
+Alle Firewall-Profile aktiv=>All firewall profiles enabled
+inaktiv=>inactive
+krbtgt-Passwort=>krbtgt password
+Passwort=>password
+alt - RESET!=>old - RESET!
+alt=>old
+alt oder NeverExpires=>old or NeverExpires
+Privilegierter Account mit SPN!=>privileged account with SPN!
+kann auf 2 (UEFI) erhoeht werden=>can be raised to 2 (UEFI)
+RunAsPPL nicht gesetzt=>RunAsPPL not set
+SUCCESS aber Bit=>SUCCESS but bit
+ (Reboot empfohlen)=> (reboot recommended)
+ABGELAUFEN:=>EXPIRED:
+ Zertifikate, => certificates, 
+ ohne Daten=> without data
+Keine Sites=>No sites
+Keine Subnetze!=>No subnets!
+Keine Trusts=>No trusts
+Keine GPOs=>No GPOs
+Keine Errors in=>No errors in
+KEIN AD-Backup!=>NO AD BACKUP!
+keine Daten=>no data
+Alle aktuell=>All current
+Freigabe '=>share '
+' erlaubt '=>' allows '
+ mit Full/Change-Zugriff=> with full/change access
+ohne PreAuth, Passwort alt/NeverExpires=>without PreAuth, password old/NeverExpires
+Keine Fine-Grained Policies=>No fine-grained policies
+LAPS-Daten nicht verfuegbar=>LAPS data not available
+KRITISCH: LAPS Schema-Erweiterung ist NICHT installiert!=>CRITICAL: LAPS schema extension is NOT installed!
+Computer mit nicht-unterstuetztem OS (Server 2016 oder aelter)=>computers with unsupported OS (Server 2016 or older)
+ der Computer (=> of the computers (
+) haben LAPS konfiguriert (alle Systeme unterstuetzen LAPS)=>) have LAPS configured (all systems support LAPS)
+WARNUNG: =>WARNING: 
+ der Computer mit LAPS konfiguriert. Unconfigured: => of the computers with LAPS configured. Unconfigured: 
+KRITISCH: Nur=>CRITICAL: Only
+ der Computer mit LAPS konfiguriert!=> of the computers with LAPS configured!
+NICHT UNTERSTUETZT=>NOT SUPPORTED
+weitere Systeme ohne LAPS]=>more systems without LAPS]
+Keine AES-Daten verfuegbar=>No AES data available
+Verschluesselung: Standard-AES aktiv, keine RC4-Only Konfigurationen gefunden=>Encryption: standard AES enabled, no RC4-only configurations found
+ Konten geprueft | => accounts checked | 
+Keine RC4/AES-Migrationsdaten=>No RC4/AES migration data
+... und =>... and 
+ weitere Befunde (siehe Detailtabelle/CSV)=> more findings (see detail table/CSV)
+ weitere Eintraege (siehe Detailtabelle/CSV)=> more entries (see detail table/CSV)
+ kritische | => critical | 
+Warnung(en)=>warning(s)
+ - RC4-Migration (=> - RC4 migration (
+Keine DCSync-Daten=>No DCSync data
+DCSync-Rechte ausserhalb der DCs=>DCSync rights outside the DCs
+Hash-Extraktion moeglich!=>hash extraction possible!
+ Rechteinhaber | => permission holders | 
+Nicht-Standard:=>Non-standard:
+ (davon mit Get-Changes-All: => (of which with Get-Changes-All: 
+ Eintraege (RBCD => entries (RBCD 
+Keine dMSA-Daten=>No dMSA data
+Schema-Klasse nicht vorhanden - BadSuccessor nicht anwendbar=>Schema class not present - BadSuccessor not applicable
+BADSUCCESSOR-MUSTER PRUEFEN!=>CHECK BADSUCCESSOR PATTERN!
+dMSA-Objekt(e), kein Superseding aktiv - Objekte auf Missbrauch pruefen=>dMSA object(s), no Superseding active - check the objects for misuse
+Keine dMSA-Objekte - BadSuccessor-Vektor nicht vorhanden=>No dMSA objects - BadSuccessor vector not present
+Keine MAQ-Daten=>No MAQ data
+Keine LDAP-Anonym-Daten=>No LDAP anonymous data
+ Pruefpunkt(e) - anonymer LDAP-Zugriff=> check point(s) - anonymous LDAP access
+Keine SYSVOL-Daten=>No SYSVOL data
+ - cpassword gefunden=> - cpassword found
+ weitere Funde=> more matches
+ GPP-XML(s) mit entschluesselbarem cpassword=> GPP-XML file(s) with decryptable cpassword
+Keine cpassword-Eintraege in SYSVOL=>No cpassword entries in SYSVOL
+Keine Protected-Users-Daten=>No Protected Users data
+ weitere Konten ohne Protected-Users-Mitgliedschaft=> more accounts without Protected Users membership
+ privilegierte Konten in Protected Users=> privileged accounts in Protected Users
+Alle 5 FSMO OK=>All 5 FSMO OK
+Keine Unconstrained Delegation=>No unconstrained delegation
+Keine User mit SPN=>No users with SPN
+Keine inaktiven User=>No inactive users
+Keine inaktiven Computer=>No inactive computers
+Keine PwdNeverExpires=>No PwdNeverExpires
+inaktive User=>inactive users
+inaktive Computer=>inactive computers
+Keine Subnetze=>No subnets
+Auffaelligkeit(en)=>finding(s)
+# ---- allgemeue Worte und Spaltenwerte ----
+Ja=>Yes
+Nein=>No
+Aktiv=>Active
+aktiv=>active
+Aktiviert=>Enabled
+aktiviert=>enabled
+deaktiviert=>disabled
+unbekannt=>unknown
+nicht konfiguriert=>not configured
+inaktive=>inactive
+inaktiven=>inactive
+Eintrag=>entry
+Zertifikat=>certificate
+Replikations-Fehler=>replication failures
+'@
+
+# --- Tabelle + Regex aufbauen -------------------------------------------------
+function ConvertTo-L10nCanonical {
+    <#
+    .SYNOPSIS
+        Normalisiert Umlaut-Schreibweisen auf die ASCII-Kanoform der Tabelle.
+    .NOTES
+        Das Skript schreibt Teile der deutschen Quelltexte als "ue"/"ae"/"oe"
+        und andere mit echtem Umlaut ("ue"/"ü"). Damit beide Formen denselben
+        Tabelleneintrag finden, wird der Fundtext vor dem Nachschlagen normalisiert.
+    #>
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+    if ([string]::IsNullOrEmpty($Text) -or $Text -notmatch '[äöüÄÖÜß]') { return $Text }
+    $t = [regex]::Replace($Text, '[äÄ]', 'ae')
+    $t = [regex]::Replace($t,     '[öÖ]', 'oe')
+    $t = [regex]::Replace($t,     '[üÜ]', 'ue')
+    $t = [regex]::Replace($t,     '[ß]',  'ss')
+    return $t
+}
+
+function Initialize-L10nDictionary {
+    <# Baut die deutsche=>englische Uebersetzungstabelle samt Regex auf. #>
+    $Global:L10nMap = @{}
+    $keys = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ($Global:L10nSource -split "`r?`n")) {
+        if (-not $line -or $line.TrimStart().StartsWith('#')) { continue }
+        $sep = $line.IndexOf('=>')
+        if ($sep -lt 1) { continue }
+        $srcTxt = $line.Substring(0, $sep)
+        $dstTxt = $line.Substring($sep + 2)
+        if ([string]::Equals($srcTxt, $dstTxt, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        if ($Global:L10nMap.ContainsKey($srcTxt)) { continue }
+        $Global:L10nMap[$srcTxt] = $dstTxt
+        # Kanonische Form ebenfalls hinterlegen ("Unterstützung" -> Schlüssel "Unterstuetzung")
+        $srcNorm = ConvertTo-L10nCanonical -Text $srcTxt
+        if (-not [string]::Equals($srcNorm, $srcTxt, [System.StringComparison]::Ordinal) -and
+            -not $Global:L10nMap.ContainsKey($srcNorm)) { $Global:L10nMap[$srcNorm] = $dstTxt }
+        $keys.Add($srcTxt)
+    }
+    # Laengste Zuerst: "Replikations-Fehler" muss vor "Fehler" greifen
+    # Hinweis: Das Skript mischt Umschrift und Umlaute ("unterstuetzt" UND "unterstützt"),
+    # deshalb matcht jeder Eintrag beide Schreibweisen (ae|ä, oe|ö, ue|ü, ss|ß).
+    $umlautMap = @{ 'ae' = 'ä'; 'oe' = 'ö'; 'ue' = 'ü'; 'ss' = 'ß' }
+    $digraphRx = [regex]'(?:ae|oe|ue|ss)'
+    $parts = foreach ($entry in (@($keys) | Sort-Object -Property Length -Descending | Select-Object -Unique)) {
+        $p = [regex]::Escape($entry)
+        # Einzelschritt ersetzen (kein Delegate - sonst greift die Umlaut-Toleranz nicht)
+        $exp = New-Object System.Text.StringBuilder
+        $epos = 0
+        foreach ($dm in $digraphRx.Matches($p)) {
+            if ($dm.Index -gt $epos) { [void]$exp.Append($p.Substring($epos, $dm.Index - $epos)) }
+            [void]$exp.Append("(?:$($dm.Value)|$($umlautMap[$dm.Value]))")
+            $epos = $dm.Index + $dm.Length
+        }
+        if ($epos -lt $p.Length) { [void]$exp.Append($p.Substring($epos)) }
+        $p = $exp.ToString()
+        if ($entry -match '^[\p{L}\p{N}_]') { $p = "(?<![\p{L}\p{N}_])$p" }
+        if ($entry -match '[\p{L}\p{N}_]$') { $p = "$p(?![\p{L}\p{N}_])" }
+        $p
+    }
+    $Global:L10nRegex = [regex]::new('(?:' + ($parts -join '|') + ')',
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor
+        [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+    return $Global:L10nMap.Count
+}
+[void](Initialize-L10nDictionary)
+
+function Format-L10n {
+    <#
+    .SYNOPSIS
+        Uebersetzt einen deutschen Anzeigetext nach Englisch (oder gibt ihn zurueck).
+    .NOTES
+        Bei -Language de ist die Funktion ein No-OP (Originaltext bleibt erhalten).
+        Bereits uebersetzte Texte bleiben unveraendert (Idempotenz).
+    #>
+    param([AllowNull()][AllowEmptyString()][object]$Text)
+    if ($null -eq $Text) { return '' }
+    $s = [string]$Text
+    if ($Global:Lang -ne 'en') { return $s }
+    if ($s.Length -lt 2) { return $s }
+    $rx = $Global:L10nRegex
+    if ($null -eq $rx -or -not $rx.IsMatch($s)) { return $s }
+    $sb  = New-Object System.Text.StringBuilder
+    $pos = 0
+    foreach ($m in $rx.Matches($s)) {
+        if ($m.Index -gt $pos) { [void]$sb.Append($s.Substring($pos, $m.Index - $pos)) }
+        $v = $Global:L10nMap[$m.Value]
+        # Umlaut-Schreibweise im Fundstueck ("unterstützt") -> Kanoform der Tabelle ("unterstuetzt")
+        if (-not $v) { $v = $Global:L10nMap[(ConvertTo-L10nCanonical -Text $m.Value)] }
+        [void]$sb.Append($(if ($v) { $v } else { $m.Value }))
+        $pos = $m.Index + $m.Length
+    }
+    if ($pos -lt $s.Length) { [void]$sb.Append($s.Substring($pos)) }
+    return $sb.ToString()
+}
+
+# --- Konsolen-Shims: uebersetzt ALLE Konsolenausgaben/-Eingaben zentral ------
+function Write-Host {
+    [CmdletBinding()]
+    param(
+        [Parameter(Position=0, ValueFromRemainingArguments=$true)][object[]]$Object,
+        [System.ConsoleColor]$ForegroundColor,
+        [System.ConsoleColor]$BackgroundColor,
+        [switch]$NoNewline,
+        [object]$Separator = ' '
+    )
+    $msg = ($Object | ForEach-Object { if ($null -eq $_) { '' } else { [string]$_ } }) -join ([string]$Separator)
+    $splat = @{ Object = (Format-L10n -Text $msg) }
+    if ($PSBoundParameters.ContainsKey('ForegroundColor')) { $splat['ForegroundColor'] = $ForegroundColor }
+    if ($PSBoundParameters.ContainsKey('BackgroundColor')) { $splat['BackgroundColor'] = $BackgroundColor }
+    if ($NoNewline)                                        { $splat['NoNewline']    = $true }
+    Microsoft.PowerShell.Utility\Write-Host @splat
+}
+
+function Read-Host {
+    [CmdletBinding()]
+    param(
+        [Parameter(Position=0)][string]$Prompt,
+        [switch]$AsSecureString
+    )
+    $p = Format-L10n -Text $Prompt
+    if ($AsSecureString) { return Microsoft.PowerShell.Utility\Read-Host -Prompt $p -AsSecureString }
+    return Microsoft.PowerShell.Utility\Read-Host -Prompt $p
+}
+
+#endregion
+
 #region ============================ LOGGING ==================================
 
 function Initialize-LogEnvironment {
@@ -200,7 +798,8 @@ function Write-Log {
     try {
         $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         $line = "[$ts] [$Level] $Message"
-        Add-Content -Path $Global:LogFile -Value $line -ErrorAction Stop
+        # Logdatei in der aktuell gewaehlten Sprache (wie Konsolenausgabe/Report)
+        Add-Content -Path $Global:LogFile -Value (Format-L10n -Text $line) -ErrorAction Stop
         if (-not $NoConsole) {
             $c = switch ($Level) { 'ERROR'{'Red'} 'WARN'{'Yellow'} 'OK'{'Green'} 'DEBUG'{'DarkGray'} default{'Cyan'} }
             Write-Host $line -ForegroundColor $c
@@ -387,11 +986,22 @@ function Show-HealthCheckGUI {
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <StackPanel Grid.Row="0" Margin="0,0,0,18">
-            <TextBlock Text="AD Health Check" FontSize="24" FontWeight="Bold" Foreground="#0078D4"/>
-            <TextBlock Text="Waehlen Sie die gewuenschten Pruefungen und den Ausgabepfad." FontSize="12" Foreground="#555555" Margin="0,4,0,0"/>
-        </StackPanel>
+        <!-- Header inkl. Sprachumschalter DE/EN -->
+        <Grid Grid.Row="0" Margin="0,0,0,18">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="AD Health Check" FontSize="24" FontWeight="Bold" Foreground="#0078D4"/>
+                <TextBlock x:Name="lblSubtitle" Text="Waehlen Sie die gewuenschten Pruefungen und den Ausgabepfad." FontSize="12" Foreground="#555555" Margin="0,4,0,0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,4,0,0">
+                <TextBlock x:Name="lblLanguage" Text="Sprache:" FontSize="12" FontWeight="SemiBold" Foreground="#555555" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <Button x:Name="btnLangDe" Content="Deutsch" MinWidth="76" Style="{StaticResource QuickButton}"/>
+                <Button x:Name="btnLangEn" Content="English" MinWidth="76" Margin="8,0,0,0" Style="{StaticResource QuickButton}"/>
+            </StackPanel>
+        </Grid>
 
         <!-- Ausgabepfad -->
         <Border Grid.Row="1" Background="White" CornerRadius="6" Padding="14,10" Margin="0,0,0,14"
@@ -402,7 +1012,7 @@ function Show-HealthCheckGUI {
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Ausgabepfad:" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12" FontWeight="SemiBold"/>
+                <TextBlock x:Name="lblOutputPath" Grid.Column="0" Text="Ausgabepfad:" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12" FontWeight="SemiBold"/>
                 <TextBox x:Name="txtOutputPath" Grid.Column="1"
                          Background="White" Foreground="#1E1E1E" BorderBrush="#C0C0C0"
                          BorderThickness="1" Padding="8,6" FontSize="12" VerticalContentAlignment="Center"/>
@@ -453,7 +1063,7 @@ function Show-HealthCheckGUI {
         AllCheckBoxes   = @{}
         GroupCheckBoxes = @{}
         SuppressEvents  = $false
-        Result          = [PSCustomObject]@{ SelectedChecks=@(); OutputPath=''; Cancelled=$true }
+        Result          = [PSCustomObject]@{ SelectedChecks=@(); OutputPath=''; Cancelled=$true; Language=$Global:Lang }
         Window          = $window
         CheckGroups     = $checkGroups
     }
@@ -472,8 +1082,40 @@ function Show-HealthCheckGUI {
     $btnSuiteIdentity = $window.FindName('btnSuiteIdentity')
     $btnSuiteTopo   = $window.FindName('btnSuiteTopo')
     $btnSuiteSystem = $window.FindName('btnSuiteSystem')
+    $lblSubtitle    = $window.FindName('lblSubtitle')
+    $lblLanguage    = $window.FindName('lblLanguage')
+    $lblOutputPath  = $window.FindName('lblOutputPath')
+    $btnLangDe      = $window.FindName('btnLangDe')
+    $btnLangEn      = $window.FindName('btnLangEn')
 
     $txtOutputPath.Text = $Global:LogDirectory
+
+    # === Mehrsprachigkeit: alle beschrifteten Controls registrieren ==========
+    # Original = deutscher Text, beim Umschalten wird er uebersetzt dargestellt.
+    $state.LocalizedControls = [System.Collections.ArrayList]::new()
+    $addLocalized = {
+        param($control, $property, $original, $english)
+        [void]$state.LocalizedControls.Add([pscustomobject]@{ Control=$control; Property=$property; Original=$original; English=$english })
+    }
+    # Optionaler 4. Parameter: eigener englischer Text (sonst Uebersetzungstabelle)
+    foreach ($spec in @(
+        @( $lblSubtitle,     'Text',    'Waehlen Sie die gewuenschten Pruefungen und den Ausgabepfad.' ),
+        @( $lblLanguage,     'Text',    'Sprache:' ),
+        @( $lblOutputPath,   'Text',    'Ausgabepfad:' ),
+        @( $btnBrowse,       'Content', 'Durchsuchen...' ),
+        @( $btnAll,          'Content', 'Alle auswaehlen' ),
+        @( $btnNone,         'Content', 'Keine', 'None' ),
+        @( $btnSuiteDC,      'Content', 'DC-Infrastruktur' ),
+        @( $btnSuiteSecurity,'Content', 'Security & Hardening' ),
+        @( $btnSuiteIdentity,'Content', 'Identity & Kerberos' ),
+        @( $btnSuiteTopo,    'Content', 'AD-Topologie & Objekte' ),
+        @( $btnSuiteSystem,  'Content', 'System & Updates' ),
+        @( $btnStart,        'Content', 'Health Check starten' ),
+        @( $btnCancel,       'Content', 'Abbrechen' )
+    )) {
+        if ($spec.Count -gt 3) { & $addLocalized $spec[0] $spec[1] $spec[2] $spec[3] }
+        else                   { & $addLocalized $spec[0] $spec[1] $spec[2] '' }
+    }
 
     # Hilfsfunktion: Anzahl aktualisieren
     $updateCount = {
@@ -484,7 +1126,7 @@ function Show-HealthCheckGUI {
             $total++
             if ($c.IsChecked -eq $true) { $checked++ }
         }
-        $lbl.Text = "$checked / $total Checks ausgewaehlt"
+        $lbl.Text = (Format-L10n -Text "$checked / $total Checks ausgewaehlt")
     }
 
     # Suite-Aktivierung: Nur die Keys einer Gruppe anwaehlen
@@ -520,6 +1162,7 @@ function Show-HealthCheckGUI {
 
         $headerText = New-Object System.Windows.Controls.TextBlock
         $headerText.Text = " $groupName"
+        & $addLocalized $headerText 'Text' " $groupName"
         $headerText.FontSize = 13
         $headerText.FontWeight = 'SemiBold'
         $headerText.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#0078D4')
@@ -538,6 +1181,7 @@ function Show-HealthCheckGUI {
             if (-not $Global:ReportTitles.Contains($checkKey)) { continue }
             $cb = New-Object System.Windows.Controls.CheckBox
             $cb.Content = $Global:ReportTitles[$checkKey]
+            & $addLocalized $cb 'Content' $Global:ReportTitles[$checkKey]
             $cb.Tag = $checkKey
             $cb.IsChecked = $true
             $cb.FontSize = 12
@@ -572,10 +1216,42 @@ function Show-HealthCheckGUI {
     # Initial Count
     & $updateCount $state $lblCount
 
+    # === Sprachumschalter DE/EN (wirkt live auf alle GUI-Texte) ==============
+    $applyLanguage = {
+        foreach ($e in $state.LocalizedControls) {
+            $txt = if ($Global:Lang -eq 'en' -and $e.English) { $e.English } else { Format-L10n -Text $e.Original }
+            switch ($e.Property) {
+                'Text'    { $e.Control.Text = $txt }
+                'Content' { $e.Control.Content = $txt }
+            }
+        }
+        $isDe = ($Global:Lang -eq 'de')
+        $btnLangDe.FontWeight = $(if ($isDe) { 'Bold' } else { 'Normal' })
+        $btnLangEn.FontWeight = $(if ($isDe) { 'Normal' } else { 'Bold' })
+        $btnLangDe.Opacity    = $(if ($isDe) { 1.0 } else { 0.6 })
+        $btnLangEn.Opacity    = $(if ($isDe) { 0.6 } else { 1.0 })
+        & $updateCount $state $lblCount
+    }
+
+    $btnLangDe.Add_Click({
+        param($sender,$e)
+        Set-HealthCheckLanguage -Code 'de'
+        & $applyLanguage
+    }.GetNewClosure())
+
+    $btnLangEn.Add_Click({
+        param($sender,$e)
+        Set-HealthCheckLanguage -Code 'en'
+        & $applyLanguage
+    }.GetNewClosure())
+
+    # Alle Texte in der Start-/Betriebssprache setzen
+    & $applyLanguage
+
     # === Button-Events ===
     $btnBrowse.Add_Click({
         $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
-        $fbd.Description = 'Ausgabepfad waehlen'
+        $fbd.Description = (Format-L10n -Text 'Ausgabepfad waehlen')
         $fbd.SelectedPath = $txtOutputPath.Text
         if ($fbd.ShowDialog() -eq 'OK') { $txtOutputPath.Text = $fbd.SelectedPath }
     }.GetNewClosure())
@@ -632,7 +1308,7 @@ function Show-HealthCheckGUI {
             if ($state.AllCheckBoxes[$k].IsChecked) { $selected += $k }
         }
         if ($selected.Count -eq 0) {
-            [System.Windows.MessageBox]::Show('Bitte mindestens einen Check auswaehlen.', 'Hinweis',
+            [System.Windows.MessageBox]::Show((Format-L10n -Text 'Bitte mindestens einen Check auswaehlen.'), (Format-L10n -Text 'Hinweis'),
                 [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning) | Out-Null
             return
         }
@@ -640,6 +1316,7 @@ function Show-HealthCheckGUI {
             SelectedChecks = $selected
             OutputPath     = $txtOutputPath.Text
             Cancelled      = $false
+            Language       = $Global:Lang
         }
         $state.Window.Close()
     }.GetNewClosure())
@@ -781,6 +1458,7 @@ function Write-CheckProgress {
         [string]$Message=''
     )
     $title = if ($Global:ReportTitles.Contains($CheckKey)) { $Global:ReportTitles[$CheckKey] } else { $CheckKey }
+    $title = Format-L10n -Text $title
     $percent = 0
     if ($Global:ProgressStats.TotalChecks -gt 0) {
         $percent = [math]::Min(100, [math]::Round(($Global:ProgressStats.CompletedChecks / $Global:ProgressStats.TotalChecks)*100,1))
@@ -791,7 +1469,7 @@ function Write-CheckProgress {
         $elapsed = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours,$ts.Minutes,$ts.Seconds
     }
     $pStatus = if ($DCName) { "$title | DC: $DCName" } else { $title }
-    Write-Progress -Activity "AD Health Check (Laufzeit: $elapsed)" `
+    Write-Progress -Activity (Format-L10n -Text "AD Health Check (Laufzeit: $elapsed)") `
                    -Status "$pStatus ($($Global:ProgressStats.CompletedChecks)/$($Global:ProgressStats.TotalChecks))" `
                    -PercentComplete $percent -CurrentOperation $Message
 
@@ -4456,7 +5134,7 @@ function Export-ResultsToCsv {
             $p = Join-Path $Global:CsvDirectory "$k.csv"
             if ($null -eq $d -or @($d).Count -eq 0) {
                 Write-Host ("  [-] {0,-32} -> leer" -f $k) -ForegroundColor DarkGray
-                "Keine Eintraege." | Out-File -FilePath $p -Encoding UTF8 -ErrorAction SilentlyContinue
+                (Format-L10n -Text 'Keine Eintraege.') | Out-File -FilePath $p -Encoding UTF8 -ErrorAction SilentlyContinue
                 continue
             }
             # Interne '_'-Felder beim Export ausblenden
@@ -4476,14 +5154,15 @@ function Get-StatusBadgeHtml {
     <#
     .SYNOPSIS
         Status-Badge fuer HTML - nur Text, kein doppeltes Icon.
+        Beschriftung folgt der gewaehlten Sprache (de/en).
     #>
     param([string]$Status)
     $cfg = switch ($Status) {
         'OK'       { @{ Text='OK';          Class='badge-ok' } }
-        'WARN'     { @{ Text='WARNUNG';     Class='badge-warn' } }
-        'CRITICAL' { @{ Text='KRITISCH';    Class='badge-critical' } }
+        'WARN'     { @{ Text=$(if ($Global:Lang -eq 'en') { 'WARNING'  } else { 'WARNUNG'    }); Class='badge-warn' } }
+        'CRITICAL' { @{ Text=$(if ($Global:Lang -eq 'en') { 'CRITICAL' } else { 'KRITISCH'   }); Class='badge-critical' } }
         'INFO'     { @{ Text='INFO';        Class='badge-info' } }
-        'NODATA'   { @{ Text='KEINE DATEN'; Class='badge-nodata' } }
+        'NODATA'   { @{ Text=$(if ($Global:Lang -eq 'en') { 'NO DATA'  } else { 'KEINE DATEN' }); Class='badge-nodata' } }
         default    { @{ Text=$Status;       Class='badge-info' } }
     }
     "<span class='badge $($cfg.Class)'>$($cfg.Text)</span>"
@@ -4547,32 +5226,32 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
         }
 
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine("<!DOCTYPE html><html lang='de'><head><title>AD Health Check Report - $Global:Timestamp</title>$head</head><body>")
+        [void]$sb.AppendLine("<!DOCTYPE html><html lang='$Global:Lang'><head><title>AD Health Check Report - $Global:Timestamp</title>$head</head><body>")
         [void]$sb.AppendLine("<h1>Active Directory Health Check Report</h1>")
-        [void]$sb.AppendLine("<p><b>Erstellt:</b> $(Get-Date -Format 'dd.MM.yyyy HH:mm:ss') &nbsp;|&nbsp; <b>Version:</b> $Global:ScriptVersion &nbsp;|&nbsp; <b>Modus:</b> $Global:RunMode</p>")
+        [void]$sb.AppendLine("<p><b>$(Format-L10n -Text 'Erstellt:')</b> $(Get-Date -Format 'dd.MM.yyyy HH:mm:ss') &nbsp;|&nbsp; <b>Version:</b> $Global:ScriptVersion &nbsp;|&nbsp; <b>$(Format-L10n -Text 'Modus:')</b> $Global:RunMode &nbsp;|&nbsp; <b>$(Format-L10n -Text 'Sprache:')</b> $($Global:Lang.ToUpper())</p>")
 
         # --- Executive Dashboard ---
         [void]$sb.AppendLine("<div class='dashboard'><h2 style='margin-top:0;border:none;background:none;'>Executive Dashboard</h2><div class='dash-grid'>")
         [void]$sb.AppendLine("<div class='dash-tile dash-ok'><span class='n'>$cOK</span><span class='l'>OK</span></div>")
-        [void]$sb.AppendLine("<div class='dash-tile dash-warn'><span class='n'>$cW</span><span class='l'>WARNUNGEN</span></div>")
-        [void]$sb.AppendLine("<div class='dash-tile dash-crit'><span class='n'>$cC</span><span class='l'>KRITISCH</span></div>")
+        [void]$sb.AppendLine("<div class='dash-tile dash-warn'><span class='n'>$cW</span><span class='l'>$(Format-L10n -Text 'WARNUNGEN')</span></div>")
+        [void]$sb.AppendLine("<div class='dash-tile dash-crit'><span class='n'>$cC</span><span class='l'>$(Format-L10n -Text 'KRITISCH')</span></div>")
         [void]$sb.AppendLine("<div class='dash-tile dash-info'><span class='n'>$($cI+$cN)</span><span class='l'>INFO</span></div>")
         [void]$sb.AppendLine("</div></div>")
 
         # --- Uebersichts-Tabelle (gruppiert nach GUI-Kategorien) ---
-        [void]$sb.AppendLine("<h2>Uebersicht aller Checks</h2>")
-        [void]$sb.AppendLine("<table class='overview'><thead><tr><th style='width:40px;'>#</th><th>Check</th><th class='status-cell'>Status</th><th>Zusammenfassung</th></tr></thead><tbody>")
+        [void]$sb.AppendLine("<h2>$(Format-L10n -Text 'Uebersicht aller Checks')</h2>")
+        [void]$sb.AppendLine("<table class='overview'><thead><tr><th style='width:40px;'>#</th><th>$(Format-L10n -Text 'Check')</th><th class='status-cell'>$(Format-L10n -Text 'Status')</th><th>$(Format-L10n -Text 'Zusammenfassung')</th></tr></thead><tbody>")
         $i = 0
         foreach ($cat in (Get-GroupedReportKeys).Keys) {
             $catKeys = (Get-GroupedReportKeys)[$cat]
-            [void]$sb.AppendLine("<tr class='group-row'><td colspan='4'>$cat</td></tr>")
+            [void]$sb.AppendLine("<tr class='group-row'><td colspan='4'>$(Format-L10n -Text $cat)</td></tr>")
             foreach ($k in $catKeys) {
-                $t = $Global:ReportTitles[$k]
+                $t = Format-L10n -Text $Global:ReportTitles[$k]
                 $a = $Global:Assessments[$k]
                 if (-not $a) { continue }
                 $i++
                 $b = Get-StatusBadgeHtml -Status $a.OverallStatus
-                $s = if ($a.Summary) { $a.Summary } else { '-' }
+                $s = if ($a.Summary) { Format-L10n -Text $a.Summary } else { '-' }
                 [void]$sb.AppendLine("<tr><td>$i</td><td><a href='#$k'>$t</a></td><td>$b</td><td>$s</td></tr>")
             }
         }
@@ -4581,21 +5260,22 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                 # --- Detail-Abschnitte (gruppiert nach GUI-Kategorien) ---
         $j = 0
         foreach ($cat in (Get-GroupedReportKeys).Keys) {
-        [void]$sb.AppendLine("<div class='group-banner'>$cat</div>")
+        [void]$sb.AppendLine("<div class='group-banner'>$(Format-L10n -Text $cat)</div>")
         foreach ($k in (Get-GroupedReportKeys)[$cat]) {
-            $t = $Global:ReportTitles[$k]
+            $t = Format-L10n -Text $Global:ReportTitles[$k]
             $a = $Global:Assessments[$k]
             if (-not $a) { continue }
             $j++
             $b = Get-StatusBadgeHtml -Status $a.OverallStatus
             [void]$sb.AppendLine("<h2 id='$k'>$j. $t $b</h2>")
 
-            if ($a.Summary) { [void]$sb.AppendLine("<p><b>Zusammenfassung:</b> $($a.Summary)</p>") }
+            if ($a.Summary) { [void]$sb.AppendLine("<p><b>$(Format-L10n -Text 'Zusammenfassung:')</b> $(Format-L10n -Text $a.Summary)</p>") }
             if ($a.Findings -and @($a.Findings).Count -gt 0) {
                 $fc = if ($a.OverallStatus -eq 'CRITICAL') { 'findings crit' } else { 'findings' }
-                [void]$sb.AppendLine("<div class='$fc'><b>Auffaelligkeiten / Handlungsempfehlungen:</b><ul>")
+                [void]$sb.AppendLine("<div class='$fc'><b>$(Format-L10n -Text 'Auffaelligkeiten / Handlungsempfehlungen:')</b><ul>")
                 foreach ($x in $a.Findings) {
-                    $e = "$x" -replace '<','&lt;' -replace '>','&gt;'
+                    $e = Format-L10n -Text "$x"
+                    $e = $e -replace '<','&lt;' -replace '>','&gt;'
                     [void]$sb.AppendLine("<li>$e</li>")
                 }
                 [void]$sb.AppendLine("</ul></div>")
@@ -4603,7 +5283,7 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
 
             $items = $Global:Results[$k]
             if ($null -eq $items -or @($items).Count -eq 0) {
-                [void]$sb.AppendLine("<p><i>Keine Daten.</i></p>")
+                [void]$sb.AppendLine("<p><i>$(Format-L10n -Text 'Keine Daten.')</i></p>")
                 Write-Host ("  [-] {0,-32} -> leer" -f $k) -ForegroundColor DarkGray
                 continue
             }
@@ -4616,7 +5296,7 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                                 Select-Object -ExpandProperty Name
 
                     [void]$sb.AppendLine("<table><thead><tr>")
-                    foreach ($p in $props) { [void]$sb.AppendLine("<th>$p</th>") }
+                    foreach ($p in $props) { [void]$sb.AppendLine("<th>$(Format-L10n -Text $p)</th>") }
                     [void]$sb.AppendLine("</tr></thead><tbody>")
 
                     foreach ($row in $items) {
@@ -4669,6 +5349,7 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                         foreach ($p in $props) {
                             $v = $row.$p
                             if ($v -is [datetime]) { $v = $v.ToString('yyyy-MM-dd HH:mm:ss') }
+                            $v = Format-L10n -Text $v
                             $ve = "$v" -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;'
                             [void]$sb.AppendLine("<td>$ve</td>")
                         }
@@ -4681,7 +5362,12 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                     $props = $firstItem.PSObject.Properties |
                                 Where-Object { $_.Name -notlike '_*' } |
                                 Select-Object -ExpandProperty Name
-                    [void]$sb.AppendLine(($items | Select-Object $props | ConvertTo-Html -Fragment))
+                    $localized = foreach ($row in $items) {
+                        $h = [ordered]@{}
+                        foreach ($p in $props) { $h[(Format-L10n -Text $p)] = (Format-L10n -Text $row.$p) }
+                        [pscustomobject]$h
+                    }
+                    [void]$sb.AppendLine(($localized | ConvertTo-Html -Fragment))
                 }
                 Write-Host ("  [+] {0,-32} -> {1,4} Zeilen (Status: {2})" -f $k, @($items).Count, $a.OverallStatus) -ForegroundColor Green
             } catch {
@@ -4691,7 +5377,7 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
         }
         }
 
-        [void]$sb.AppendLine("<div class='footer'>Erzeugt von <b>$Global:ScriptName v$Global:ScriptVersion</b> &nbsp;|&nbsp; $(Get-Date -Format 'dd.MM.yyyy HH:mm:ss') &nbsp;|&nbsp; Laufzeit: $((New-TimeSpan -Start $Global:ProgressStats.StartTime -End (Get-Date)).ToString('hh\:mm\:ss'))</div>")
+        [void]$sb.AppendLine((Format-L10n -Text "<div class='footer'>Erzeugt von <b>$Global:ScriptName v$Global:ScriptVersion</b> &nbsp;|&nbsp; $(Get-Date -Format 'dd.MM.yyyy HH:mm:ss') &nbsp;|&nbsp; Laufzeit: $((New-TimeSpan -Start $Global:ProgressStats.StartTime -End (Get-Date)).ToString('hh\:mm\:ss'))</div>"))
         [void]$sb.AppendLine("</body></html>")
         $sb.ToString() | Out-File -FilePath $Global:HtmlReport -Encoding UTF8
         Write-Log "HTML-Report erstellt: $Global:HtmlReport" -Level OK
@@ -4742,6 +5428,8 @@ function Start-ADHealthCheck {
                 Write-Host "[!] Abbruch durch Benutzer." -ForegroundColor Yellow
                 return
             }
+            # Gewaehlte Sprache uebernehmen (GUI-Schalter schlaegt Betriebssystemsprache)
+            if ($guiResult.Language) { $Global:Lang = $guiResult.Language }
             $Global:SelectedChecks = @($guiResult.SelectedChecks)
             $Global:RunMode = if ($guiResult.SelectedChecks.Count -eq @($Global:ReportTitles.Keys | Where-Object { $_ -ne '00_SkippedDCs' }).Count) { 'Full' }
                               elseif ($guiResult.SelectedChecks.Count -eq 1) { 'Single' }
