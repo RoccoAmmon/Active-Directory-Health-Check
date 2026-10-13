@@ -1,9 +1,9 @@
-# 🛡️ Active Directory Health Check v2.6
+# 🛡️ Active Directory Health Check v2.7
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.6-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.7-brightgreen.svg)]()
 [![Checks](https://img.shields.io/badge/Checks-54-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
@@ -41,6 +41,7 @@
 - 📊 **CSV-Export** aller Check-Ergebnisse
 - 🖥️ **Interaktives Startmenü** als Fallback für Konsolen-Betrieb
 - ⚡ **Parameter-basierte Ausführung** für Scheduled Tasks / Automatisierung
+- 🆕 **Update-Anzeige gegen GitLab-Releases** – beim Start wird das neueste Release geprüft (Timeout 3 s): klickbares Badge neben der Versionsnummer („🔄 Update verfügbar: v2.8"), in der Konsole/Skript eine Infozeile; unterdrückbar per `-NoUpdateCheck`
 - 📁 **Frei wählbarer Ausgabepfad** per GUI oder `-OutputPath` Parameter
 - 🔍 **DCDiag mit Einzeltest-Parsing** (DE/EN sprachunabhängig)
 - 🔄 **Loopback-Erkennung** für lokale DCs (nutzt `localhost` statt FQDN)
@@ -191,6 +192,9 @@ cd Active-Directory-Health-Check
 
 # Eigenen Ausgabepfad angeben
 .\AD_Health_Check.ps1 -OutputPath 'D:\Reports\AD'
+
+# Update-Check gegen GitLab-Releases unterdrücken (z. B. Airgap / streng firewalled Server)
+.\AD_Health_Check.ps1 -FullRun -NoUpdateCheck
 ```
 
 ### 🗣️ Sprache / Language
@@ -258,7 +262,14 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.6 (aktuell)
+### v2.7 (aktuell)
+- **Update-Anzeige gegen GitLab-Releases** – beim Start wird das neueste Release abgefragt (Timeout 3 s); GUI: klickbares Badge neben der Versionsnummer („🔄 Update verfügbar: v2.8", Klick öffnet die Release-Seite), Konsole/Skript: Infozeile `[i] Update verfügbar: v2.8 (aktuell v2.7) - <URL>`
+- Neuer Parameter `-NoUpdateCheck` unterdrückt die Abfrage (Airgap / Luftschacht, streng firewalled Server)
+- Versionsnummer jetzt sichtbar im GUI-Kopf (neben dem Titel)
+- Windows PowerShell 5.1 erzwingt TLS 1.2 für die Abfrage; ohne Internet/Proxy-Sperren bleibt die Anzeige aus, blockiert aber nie (Async-Runspace in der GUI)
+- Check-Logik unverändert, weiterhin 54 Checks
+
+### v2.6
 - **Automatische Spracherkennung & DE/EN-Sprachumschalter** – die Sprache wird aus der Betriebssystemsprache ermittelt (`Get-UICulture`), Live-Umschalter DE/EN in der WPF-GUI, neuer Parameter `-Language de|en`
 - HTML-Report, Konsolenausgabe und Menüs erscheinen in der gewählten Sprache; CSV-Export-Spaltennamen bleiben technisch/unverändert
 
@@ -340,6 +351,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 - 📊 **CSV export** of all check results
 - 🖥️ **Interactive start menu** as a fallback for console operation
 - ⚡ **Parameter-based execution** for scheduled tasks / automation
+- 🆕 **Update check against GitLab releases** – the latest release is queried at startup (3 s timeout): clickable badge next to the version number (“🔄 Update available: v2.8”), an info line in console/script mode; can be suppressed with `-NoUpdateCheck`
 - 📁 **Freely selectable output path** via the GUI or the `-OutputPath` parameter
 - 🔍 **DCDiag with per-test parsing** (language-independent, DE/EN)
 - 🔄 **Loopback detection** for local DCs (uses `localhost` instead of the FQDN)
@@ -490,6 +502,9 @@ cd Active-Directory-Health-Check
 
 # Specify a custom output path
 .\AD_Health_Check.ps1 -OutputPath 'D:\Reports\AD'
+
+# Suppress the update check against GitLab releases (e.g. airgapped / strictly firewalled server)
+.\AD_Health_Check.ps1 -FullRun -NoUpdateCheck
 ```
 
 ### 🗣️ Sprache / Language
@@ -557,7 +572,14 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.6 (current)
+### v2.7 (current)
+- **Update check against GitLab releases** – the latest release is queried at startup (3 s timeout); GUI: clickable badge next to the version number (“🔄 Update available: v2.8”, clicking opens the release page), console/script: info line `[i] Update available: v2.8 (current v2.7) - <URL>`
+- New `-NoUpdateCheck` parameter suppresses the query (airgapped / strictly firewalled servers)
+- Version number now visible in the GUI header (next to the title)
+- Windows PowerShell 5.1 enforces TLS 1.2 for the query; without internet/proxy blocks the notice simply does not appear, but never blocks (async runspace in the GUI)
+- Check logic unchanged, still 54 checks
+
+### v2.6
 - **Automatic language detection & DE/EN language switch** – the language is determined from the operating system language (`Get-UICulture`), live DE/EN switch in the WPF GUI, new `-Language de|en` parameter
 - HTML report, console output and menus appear in the selected language; CSV export column names remain technical/unchanged
 

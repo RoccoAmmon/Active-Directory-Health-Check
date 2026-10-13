@@ -9,6 +9,22 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [2.7] - 2026-10-14
+
+#### Hinzugefügt
+- **Update-Anzeige gegen GitLab-Releases** – beim Start wird das neueste Release dieses Projekts abgefragt (Timeout 3 s, Sortierung `released_at` absteigend)
+  - **GUI**: neben der Versionsnummer erscheint ein klickbares Badge („🔄 Update verfügbar: v2.8"); ein Klick öffnet die Release-Seite im Browser
+  - **Konsole/Skriptbetrieb**: zusätzliche Infozeile `[i] Update verfügbar: v2.8 (aktuell v2.7) - <URL>`
+  - **Neuer Parameter `-NoUpdateCheck`** unterdrückt die Abfrage (Airgap-/Luftschacht-Umgebungen, streng firewalled Server)
+- **Versionsnummer im GUI-Kopf sichtbar** (`v2.7` steht jetzt neben dem Titel, nicht mehr nur im Fenster-Titel)
+
+#### Geändert
+- Version auf 2.7 erhöht (54 Checks, Check-Logik unverändert)
+- Die Release-Abfrage erzwingt für Windows PowerShell 5.1 TLS 1.2 (sonst schlägt der HTTPS-Handshake auf älteren Systemen fehl)
+
+#### Behoben
+- **Update-Check stört nie einen Health Check**: ohne Internet, bei Proxy-Sperren oder Timeouts bleibt die Anzeige aus, und in der GUI läuft die Abfrage in einem eigenen Runspace (DispatcherTimer pollt das Ergebnis) – das Fenster öffnet sich auch bei langsamem Netz sofort
+
 ### [2.6] - 2026-10-13
 
 #### Hinzugefügt
@@ -133,6 +149,22 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [2.7] - 2026-10-14
+
+#### Added
+- **Update indicator backed by GitLab releases** – on startup the script queries this project's latest release (3 s timeout, sorted by `released_at` descending)
+  - **GUI**: a clickable badge appears next to the version number ("🔄 Update available: v2.8"); clicking it opens the release page in your browser
+  - **Console/script mode**: an extra info line `[i] Update available: v2.8 (currently v2.7) - <URL>`
+  - **New `-NoUpdateCheck` parameter** disables the query (air-gapped environments, strictly firewalled servers)
+- **Version number now visible in the GUI header** (`v2.7` sits next to the title instead of only in the window title bar)
+
+#### Changed
+- Version bumped to 2.7 (54 checks, check logic unchanged)
+- The release query enforces TLS 1.2 for Windows PowerShell 5.1 (otherwise the HTTPS handshake fails on older systems)
+
+#### Fixed
+- **The update check never interferes with a health check**: without internet access, behind proxy blocks or on timeouts the indicator simply stays hidden, and in the GUI the query runs in its own runspace (a DispatcherTimer polls the result) – the window opens immediately even on slow networks
 
 ### [2.6] - 2026-10-13
 

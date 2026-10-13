@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.6 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.7 mit Best-Practice-Bewertung.
 .DESCRIPTION
     54 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
@@ -9,6 +9,10 @@
     Betriebssystemsprache ermittelt, kann per Parameter -Language <de|en>
     ueberschrieben werden und laesst sich in der GUI per DE/EN-Schalter live
     umschalten (GUI, Konsolen-Ausgabe und HTML-Report folgen der Auswahl).
+    Beim Start wird das neueste GitLab-Release abgefragt (Timeout 3 s). Ist eine
+    neuere Version veroeffentlicht, erscheint eine klickbare Update-Anzeige neben
+    der Versionsnummer in der GUI bzw. eine Info-Zeile in der Konsole. Ohne
+    Internet, hinter Proxy-Sperren oder per -NoUpdateCheck bleibt die Anzeige aus.
 .PARAMETER FullRun
     Fuehrt alle Checks ohne Menue aus (fuer Scheduled Tasks).
 .PARAMETER OnlyChecks
@@ -20,9 +24,12 @@
 .PARAMETER Language
     Ausgabesprache 'de' oder 'en'. Standard: automatische Erkennung aus der
     Betriebssystemsprache (englische Windows-Oberflaeche => en, sonst de).
+.PARAMETER NoUpdateCheck
+    Unterdrueckt den Update-Check gegen die GitLab-Releases-API
+    (fuer Luftschacht-/Airgap-Umgebungen oder streng firewalled Server).
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.6 (54 Checks + Internationalisierung DE/EN mit GUI-Sprachumschalter)
+    Version : 2.7 (54 Checks, Internationalisierung DE/EN, Update-Anzeige GitLab)
     Sprache : automatisch aus dem Betriebssystem, sonst -Language <de|en>
     LogPfad : C:\ScriptLog
 .EXAMPLE
@@ -41,13 +48,16 @@ param(
     # Ausgabesprache (de/en). Standard: automatische Erkennung aus der Betriebssystemsprache.
     # Ueberschreibung z.B. fuer Scheduled Tasks: -Language en
     [ValidateSet('de','en')]
-    [string]$Language = ''
+    [string]$Language = '',
+    # Update-Check gegen die GitLab-Releases-API unterdruecken (Airgap/Offline)
+    [switch]$NoUpdateCheck
 )
 
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.6"
+$Global:ScriptVersion   = "2.7"
+$Global:NoUpdateCheck   = [bool]$NoUpdateCheck
 $Global:Timestamp       = Get-Date -Format "yyyyMMdd_HHmmss"
 $Global:LogDirectory    = if ($OutputPath) { $OutputPath } else { "C:\ScriptLog" }
 $Global:ReportDirectory = Join-Path $Global:LogDirectory "AD_HealthCheck_$Global:Timestamp"
@@ -283,6 +293,9 @@ Bitte mindestens einen Check auswaehlen.=>Please select at least one check.
 Hinweis=>Notice
 Sprache:=>Language:
 Abbrechen=>Cancel
+Update verfügbar: =>Update available: 
+ (aktuell => (currently 
+Oeffnet die Release-Seite dieses Projekts.=>Opens the release page of this project.
 Keine=>No
 Keine Fehler=>No errors
 Keine erreichbaren DCs=>No reachable DCs
@@ -809,6 +822,74 @@ function Write-Log {
 
 #endregion
 
+#region ============= UPDATE-CHECK (GitLab Releases) ==========================
+
+$Global:GitLabProjectId = '87409197'
+$Global:UpdateCheckUrl  = "https://gitlab.com/api/v4/projects/$($Global:GitLabProjectId)/releases?per_page=1&order_by=released_at&sort=desc"
+
+function Get-RemoteReleaseInfo {
+    <#
+    .SYNOPSIS
+        Fragt die GitLab-Releases-API nach dem neuesten Release ab.
+    .NOTES
+        Timeout 3 s. Offline, Proxy-Sperren und TLS-Probleme werden verschluckt:
+        Der Update-Check darf einen Health Check nie verzoegern oder abbrechen.
+    .OUTPUTS
+        PSCustomObject: LatestTag, LatestVersion, Url, UpdateAvailable, CurrentTag
+    #>
+    $res = [PSCustomObject]@{
+        LatestTag       = $null
+        LatestVersion   = $null
+        Url             = $null
+        UpdateAvailable = $false
+        CurrentTag      = "v$Global:ScriptVersion"
+    }
+    try {
+        # Windows PowerShell 5.1 wuerde sonst nur TLS 1.0/1.1 anbieten
+        [Net.ServicePointManager]::SecurityProtocol =
+            [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $latest = Invoke-RestMethod -Uri $Global:UpdateCheckUrl -TimeoutSec 3 -ErrorAction Stop | Select-Object -First 1
+        if (-not $latest) { return $res }
+        $res.LatestTag = [string]$latest.tag_name
+        if ($res.LatestTag -match 'v?(?<ver>\d+(?:\.\d+)*)') { $res.LatestVersion = [version]$matches['ver'] }
+        if ($latest._links -and $latest._links.self) { $res.Url = [string]$latest._links.self }
+        if ($res.LatestVersion -and $res.LatestVersion -gt ([version]$Global:ScriptVersion)) { $res.UpdateAvailable = $true }
+    } catch { }
+    return $res
+}
+
+function Start-UpdateCheckAsync {
+    <#
+    .SYNOPSIS
+        Startet den Update-Check in einem eigenen Runspace, damit die GUI nicht einfriert.
+    .NOTES
+        Das Skriptblock-Laeufwerk kennt die Hilfsfunktionen nicht - alles wird per
+        Argument uebergeben und das Ergebnis per EndInvoke geholt (DispatcherTimer pollt).
+    .OUTPUTS
+        PSCustomObject: Handle (IAsyncResult), PowerShell (Instanz zum Aufraeumen)
+    #>
+    $ps = [powershell]::Create()
+    [void]$ps.AddScript({
+        param($url, $currentTag)
+        $out = [PSCustomObject]@{ LatestTag = $null; Url = $null; UpdateAvailable = $false }
+        try {
+            [Net.ServicePointManager]::SecurityProtocol =
+                [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+            $latest = Invoke-RestMethod -Uri $url -TimeoutSec 3 -ErrorAction Stop | Select-Object -First 1
+            if ($latest) {
+                $out.LatestTag = [string]$latest.tag_name
+                if ($latest._links -and $latest._links.self) { $out.Url = [string]$latest._links.self }
+                if ($out.LatestTag -match 'v?(?<ver>\d+(?:\.\d+)*)' -and
+                    ([version]$matches['ver']) -gt ([version]$currentTag)) { $out.UpdateAvailable = $true }
+            }
+        } catch { }
+        return $out
+    }).AddArgument($Global:UpdateCheckUrl).AddArgument("v$Global:ScriptVersion")
+    return [PSCustomObject]@{ Handle = $ps.BeginInvoke(); PowerShell = $ps }
+}
+
+#endregion
+
 #region ============= INTERAKTIVES MENUE / GUI ================================
 
 function Show-HealthCheckGUI {
@@ -993,7 +1074,16 @@ function Show-HealthCheckGUI {
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
-                <TextBlock Text="AD Health Check" FontSize="24" FontWeight="Bold" Foreground="#0078D4"/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="AD Health Check" FontSize="24" FontWeight="Bold" Foreground="#0078D4"/>
+                    <TextBlock x:Name="lblVersion" Text="v$($Global:ScriptVersion)" FontSize="16" FontWeight="SemiBold"
+                               Foreground="#777777" VerticalAlignment="Bottom" Margin="10,0,0,4"/>
+                    <!-- Update-Anzeige: erscheint nur, wenn auf GitLab eine neuere Version liegt -->
+                    <Border x:Name="brdUpdate" Visibility="Collapsed" Background="#FFF4CE" BorderBrush="#E0A800" BorderThickness="1"
+                            CornerRadius="4" Padding="8,3" Margin="10,0,0,0" VerticalAlignment="Bottom" Cursor="Hand">
+                        <TextBlock x:Name="lblUpdate" Text="" FontSize="11" FontWeight="SemiBold" Foreground="#8A6100"/>
+                    </Border>
+                </StackPanel>
                 <TextBlock x:Name="lblSubtitle" Text="Waehlen Sie die gewuenschten Pruefungen und den Ausgabepfad." FontSize="12" Foreground="#555555" Margin="0,4,0,0"/>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,4,0,0">
@@ -1087,6 +1177,9 @@ function Show-HealthCheckGUI {
     $lblOutputPath  = $window.FindName('lblOutputPath')
     $btnLangDe      = $window.FindName('btnLangDe')
     $btnLangEn      = $window.FindName('btnLangEn')
+    $lblVersion     = $window.FindName('lblVersion')
+    $brdUpdate      = $window.FindName('brdUpdate')
+    $lblUpdate      = $window.FindName('lblUpdate')
 
     $txtOutputPath.Text = $Global:LogDirectory
 
@@ -1322,6 +1415,33 @@ function Show-HealthCheckGUI {
     }.GetNewClosure())
 
     $btnCancel.Add_Click({ param($sender,$e); $state.Window.Close() }.GetNewClosure())
+
+    # === Update-Anzeige: asynchron pruefen, Badge nur bei neuerer Version einblenden ===
+    # Shared State (wie $state) - Hashtable-Zugriffe funktionieren zuverlaessig in Event-Handlern
+    $updState = @{ Task = $null; Timer = $null; Url = $null }
+    if (-not $Global:NoUpdateCheck) {
+        $updState.Task  = Start-UpdateCheckAsync
+        $updState.Timer = New-Object System.Windows.Threading.DispatcherTimer
+        $updState.Timer.Interval = [TimeSpan]::FromMilliseconds(400)
+        $updState.Timer.Add_Tick({
+            $t = $updState.Task
+            if ($null -eq $t -or -not $t.Handle.IsCompleted) { return }
+            $updState.Timer.Stop()
+            $info = $null
+            try { $info = @($t.PowerShell.EndInvoke($t.Handle)) | Select-Object -First 1 } catch { }
+            try { $t.PowerShell.Dispose() } catch { }
+            $updState.Task = $null
+            if ($info -and $info.UpdateAvailable) {
+                $updState.Url         = $info.Url
+                $lblUpdate.Text       = (Format-L10n -Text ('Update verfügbar: ' + $info.LatestTag))
+                $brdUpdate.ToolTip    = (Format-L10n -Text 'Oeffnet die Release-Seite dieses Projekts.')
+                $brdUpdate.Visibility = 'Visible'
+            }
+        })
+        $updState.Timer.Start()
+        # Klick auf das Badge oeffnet die Release-Seite im Browser
+        $brdUpdate.Add_MouseLeftButtonDown({ if ($updState.Url) { Start-Process $updState.Url } })
+    }
 
     # === Window anzeigen ===
     $window.ShowDialog() | Out-Null
@@ -5394,6 +5514,16 @@ function Start-ADHealthCheck {
         $Global:ProgressStats.StartTime = Get-Date
         $skippedDCs   = @()
         $reachableDCs = @()
+
+        # --- Update-Check (nur Infozeile; GUI zeigt stattdessen das Badge) ---
+        # Fehler, Offline und Proxy-Sperren bleiben folgenlos (Timeout 3 s)
+        $guiMode = -not ($FullRun -or $NoInteractive -or ($OnlyChecks -and $OnlyChecks.Count -gt 0))
+        if (-not $guiMode -and -not $Global:NoUpdateCheck) {
+            $upd = Get-RemoteReleaseInfo
+            if ($upd.UpdateAvailable) {
+                Write-Host "  [i] Update verfügbar: $($upd.LatestTag) (aktuell v$Global:ScriptVersion) - $($upd.Url)" -ForegroundColor Yellow
+            }
+        }
 
         # --- Modus-Ermittlung (Parameter oder interaktives Menue) ---
         if ($FullRun) {
