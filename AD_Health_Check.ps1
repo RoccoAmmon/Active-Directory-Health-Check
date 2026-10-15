@@ -4126,6 +4126,108 @@ function Test-Check-StaleDCs {
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
 }
 
+function Get-RCAudit {
+    <#
+    .SYNOPSIS
+        Sammelt echte Belege fuer RC4/LM-Nutzung je DC (Check 57).
+    .NOTES
+        - Netlogon Secure Channel EncryptionTypes
+        - NoLMHash Registry
+        - Security Log Events 4768/4769 (Kerberos Tickets, Type 0x17/0x18)
+        - Zeitfenster: $Global:RC4EventDays (Default 7), Sample: $Global:RC4EventSampleLimit (Default 5000)
+    #>
+    $result = @()
+    try {
+        $dcs = @(Get-ADDomainController -Filter * -ErrorAction Stop | Where-Object { $_.IPv4Address })
+        $days = $Global:RC4EventDays
+        $limit = $Global:RC4EventSampleLimit
+        $since = (Get-Date).AddDays(-$days)
+
+        foreach ($dc in $dcs) {
+            $dcName = $dc.HostName
+
+            # 1) Netlogon Secure Channel EncryptionTypes
+            try {
+                $nls = Get-ADDomainController -Identity $dcName -Properties 'msDS-NetlogonSecureChannelEncryptionTypes' -ErrorAction Stop
+                $enc = $nls.'msDS-NetlogonSecureChannelEncryptionTypes'
+                $result += [pscustomobject]@{
+                    Kind='Netlogon'; DCName=$dcName; Risk=if ($enc -band 0x0C) { 'OK' } else { 'WARN' }
+                    Detail="Netlogon Secure Channel EncryptionTypes=0x$([Convert]::ToString($enc,16))"; RowKey="Netlogon|$dcName"
+                }
+            } catch { $result += [pscustomobject]@{ Kind='Netlogon'; DCName=$dcName; Risk='WARN'; Detail="Netlogon EncryptionTypes nicht lesbar: $_"; RowKey="Netlogon|$dcName" } }
+
+            # 2) NoLMHash
+            try {
+                $reg = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -ErrorAction Stop
+                $noLM = $reg.'NoLMHash'
+                $result += [pscustomobject]@{
+                    Kind='NoLMHash'; DCName=$dcName; Risk=if ($noLM -eq 1) { 'OK' } else { 'CRITICAL' }
+                    Detail="NoLMHash=$($noLM)"; RowKey="NoLMHash|$dcName"
+                }
+            } catch { $result += [pscustomobject]@{ Kind='NoLMHash'; DCName=$dcName; Risk='WARN'; Detail="NoLMHash nicht lesbar: $_"; RowKey="NoLMHash|$dcName" } }
+
+            # 3) Security Log: Events 4768 (TGT) + 4769 (ST) mit Ticket-EncryptionType 0x17 (RC4) / 0x18 (DES)
+            try {
+                $cim = New-CimSession -ComputerName $dc.HostName -OperationTimeoutSec 10 -ErrorAction Stop
+                $filter = @"
+SELECT * FROM Win32_NTLogEvent 
+WHERE Logfile='Security' 
+AND (EventCode=4768 OR EventCode=4769) 
+AND TimeGenerated >= '$($since.ToString("yyyyMMddHHmmss.000000+000"))'
+"@
+                $events = Get-CimInstance -CimSession $cim -Namespace 'root/cimv2' -Query $filter -ErrorAction Stop | Select-Object -First $limit
+                Remove-CimSession $cim -ErrorAction SilentlyContinue
+
+                $total = $events.Count
+                $rc4Count = 0
+                $desCount = 0
+                foreach ($e in $events) {
+                    $xml = $e.Message
+                    # TicketEncryptionType im Message suchen (0x17=RC4, 0x18=DES)
+                    if ($xml -match 'TicketEncryptionType.*?(0x17|0x18)') {
+                        if ($matches[1] -eq '0x17') { $rc4Count++ } else { $desCount++ }
+                    }
+                }
+                $rc4Pct = if ($total -gt 0) { [math]::Round($rc4Count / $total * 100, 1) } else { 0 }
+                $risk = 'OK'
+                if ($desCount -gt 0) { $risk = 'CRITICAL' }
+                elseif ($rc4Pct -ge 50) { $risk = 'CRITICAL' }
+                elseif ($rc4Pct -gt 0) { $risk = 'WARN' }
+                $result += [pscustomobject]@{
+                    Kind='RC4-Tickets'; DCName=$dcName; Risk=$risk
+                    Detail="Security-Log: $total Tickets (RC4: $rc4Count, DES: $desCount) -> RC4-Anteil: $rc4Pct%"
+                    RowKey="RC4-Tickets|$dcName"
+                }
+            } catch {
+                $result += [pscustomobject]@{
+                    Kind='RC4-Tickets'; DCName=$dcName; Risk='WARN'
+                    Detail="Security-Log nicht lesbar: $_"; RowKey="RC4-Tickets|$dcName"
+                }
+            }
+        }
+    } catch {
+        $result += [pscustomobject]@{ Kind='Fehler'; Target='RCAudit'; Detail="Abfrage fehlgeschlagen: $_"; Risk='WARN' }
+    }
+    return $result
+}
+
+function Test-Check-RCAudit {
+    <#
+    .SYNOPSIS
+        Bewertet RC4/LM-Audit.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $rows = @($data | Where-Object { $_.Kind -in @('Netlogon','NoLMHash','RC4-Tickets') })
+    if ($rows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $critical = @($rows | Where-Object { $_.Risk -eq 'CRITICAL' })
+    $warn = @($rows | Where-Object { $_.Risk -eq 'WARN' })
+    $findings = @($rows | Where-Object { $_.Risk -ne 'OK' } | ForEach-Object { $_.Detail })
+    $status = if ($critical.Count) { 'CRITICAL' } elseif ($warn.Count) { 'WARN' } else { 'OK' }
+    $summary = "$($rows.Count) Belege: OK $($rows.Count - $critical.Count - $warn.Count), WARN $($warn.Count), CRITICAL $($critical.Count)"
+    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
+}
+
 function Get-LAPSConfiguration {
     <#
     .SYNOPSIS
