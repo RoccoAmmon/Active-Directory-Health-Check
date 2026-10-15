@@ -4352,6 +4352,103 @@ function Test-Check-SPNInventory {
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
 }
 
+function Get-EncryptionTypeDistribution {
+    <#
+    .SYNOPSIS
+        Verteilt alle Konten nach EncType-Kombination, prueft AES-Abdeckung, korreliert OS x EncType.
+    .NOTES
+        - Schwellwert: $Global:EncTypesAesCoverageMin (90%)
+        - Row-Kinds: Verteilung, OS, Fazit (Fazit-Row 'AES-Abdeckung'), Fehler
+        - Moderne OS-Gruppe ohne AES = CRITICAL
+    #>
+    $result = @()
+    try {
+        $accounts = @(Get-ADObject -LDAPFilter '(&(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))' -Properties 'msDS-SupportedEncryptionTypes','OperatingSystem','samAccountName','distinguishedName' -ErrorAction Stop)
+        $dist = @{}; $osDist = @{}; $total = 0; $aesCount = 0
+        $modernOS = @('Windows 10','Windows 11','Windows Server 2016','Windows Server 2019','Windows Server 2022')
+        
+        foreach ($a in $accounts) {
+            $enc = $a.'msDS-SupportedEncryptionTypes'
+            if ($null -eq $enc) { $enc = 0 }
+            $total++
+            $os = $a.OperatingSystem
+            if (-not $os) { $os = 'Unbekannt' }
+            $label = "0x$([Convert]::ToString($enc,16))"
+            if (-not $dist.Contains($label)) { $dist[$label] = 0 }; $dist[$label]++
+            if (-not $osDist.Contains($os)) { $osDist[$os] = @{Total=0; AES=0} }
+            $osDist[$os].Total++
+            $hasAES = ($enc -band 0x18) -ne 0
+            if ($hasAES) { $aesCount++; $osDist[$os].AES++ }
+        }
+
+        # Verteilung
+        foreach ($k in $dist.Keys | Sort-Object) {
+            $result += [pscustomobject]@{
+                Kind='Verteilung'; Target=$k; Risk='OK'
+                Detail="$($dist[$k]) Konten"; RowKey="Verteilung|$k"
+            }
+        }
+
+        # OS-Korrelation
+        foreach ($os in $osDist.Keys | Sort-Object) {
+            $d = $osDist[$os]
+            $pct = if ($d.Total -gt 0) { [math]::Round($d.AES / $d.Total * 100, 1) } else { 0 }
+            $isModern = $modernOS | Where-Object { $os -like "*$_*" }
+            $risk = 'OK'
+            if ($isModern -and $d.AES -eq 0) { $risk = 'CRITICAL' }
+            elseif ($pct -lt $Global:EncTypesAesCoverageMin) { $risk = 'WARN' }
+            $result += [pscustomobject]@{
+                Kind='OS'; Target=$os; Risk=$risk
+                Detail="Total: $($d.Total), AES: $($d.AES) ($pct%)"
+                RowKey="OS|$os"
+            }
+        }
+
+        # Fazit: AES-Abdeckung
+        $covPct = if ($total -gt 0) { [math]::Round($aesCount / $total * 100, 1) } else { 0 }
+        $fazitRisk = if ($covPct -lt $Global:EncTypesAesCoverageMin) { 'CRITICAL' } else { 'OK' }
+        $result += [pscustomobject]@{
+            Kind='Fazit'; Target='AES-Abdeckung'; Risk=$fazitRisk
+            Detail="AES-Abdeckung: $covPct% ($aesCount / $total) – Schwelle: $Global:EncTypesAesCoverageMin%"
+            RowKey='Fazit|AES-Abdeckung'
+        }
+
+        # Moderne OS ohne AES als separater Befund
+        foreach ($os in $osDist.Keys) {
+            if ($modernOS | Where-Object { $os -like "*$_*" }) {
+                $d = $osDist[$os]
+                if ($d.AES -eq 0 -and $d.Total -gt 0) {
+                    $result += [pscustomobject]@{
+                        Kind='Fazit'; Target="Moderne OS ohne AES: $os"; Risk='CRITICAL'
+                        Detail="OS $os hat $($d.Total) Konto(s), keines mit AES"
+                        RowKey="Fazit|ModerneOS|$os"
+                    }
+                }
+            }
+        }
+    } catch {
+        $result += [pscustomobject]@{ Kind='Fehler'; Target='EncTypes'; Detail="Abfrage fehlgeschlagen: $_"; Risk='WARN' }
+    }
+    return $result
+}
+
+function Test-Check-EncryptionTypes {
+    <#
+    .SYNOPSIS
+        Bewertet Encryption-Type-Verteilung.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $rows = @($data | Where-Object { $_.Kind -ne 'Verteilung' })
+    if ($rows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $critical = @($rows | Where-Object { $_.Risk -eq 'CRITICAL' })
+    $warn = @($rows | Where-Object { $_.Risk -eq 'WARN' })
+    $findings = @($rows | Where-Object { $_.Risk -ne 'OK' } | ForEach-Object { $_.Detail })
+    $status = if ($critical.Count) { 'CRITICAL' } elseif ($warn.Count) { 'WARN' } else { 'OK' }
+    $summary = "$($rows.Count) EncType-Positionen: OK $($rows.Count - $critical.Count - $warn.Count), WARN $($warn.Count), CRITICAL $($critical.Count)"
+    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
+}
+
 function Get-LAPSConfiguration {
     <#
     .SYNOPSIS
