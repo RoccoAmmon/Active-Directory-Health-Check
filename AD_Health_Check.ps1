@@ -50,7 +50,10 @@ param(
     [ValidateSet('de','en')]
     [string]$Language = '',
     # Update-Check gegen die GitLab-Releases-API unterdruecken (Airgap/Offline)
-    [switch]$NoUpdateCheck
+    [switch]$NoUpdateCheck,
+    # Kein automatischer Neustart mit Administratorrechten.
+    # Ohne diese Rechte lehnt Windows die DNS-/WMI-Abfragen ab (z.B. root\MicrosoftDNS).
+    [switch]$NoElevate
 )
 
 #region ============================ VARIABLEN ================================
@@ -84,6 +87,24 @@ $Global:KerberoastPwdAgeWarn = 180
 $Global:FGPPMinPasswordLength = 14
 $Global:FGPPPasswordHistoryMin = 24
 $Global:DNSAgingMinDays      = 7
+# v2.9 Thresholds
+$Global:KMSMinCountServer    = 5
+$Global:KMSMinCountClient    = 25
+$Global:StaleDCWarnAgeDays   = 0
+$Global:RC4EventDays         = 7
+$Global:RC4EventSampleLimit  = 5000
+$Global:EncTypesAesCoverageMin = 90
+$Global:DNSZoneRefreshMaxHours = 24
+$Global:DNSZoneExpireMinDays   = 7
+$Global:ReportOverviewFindingsMax = 5
+$Global:SPNMaxObjSpns        = 20
+$Global:SPNMaxDnsProbe       = 200
+$Global:SPNInventoryMaxRows  = 200
+$Global:SPNUserAccountClassWarn = @('User','InetOrgPerson')
+# Reverse-Lookup-Zonen, die der DNS-Dienst automatisch anlegt (Default).
+$Global:DNSDefaultReverseZones = @('0.in-addr.arpa','127.in-addr.arpa','255.in-addr.arpa')
+# Systemzonen, die der DNS-Dienst selbst verwaltet.
+$Global:DNSSystemZones       = @('TrustAnchors')
 
 # Ping-Skip-Verhalten
 $Global:SkipUnreachableDCs   = $true
@@ -119,7 +140,7 @@ $Global:ServiceMap = [ordered]@{
 $Global:CheckGroups = [ordered]@{
     'DC-Infrastruktur' = @(
         '01_DCSystemInfo','02_Services','03_DCDiag','04_Replication','04b_ReplicationFailures',
-        '05_FSMO','06_DNS','07_SYSVOL','08_Database','34_TimeSync','35_Backup'
+        '05_FSMO','06_DNS','62_ReverseLookup','07_SYSVOL','08_Database','34_TimeSync','35_Backup'
     )
     'Security & Hardening' = @(
         '09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity',
@@ -151,6 +172,7 @@ $Global:ReportTitles = [ordered]@{
     '04b_ReplicationFailures'    = 'Replikations-Fehler (Forest)'
     '05_FSMO'                    = 'FSMO-Rollen'
     '06_DNS'                     = 'DNS-Konfiguration'
+    '62_ReverseLookup'           = 'DNS-Reverse-Lookup-Vollstaendigkeit'
     '07_SYSVOL'                  = 'SYSVOL & NETLOGON'
     '08_Database'                = 'NTDS-Datenbank'
     '09_TLS'                     = 'TLS-Protokolle (SCHANNEL)'
@@ -354,6 +376,13 @@ Methode:=>Method:
 kein Ping, aber WinRM OK=>no ping, but WinRM OK
 uebersprungen:=>skipped:
 Abbruch durch Benutzer.=>Cancelled by user.
+[i] Administratorrechte fehlen - DNS-/WMI-Abfragen werden ohne erhoehte Rechte abgelehnt.=>[i] Administrator rights are missing - DNS/WMI queries are rejected without elevated rights.
+[i] Starte das Skript mit Administratorrechten neu (UAC-Bestaetigung erforderlich).=>[i] Restarting the script with administrator rights (UAC confirmation required).
+[i] Die erhoehte Instanz wurde gestartet; dieses Fenster kann geschlossen werden.=>[i] The elevated instance has been started; this window can be closed.
+[!] Neustart abgelehnt oder fehlgeschlagen: =>[!] Restart declined or failed: 
+[i] Es wird ohne erhoehte Rechte weitergemacht - einzelne Checks werden fehlschlagen.=>[i] Continuing without elevated rights - individual checks will fail.
+Keine Administratorrechte - Neustart mit erhoehten Rechten.=>No administrator rights - restarting with elevated rights.
+Elevation abgelehnt: =>Elevation declined: 
 Ungueltige Check-Keys:=>Invalid check keys:
 Verfuegbar:=>Available:
 Full Run   - Alle Checks (empfohlen)=>Full Run   - all checks (recommended)
@@ -440,7 +469,42 @@ Keine Zuordnung=>No mapping
 Server-weites Scavenging aktiviert=>Server-wide scavenging enabled
 Server-weites Scavenging deaktiviert=>Server-wide scavenging disabled
 nicht AD-integriert=>not AD-integrated
+DynamicUpdate='None' auf AD-Zone - Eintraege werden nicht dynamisch registriert=>DynamicUpdate='None' on an AD zone - records are not registered dynamically
+SOA-Abfrage fehlgeschlagen auf =>SOA query failed on 
+kein DC mit auswertbaren DNS-Zonen (DNS-Abfrage fehlgeschlagen: =>no DC with evaluable DNS zones (DNS query failed: 
+kein DNS-Server auswertbar (=>no DNS server evaluable (
+keine DNS-Server gefunden=>no DNS servers found
+kein MasterServer hinterlegt - Conditional Forwarder kann keine Aufloesung leisten=>no master server configured - the conditional forwarder cannot resolve
+nachfolgende DNS-Server ohne Ziel-IP hinterlegt: =>following DNS servers without a target IP: 
+Forwarder-Ziel ist ein eigener DNS-Server (=>forwarder target is one of our own DNS servers (
+) - kann Weiterleitungsschleife verursachen=>) - may cause a forwarding loop
+hinterlegt auf =>configured on 
+SOA-Intervalle (Refresh/Expire) nicht auslesbar - Schwellen koennen nicht geprueft werden=>SOA intervals (refresh/expire) not readable - thresholds cannot be checked
 Keine Reverse-Lookup-Zonen gefunden=>No reverse lookup zones found
+DNS-Reverse-Lookup-Vollstaendigkeit=>DNS reverse lookup completeness
+Keine erreichbaren DCs mit IPv4=>No reachable DCs with IPv4
+Keine DNS-Zonen vom DC abrufbar=>No DNS zones retrievable from DC
+Keine A/AAAA Records in Forward-Zonen gefunden=>No A/AAAA records found in forward zones
+Alle Forward-IPs haben eine passende Reverse-Zone=>All forward IPs have a matching reverse zone
+Fehlende Reverse-Zone: =>Missing reverse zone: 
+ betrifft => affecting 
+ IP(s) => IP(s) 
+Forward-Zone: =>Forward zone: 
+IP: =>IP: 
+Host: =>Host: 
+Abfrage fehlgeschlagen: =>Query failed:
+DNS-Reverse-Lookup-Vollstaendigkeit=>DNS reverse lookup completeness
+Keine erreichbaren DCs mit IPv4=>No reachable DCs with IPv4
+Keine DNS-Zonen vom DC abrufbar=>No DNS zones retrievable from DC
+Keine A/AAAA Records in Forward-Zonen gefunden=>No A/AAAA records found in forward zones
+Alle Forward-IPs haben eine passende Reverse-Zone=>All forward IPs have a matching reverse zone
+Fehlende Reverse-Zone: =>Missing reverse zone: 
+ betrifft => affecting 
+ IP(s) => IP(s) 
+Forward-Zone: =>Forward zone: 
+IP: =>IP: 
+Host: =>Host: 
+Abfrage fehlgeschlagen: =>Query failed:
 NICHT aktiviert=>NOT enabled
 Aktiviert=>Enabled
 LAPS Schema-Erweiterung nicht installiert=>LAPS schema extension not installed
@@ -1519,7 +1583,7 @@ function Show-ScriptMenu {
                 '32b_InactiveComputers','32c_PasswordNeverExpires','35_Backup','38_SPNDuplicates',
                 '39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                 '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers')
+                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','62_ReverseLookup')
     $sec = @('09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
              '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
              '20_KerberoastingRisk','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
@@ -1696,6 +1760,14 @@ function Import-RequiredModules {
 #region ======================= CONNECTIVITY ==================================
 
 function Test-IsLocalComputer {
+    <#
+    .SYNOPSIS
+        Prueft, ob ein Computername den lokalen Rechner bezeichnet.
+    .NOTES
+        Erkennt den lokalen Rechner in NetBIOS-Form, FQDN-Form, IP-Form und 'localhost'.
+        Fuer FQDN (z.B. 'DC1.contoso.local') wird der Kurzname vor dem ersten Punkt
+        mit $env:COMPUTERNAME verglichen.
+    #>
     param([Parameter(Mandatory)][string]$ComputerName)
     try {
         if (-not $Global:LocalIdentifiers) {
@@ -1704,9 +1776,42 @@ function Test-IsLocalComputer {
             try { $local += Get-NetIPAddress -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -and $_.AddressState -eq 'Preferred' } | Select-Object -ExpandProperty IPAddress } catch {}
             $Global:LocalIdentifiers = $local | Select-Object -Unique
         }
+        # Exakter Vergleich (NetBIOS, FQDN, IP, localhost)
         foreach ($id in $Global:LocalIdentifiers) { if ($ComputerName -ieq $id) { return $true } }
+        # FQDN-Erkennung: Kurzname vor erstem Punkt gegen $env:COMPUTERNAME
+        if ($ComputerName -match '\.') {
+            $short = $ComputerName.Substring(0, $ComputerName.IndexOf('.'))
+            if ($short -ieq $env:COMPUTERNAME) { return $true }
+        }
         return $false
     } catch { return $false }
+}
+
+function Get-DnsServerTargets {
+    <#
+    .SYNOPSIS
+        Liefert die zu versuchenden Ziel-Parameter fuer DnsServer-Cmdlets.
+    .NOTES
+        Problem: DnsServer-Cmdlets mit -ComputerName <lokaler DC> erzwingen CIM/WMI-Remoting
+        ueber sich selbst. Bei gesperrtem WinRM-Loopback/DCOM schlaegt das fehl,
+        obwohl DNS lokal installiert ist. Check 42 war nie betroffen, da er ohne
+        -ComputerName abfragt.
+        Loesung: Pruefreihenfolge fuer lokalen DC:
+          1. @{}                    -> in-process (kein -ComputerName)
+          2. @{ComputerName='localhost'} -> CIM gegen localhost
+          3. @{ComputerName=$ComputerName} -> CIM gegen uebergebenen Namen
+        Fuer remote DCs: nur @{ComputerName=$ComputerName}
+    #>
+    param([Parameter(Mandatory)][string]$ComputerName)
+    $isLocal = Test-IsLocalComputer -ComputerName $ComputerName
+    if ($isLocal) {
+        # Lokal: erst in-process, dann localhost, dann uebergebener Name
+        @(@{}, @{ComputerName='localhost'}, @{ComputerName=$ComputerName})
+    }
+    else {
+        # Remote: nur uebergebener Name
+        @(@{ComputerName=$ComputerName})
+    }
 }
 
 function Test-DCPing {
@@ -1952,8 +2057,15 @@ function Get-FSMORoles {
 
 function Get-DNSConfiguration {
     param([Parameter(Mandatory)][string]$DC)
-    Get-DnsServerZone -ComputerName $DC -ErrorAction Stop |
-        Select-Object @{n='DCName';e={$DC}}, ZoneName, ZoneType, IsDsIntegrated, IsReverseLookupZone, DynamicUpdate
+    $result = @()
+    foreach ($t in (Get-DnsServerTargets -ComputerName $DC)) {
+        try {
+            $result += @(Get-DnsServerZone @t -ErrorAction Stop |
+                Select-Object @{n='DCName';e={$DC}}, ZoneName, ZoneType, IsDsIntegrated, IsReverseLookupZone, DynamicUpdate)
+            break
+        } catch {}
+    }
+    return $result
 }
 
 function Get-SysvolStatus {
@@ -2330,6 +2442,14 @@ function Import-RequiredModules {
 #region ======================= CONNECTIVITY ==================================
 
 function Test-IsLocalComputer {
+    <#
+    .SYNOPSIS
+        Prueft, ob ein Computername den lokalen Rechner bezeichnet.
+    .NOTES
+        Erkennt den lokalen Rechner in NetBIOS-Form, FQDN-Form, IP-Form und 'localhost'.
+        Fuer FQDN (z.B. 'DC1.contoso.local') wird der Kurzname vor dem ersten Punkt
+        mit $env:COMPUTERNAME verglichen.
+    #>
     param([Parameter(Mandatory)][string]$ComputerName)
     try {
         if (-not $Global:LocalIdentifiers) {
@@ -2338,9 +2458,42 @@ function Test-IsLocalComputer {
             try { $local += Get-NetIPAddress -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -and $_.AddressState -eq 'Preferred' } | Select-Object -ExpandProperty IPAddress } catch {}
             $Global:LocalIdentifiers = $local | Select-Object -Unique
         }
+        # Exakter Vergleich (NetBIOS, FQDN, IP, localhost)
         foreach ($id in $Global:LocalIdentifiers) { if ($ComputerName -ieq $id) { return $true } }
+        # FQDN-Erkennung: Kurzname vor erstem Punkt gegen $env:COMPUTERNAME
+        if ($ComputerName -match '\.') {
+            $short = $ComputerName.Substring(0, $ComputerName.IndexOf('.'))
+            if ($short -ieq $env:COMPUTERNAME) { return $true }
+        }
         return $false
     } catch { return $false }
+}
+
+function Get-DnsServerTargets {
+    <#
+    .SYNOPSIS
+        Liefert die zu versuchenden Ziel-Parameter fuer DnsServer-Cmdlets.
+    .NOTES
+        Problem: DnsServer-Cmdlets mit -ComputerName <lokaler DC> erzwingen CIM/WMI-Remoting
+        ueber sich selbst. Bei gesperrtem WinRM-Loopback/DCOM schlaegt das fehl,
+        obwohl DNS lokal installiert ist. Check 42 war nie betroffen, da er ohne
+        -ComputerName abfragt.
+        Loesung: Pruefreihenfolge fuer lokalen DC:
+          1. @{}                    -> in-process (kein -ComputerName)
+          2. @{ComputerName='localhost'} -> CIM gegen localhost
+          3. @{ComputerName=$ComputerName} -> CIM gegen uebergebenen Namen
+        Fuer remote DCs: nur @{ComputerName=$ComputerName}
+    #>
+    param([Parameter(Mandatory)][string]$ComputerName)
+    $isLocal = Test-IsLocalComputer -ComputerName $ComputerName
+    if ($isLocal) {
+        # Lokal: erst in-process, dann localhost, dann uebergebener Name
+        @(@{}, @{ComputerName='localhost'}, @{ComputerName=$ComputerName})
+    }
+    else {
+        # Remote: nur uebergebener Name
+        @(@{ComputerName=$ComputerName})
+    }
 }
 
 function Test-DCPing {
@@ -2586,8 +2739,15 @@ function Get-FSMORoles {
 
 function Get-DNSConfiguration {
     param([Parameter(Mandatory)][string]$DC)
-    Get-DnsServerZone -ComputerName $DC -ErrorAction Stop |
-        Select-Object @{n='DCName';e={$DC}}, ZoneName, ZoneType, IsDsIntegrated, IsReverseLookupZone, DynamicUpdate
+    $result = @()
+    foreach ($t in (Get-DnsServerTargets -ComputerName $DC)) {
+        try {
+            $result += @(Get-DnsServerZone @t -ErrorAction Stop |
+                Select-Object @{n='DCName';e={$DC}}, ZoneName, ZoneType, IsDsIntegrated, IsReverseLookupZone, DynamicUpdate)
+            break
+        } catch {}
+    }
+    return $result
 }
 
 function Get-SysvolStatus {
@@ -3470,6 +3630,333 @@ function Get-DNSHygiene {
         Write-Log "DNSHygiene: $_" -Level WARN -NoConsole
     }
     return $result
+}
+
+function Get-ReverseLookupCompleteness {
+    <#
+    .SYNOPSIS
+        Prueft, ob fuer alle im Forward-Lookup registrierten IPs (A/AAAA Records)
+        eine passende Reverse-Lookup-Zone (in-addr.arpa / ip6.arpa) existiert.
+    .NOTES
+        - Forest-weiter Check (einmalig, nicht pro DC)
+        - Sammelt alle A/AAAA Records aus allen Primary-Zonen (AD-integriert und nicht)
+        - Ermittelt pro IP die zugehoerige Reverse-Zone
+        - Meldet fehlende Reverse-Zonen
+        - NICHT: Pruefung ob PTR-Record existiert (nur Zone)
+        - Verwendet direkte Get-DnsServerZone/-ResourceRecord Aufrufe (v2.7-Stil)
+    #>
+    $result = @()
+    try {
+        # Hole einen erreichbaren DC mit DNS
+        $dcs = @(Get-ADDomainController -Filter * -ErrorAction Stop | Where-Object { $_.IPv4Address })
+        if ($dcs.Count -eq 0) {
+            return @([pscustomobject]@{ Kind='Fehler'; Target='Reverse Lookup'; Status='WARN'; Detail='Kein erreichbarer DC mit IPv4 gefunden'; Risk='WARN' })
+        }
+        $dc = $dcs[0]
+
+        # Alle Primary-Zonen (Forward und Reverse) vom DC holen
+        $allZones = @()
+        try { $allZones = @(Get-DnsServerZone -ComputerName $dc -ErrorAction Stop) } catch {
+            return @([pscustomobject]@{ Kind='Fehler'; Target='Reverse Lookup'; Status='WARN'; Detail='Keine DNS-Zonen vom DC abrufbar'; Risk='WARN' })
+        }
+        if ($allZones.Count -eq 0) {
+            return @([pscustomobject]@{ Kind='Fehler'; Target='Reverse Lookup'; Status='WARN'; Detail='Keine DNS-Zonen vom DC abrufbar'; Risk='WARN' })
+        }
+
+        # Forward-Zonen filtern (Primary, nicht Reverse, nicht Forwarder-Typ)
+        $forwardZones = @($allZones | Where-Object { $_.ZoneType -eq 'Primary' -and -not $_.IsReverseLookupZone -and $_.ZoneType -ne 'Forwarder' })
+
+        # Alle A/AAAA Records aus Forward-Zonen sammeln
+        $forwardIPs = @{}
+        foreach ($zone in $forwardZones) {
+            $zn = $zone.ZoneName
+            try {
+                $records = @(Get-DnsServerResourceRecord -ComputerName $dc -ZoneName $zn -RRType 'A','AAAA' -ErrorAction Stop)
+                foreach ($rec in $records) {
+                    $rd = $rec.RecordData
+                    if ($null -ne $rd) {
+                        $ip = if ($rec.RRType -eq 'A') { [string]$rd.IPv4Address } else { [string]$rd.IPv6Address }
+                        if ($ip) {
+                            $key = "$zn|$ip"
+                            if (-not $forwardIPs.ContainsKey($key)) {
+                                $forwardIPs[$key] = [pscustomobject]@{
+                                    ZoneName = $zn; IP = $ip; RRType = $rec.RRType; HostName = [string]$rec.HostName
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch {}
+        }
+
+        if ($forwardIPs.Count -eq 0) {
+            $result += [pscustomobject]@{
+                Kind='Summary'; Target='Reverse Lookup'; Status='OK'
+                Detail='Keine A/AAAA Records in Forward-Zonen gefunden'; Risk='OK'
+            }
+            return $result
+        }
+
+        # Existierende Reverse-Zonen ermitteln
+        $reverseZoneNames = @($allZones | Where-Object { $_.IsReverseLookupZone } | ForEach-Object { $_.ZoneName })
+
+        function Get-ReverseZoneNameFromIP {
+            param([string]$IP)
+            if ($IP -match '^\d+\.\d+\.\d+\.\d+$') {
+                $octets = $IP.Split('.')
+                if ($octets.Count -eq 4) { return ('{2}.{1}.{0}.in-addr.arpa' -f $octets[0], $octets[1], $octets[2]) }
+            }
+            elseif ($IP -match ':') {
+                try {
+                    $ip6 = [System.Net.IPAddress]::Parse($IP).GetAddressBytes()
+                    $nibbles = ($ip6 | ForEach-Object { '{0:X2}' -f $_ }) -join ''
+                    $nibbles = $nibbles.PadLeft(32, '0')
+                    $rev = ($nibbles.ToCharArray() | ForEach-Object { $_ }) -join '.'
+                    return "$rev.ip6.arpa"
+                } catch {}
+            }
+            return $null
+        }
+
+        $missing = @()
+        foreach ($kv in $forwardIPs.GetEnumerator()) {
+            $entry = $kv.Value
+            $revZone = Get-ReverseZoneNameFromIP -IP $entry.IP
+            if ($null -eq $revZone) {
+                $missing += [pscustomobject]@{ ZoneName=$entry.ZoneName; IP=$entry.IP; HostName=$entry.HostName; Reason='IP-Format nicht erkannt' }
+            }
+            elseif ($reverseZoneNames -notcontains $revZone) {
+                $missing += [pscustomobject]@{ ZoneName=$entry.ZoneName; IP=$entry.IP; HostName=$entry.HostName; MissingReverseZone=$revZone }
+            }
+        }
+
+        if ($missing.Count -eq 0) {
+            $result += [pscustomobject]@{
+                Kind='Summary'; Target='Reverse Lookup'; Status='OK'
+                Detail=("Alle {0} Forward-IPs haben eine passende Reverse-Zone" -f $forwardIPs.Count); Risk='OK'
+            }
+        }
+        else {
+            $byMissingZone = $missing | Group-Object MissingReverseZone
+            $details = @()
+            foreach ($grp in $byMissingZone) {
+                $sample = @($grp.Group | Select-Object -First 3 | ForEach-Object { "{0} ({1})" -f $_.IP, $_.HostName }) -join ', '
+                $more = if ($grp.Count -gt 3) { " ... und {0} weitere" -f ($grp.Count - 3) } else { '' }
+                $details += "Fehlende Reverse-Zone: {0} -> betrifft {1} IP(s) ({2}{3})" -f $grp.Name, $grp.Count, $sample, $more
+            }
+            $result += [pscustomobject]@{
+                Kind='Summary'; Target='Reverse Lookup'; Status='WARN'
+                Detail=($details -join ' | '); Risk='WARN'
+            }
+            foreach ($m in $missing) {
+                $result += [pscustomobject]@{
+                    Kind='MissingReverseZone'; Target=$m.MissingReverseZone; Status='WARN'
+                    Detail="Forward-Zone: {0}, IP: {1}, Host: {2}" -f $m.ZoneName, $m.IP, $m.HostName
+                    Risk='WARN'
+                }
+            }
+        }
+    } catch {
+        $result += [pscustomobject]@{
+            Kind='Fehler'; Target='Reverse Lookup'; Status='WARN'
+            Detail="Abfrage fehlgeschlagen: $_"; Risk='WARN'
+        }
+    }
+    return $result
+}
+
+function Test-Check-ReverseLookupComplete {
+    <#
+    .SYNOPSIS
+        Bewertet das Ergebnis von Get-ReverseLookupCompleteness.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $summary = @($data | Where-Object { $_.Kind -eq 'Summary' })
+    if ($summary.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Zusammenfassung' }
+    $s = $summary[0]
+    if ($s.Status -eq 'OK') {
+        return New-Assessment -OverallStatus 'OK' -Summary $s.Detail -Findings @()
+    }
+    else {
+        $findings = @($data | Where-Object { $_.Kind -eq 'MissingReverseZone' } | ForEach-Object { $_.Detail })
+        return New-Assessment -OverallStatus 'WARN' -Summary $s.Detail -Findings $findings
+    }
+}
+
+
+function Get-KMSConfiguration {
+    <#
+    .SYNOPSIS
+        Sucht KMS-Hosts per DNS-SRV (_vlmcs._tcp) und liest deren Konfiguration aus.
+    .NOTES
+        - Forest-weiter Check
+        - Discovery per Resolve-DnsName -Type SRV auf _vlmcs._tcp.<ForestRoot> und _vlmcs._tcp.<Domain>
+        - Falls kein SRV-Eintrag: Scan aller erreichbaren DCs nach installiertem KeyManagementService
+        - Konfiguration je Host: Dienst, Port, Prozess, Aktivierungszahlen, Host-Key, Key-Kanal
+        - Mehrstufige Diensterkennung (Get-Service, CIM Win32_Service, Registry)
+        - Registry-Lesen in expliziter 64-Bit-Ansicht mit PS-Provider-Fallback
+    #>
+    $result = @()
+    try {
+        $forest = Get-ADForest -ErrorAction Stop
+        $domain = Get-ADDomain -ErrorAction Stop
+        $dcs = @(Get-ADDomainController -Filter * -ErrorAction Stop | Where-Object { $_.IPv4Address })
+        if ($dcs.Count -eq 0) {
+            return @([pscustomobject]@{ Kind='Fehler'; Target='KMS'; Detail='Keine erreichbaren DCs'; Risk='WARN' })
+        }
+
+        # 1) SRV-Discovery
+        $srvTargets = @("_vlmcs._tcp.$($forest.RootDomain)", "_vlmcs._tcp.$($domain.DNSRoot)")
+        $kmsHosts = @{}
+        foreach ($srv in $srvTargets) {
+            try {
+                $records = Resolve-DnsName -Name $srv -Type SRV -ErrorAction Stop -DnsOnly
+                foreach ($r in $records) {
+                    $hn = $r.NameHost.TrimEnd('.')
+                    if (-not $kmsHosts.ContainsKey($hn)) { $kmsHosts[$hn] = @{ SRV=$true; Source=$srv } }
+                }
+            } catch {}
+        }
+
+        # 2) Falls keine SRV-Eintraege: DCs nach KMS-Dienst scannen
+        if ($kmsHosts.Count -eq 0) {
+            foreach ($dc in $dcs) {
+                $hn = $dc.HostName
+                if (-not $kmsHosts.ContainsKey($hn)) { $kmsHosts[$hn] = @{ SRV=$false; Source='DC-Scan' } }
+            }
+        }
+
+        # 3) Konfiguration je Host auslesen
+        foreach ($hostEntry in $kmsHosts.GetEnumerator()) {
+            $host = $hostEntry.Key
+            $meta = $hostEntry.Value
+            $detail = [ordered]@{
+                HostName = $host
+                HasSRV   = $meta.SRV
+                Source   = $meta.Source
+                Service  = 'Nicht gefunden'
+                StartType= '-'
+                Port     = '-'
+                Process  = '-'
+                ActivationCount = 0
+                RequestCount    = 0
+                FailedCount     = 0
+                PartialProductKey = '-'
+                KeyChannel        = '-'
+                Issue          = $null
+            }
+
+            $target = $host
+            $cim = $null
+            try {
+                $cim = New-CimSession -ComputerName $target -OperationTimeoutSec 10 -ErrorAction Stop
+            } catch {
+                $detail.Issue = "CIM-Verbindung fehlgeschlagen: $_"
+                $result += [pscustomobject]@{ Kind='Host'; Target=$host; Detail=($detail.Values -join ' | '); Risk='WARN'; HostName=$host; Service=$detail.Service; StartType=$detail.StartType; Port=$detail.Port; Process=$detail.Process; ActivationCount=$detail.ActivationCount; RequestCount=$detail.RequestCount; FailedCount=$detail.FailedCount; PartialProductKey=$detail.PartialProductKey; KeyChannel=$detail.KeyChannel; HasSRV=$detail.HasSRV }
+                continue
+            }
+
+            # Dienst erkennen (mehrstufig)
+            $svc = $null
+            try { $svc = Get-CimInstance -CimSession $cim -ClassName Win32_Service -Filter "Name='KeyManagementService'" -ErrorAction Stop } catch {}
+            if (-not $svc) {
+                try { $svc = Get-CimInstance -CimSession $cim -ClassName Win32_Service -Filter "DisplayName='Key Management Service'" -ErrorAction Stop } catch {}
+            }
+            if (-not $svc) {
+                try { $allSvcs = Get-CimInstance -CimSession $cim -ClassName Win32_Service -ErrorAction Stop; $svc = $allSvcs | Where-Object { $_.Name -like '*KeyManagement*' -or $_.DisplayName -like '*Key Management*' } | Select-Object -First 1 } catch {}
+            }
+            if (-not $svc) {
+                # Registry-Fallback
+                try {
+                    $reg = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\KeyManagementService' -ErrorAction Stop
+                    if ($reg) { $svc = [pscustomobject]@{ Name='KeyManagementService'; State='Unknown'; StartMode=$reg.Start } }
+                } catch {}
+            }
+
+            if ($svc) {
+                $detail.Service = $svc.Name
+                $detail.StartType = if ($svc.StartMode) { $svc.StartMode } else { 'Unknown' }
+                $detail.State = if ($svc.State) { $svc.State } else { 'Unknown' }
+            }
+
+            # Port aus Registry
+            try {
+                $portReg = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\KeyManagementService\Parameters' -ErrorAction Stop
+                if ($portReg -and $portReg.Port) { $detail.Port = $portReg.Port }
+            } catch {}
+
+            # Prozess auf Port (lokal oder remote via CIM)
+            if ($detail.Port -ne '-') {
+                try {
+                    $conns = Get-CimInstance -CimSession $cim -ClassName Win32_TCPConnection -Filter "LocalPort=$($detail.Port) AND State='Listen'" -ErrorAction Stop
+                    if ($conns) { $detail.Process = $conns[0].OwningProcess }
+                } catch {}
+            }
+
+            # SoftwareLicensingService Daten
+            try {
+                $sls = Get-CimInstance -CimSession $cim -Namespace 'root\cimv2' -ClassName SoftwareLicensingService -ErrorAction Stop
+                if ($sls) {
+                    $detail.ActivationCount = if ($sls.ActivationCount) { $sls.ActivationCount } else { 0 }
+                    $detail.RequestCount    = if ($sls.RequestCount) { $sls.RequestCount } else { 0 }
+                    $detail.FailedCount     = if ($sls.FailedRequestCount) { $sls.FailedRequestCount } else { 0 }
+                    $detail.PartialProductKey = if ($sls.PartialProductKey) { $sls.PartialProductKey } else { '-' }
+                    $detail.KeyChannel = if ($sls.LicenseChannel) { $sls.LicenseChannel } else { '-' }
+                }
+            } catch {}
+
+            # Bewertung je Host
+            $risk = 'OK'
+            $issues = @()
+            if (-not $detail.HasSRV) { $issues += 'Kein _vlmcs SRV-Eintrag'; $risk = 'CRITICAL' }
+            if ($detail.Service -eq 'Nicht gefunden' -or $detail.State -ne 'Running') { $issues += "Dienst nicht lauffaehig ($($detail.State))"; $risk = 'CRITICAL' }
+            if ($detail.Port -ne '-' -and $detail.Process -eq '-') { $issues += "Port $($detail.Port) nicht abhoerend"; $risk = 'CRITICAL' }
+            if ($detail.ActivationCount -lt $Global:KMSMinCountServer) { $issues += "Aktivierungen ($($detail.ActivationCount)) < Server-Min ($Global:KMSMinCountServer)"; $risk = 'CRITICAL' }
+            if ($detail.RequestCount -lt $Global:KMSMinCountClient) { $issues += "Anfragen ($($detail.RequestCount)) < Client-Min ($Global:KMSMinCountClient)"; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
+            if ($detail.Port -ne '-' -and $detail.Port -ne 1688) { $issues += "Port $($detail.Port) != 1688"; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
+            if ($detail.PartialProductKey -eq '-') { $issues += 'Kein Host-Key (PartialProductKey)'; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
+            if ($detail.KeyChannel -ne 'Volume') { $issues += "Key-Kanal '$($detail.KeyChannel)' != Volume"; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
+            if ($detail.FailedCount -gt 0 -and ($detail.RequestCount -gt 0) -and ($detail.FailedCount / $detail.RequestCount) > 0.5) { $issues += "Mehr als 50% Fehlanfragen"; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
+            if ($detail.HasSRV -and $kmsHosts.Count -eq 1) { $issues += 'Nur ein KMS-Host (kein Failover)'; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
+
+            $detail.Issue = if ($issues.Count) { $issues -join ' | ' } else { 'OK' }
+            $result += [pscustomobject]@{
+                Kind='Host'; Target=$host; Detail=($detail.Values -join ' | '); Risk=$risk
+                HostName=$host; Service=$detail.Service; StartType=$detail.StartType; Port=$detail.Port
+                Process=$detail.Process; ActivationCount=$detail.ActivationCount; RequestCount=$detail.RequestCount
+                FailedCount=$detail.FailedCount; PartialProductKey=$detail.PartialProductKey; KeyChannel=$detail.KeyChannel
+                HasSRV=$detail.HasSRV; Method=$detail.Source
+            }
+            Remove-CimSession $cim -ErrorAction SilentlyContinue
+        }
+    } catch {
+        $result += [pscustomobject]@{ Kind='Fehler'; Target='KMS'; Detail="Abfrage fehlgeschlagen: $_"; Risk='WARN' }
+    }
+    return $result
+}
+
+function Test-Check-KMS {
+    <#
+    .SYNOPSIS
+        Bewertet KMS-Konfiguration.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $hosts = @($data | Where-Object { $_.Kind -eq 'Host' })
+    if ($hosts.Count -eq 0) {
+        $err = @($data | Where-Object { $_.Kind -eq 'Fehler' })
+        if ($err.Count) { return New-Assessment -OverallStatus 'WARN' -Summary $err[0].Detail -Findings @($err[0].Detail) }
+        return New-Assessment -OverallStatus 'CRITICAL' -Summary 'Keine KMS-Hosts gefunden (weder SRV noch DC-Scan)' -Findings @('Keine KMS-Hosts gefunden')
+    }
+    $critical = @($hosts | Where-Object { $_.Risk -eq 'CRITICAL' })
+    $warn = @($hosts | Where-Object { $_.Risk -eq 'WARN' })
+    $ok = @($hosts | Where-Object { $_.Risk -eq 'OK' })
+    $findings = @()
+    foreach ($h in $hosts) { if ($h.Risk -ne 'OK') { $findings += $h.Detail } }
+    $status = if ($critical.Count) { 'CRITICAL' } elseif ($warn.Count) { 'WARN' } else { 'OK' }
+    $summary = "$($hosts.Count) KMS-Host(s): OK $($ok.Count), WARN $($warn.Count), CRITICAL $($critical.Count)"
+    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
 }
 
 function Get-LAPSConfiguration {
@@ -4428,8 +4915,12 @@ function Test-Check-DNS {
     $f=@(); $rf=@{}
     foreach ($z in $data) {
         $id="$($z.DCName)|$($z.ZoneName)"
-        if ($z.ZoneType -eq 'Primary' -and -not $z.IsDsIntegrated) { $f += "$($z.ZoneName) nicht AD-integriert"; $rf[$id]='WARN' }
-        elseif ($z.DynamicUpdate -eq 'NonsecureAndSecure') { $f += "$($z.ZoneName) erlaubt unsichere Updates!"; $rf[$id]='CRITICAL' }
+        $zn = [string]$z.ZoneName
+        # Vom DNS-Dienst automatisch angelegte Reverse-Zonen sind korrekt nicht
+        # AD-integriert und werden hier NICHT als Befund gewertet.
+        $isDefaultRev = [bool]($z.IsReverseLookupZone -and ($Global:DNSDefaultReverseZones -contains $zn))
+        if ($z.ZoneType -eq 'Primary' -and -not $z.IsDsIntegrated -and -not $isDefaultRev) { $f += "$zn nicht AD-integriert"; $rf[$id]='WARN' }
+        elseif ($z.DynamicUpdate -eq 'NonsecureAndSecure') { $f += "$zn erlaubt unsichere Updates!"; $rf[$id]='CRITICAL' }
         else { $rf[$id]='OK' }
     }
     $s = if ($rf.Values -contains 'CRITICAL') { 'CRITICAL' } elseif ($f.Count) { 'WARN' } else { 'OK' }
@@ -5223,6 +5714,7 @@ function Invoke-AllAssessments {
         '52_AnonymousLDAP'           = { Test-Check-AnonymousLDAP           $Global:Results['52_AnonymousLDAP'] }
         '53_GPPPasswords'            = { Test-Check-GPPPasswords            $Global:Results['53_GPPPasswords'] }
         '54_ProtectedUsers'          = { Test-Check-ProtectedUsers          $Global:Results['54_ProtectedUsers'] }
+        '62_ReverseLookup'           = { Test-Check-ReverseLookupComplete  $Global:Results['62_ReverseLookup'] }
     }
     $toAssess = @()
     foreach ($k in $Global:ReportTitles.Keys) {
@@ -5506,12 +5998,99 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
 
 #endregion
 
+#region ======================= RECHTE-ERHOEHUNG =============================
+
+function Test-IsElevated {
+    <# Prueft, ob das Skript mit Administratorrechten laeuft. #>
+    try {
+        $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $pri = New-Object Security.Principal.WindowsPrincipal($id)
+        return [bool]$pri.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch { return $false }
+}
+
+function Get-ElevationCommand {
+    <#
+    .SYNOPSIS
+        Baut Programm und Argumentliste fuer einen Neustart mit Administratorrechten.
+    .NOTES
+        Alle uebergebenen Parameter (-FullRun, -OnlyChecks, -OutputPath, -Language ...)
+        werden erhalten bleiben, damit der erhoehte Lauf identisch ist.
+        -NoElevate wird NICHT mitgegeben - sonst wuerde sich die erhoehte Instanz
+        selbst wieder degradieren.
+    #>
+    param([hashtable]$BoundParameters = @{}, [string]$ScriptPath)
+    $exe = $null
+    try { $exe = (Get-Process -Id $PID).Path } catch {}
+    # ISE oder Editor-Host: lieber die klassische powershell.exe verwenden
+    if (-not $exe -or $exe -match '(?i)powershell_ise|Code\.exe|WindowsTerminal|openconsole') {
+        $exe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    }
+    if (-not (Test-Path -LiteralPath $exe)) { $exe = 'powershell.exe' }
+
+    $a = New-Object System.Collections.Generic.List[string]
+    [void]$a.Add('-NoProfile')
+    [void]$a.Add('-ExecutionPolicy'); [void]$a.Add('Bypass')
+    [void]$a.Add('-File');            [void]$a.Add(('"{0}"' -f $ScriptPath))
+    foreach ($k in ($BoundParameters.Keys | Sort-Object)) {
+        if ($k -ieq 'NoElevate') { continue }
+        $v = $BoundParameters[$k]
+        if ($v -is [System.Management.Automation.SwitchParameter]) {
+            if ($v.IsPresent) { [void]$a.Add("-$k") }
+        }
+        elseif ($v -is [System.Array]) {
+            foreach ($item in $v) { [void]$a.Add("-$k"); [void]$a.Add(('"{0}"' -f $item)) }
+        }
+        else { [void]$a.Add("-$k"); [void]$a.Add(('"{0}"' -f $v)) }
+    }
+    [pscustomobject]@{ Exe = $exe; Arguments = $a }
+}
+
+function Start-ElevatedRestart {
+    <#
+    .SYNOPSIS
+        Startet das Skript mit Administratorrechten neu und beendet diese Instanz.
+    .NOTES
+        Bricht der Benutzer die UAC-Abfrage ab, wird false zurueckgegeben und im
+        aktuellen Kontext weitergemacht - einzelne Checks werden dann fehlschlagen.
+    #>
+    param([hashtable]$BoundParameters)
+    if (-not $PSCommandPath) { return $false }
+    $cmd = Get-ElevationCommand -BoundParameters $BoundParameters -ScriptPath $PSCommandPath
+    Write-Host ''
+    Write-Host (Format-L10n -Text '  [i] Administratorrechte fehlen - DNS-/WMI-Abfragen werden ohne erhoehte Rechte abgelehnt.') -ForegroundColor Yellow
+    Write-Host (Format-L10n -Text '  [i] Starte das Skript mit Administratorrechten neu (UAC-Bestaetigung erforderlich).') -ForegroundColor Yellow
+    Write-Log 'Keine Administratorrechte - Neustart mit erhoehten Rechten.' -Level WARN -NoConsole
+    try {
+        Start-Process -FilePath $cmd.Exe -ArgumentList $cmd.Arguments -Verb RunAs -ErrorAction Stop
+        Write-Host (Format-L10n -Text '  [i] Die erhoehte Instanz wurde gestartet; dieses Fenster kann geschlossen werden.') -ForegroundColor Gray
+        return $true
+    } catch {
+        Write-Host (Format-L10n -Text "  [!] Neustart abgelehnt oder fehlgeschlagen: $_") -ForegroundColor Red
+        Write-Host (Format-L10n -Text '  [i] Es wird ohne erhoehte Rechte weitergemacht - einzelne Checks werden fehlschlagen.') -ForegroundColor Yellow
+        Write-Log "Elevation abgelehnt: $_" -Level WARN -NoConsole
+        return $false
+    }
+}
+
+#endregion
+
 #region ============= MAIN ===================================================
 
 function Start-ADHealthCheck {
     try {
         Initialize-LogEnvironment
         $Global:ProgressStats.StartTime = Get-Date
+
+        # --- Rechte-Erhoehung ---
+        # Ohne Administratorrechte lehnt Windows die DNS-/WMI-Abfragen ab (z.B.
+        # root\MicrosoftDNS), sodass Checks 7-9 leer bleiben. Deshalb einmalig
+        # neu starten; $Global:ElevationHandled verhindert eine Endlosschleife.
+        if (-not $Global:ElevationHandled -and -not $NoElevate -and -not (Test-IsElevated)) {
+            $Global:ElevationHandled = $true
+            if (Start-ElevatedRestart -BoundParameters $PSBoundParameters) { return }
+        }
+
         $skippedDCs   = @()
         $reachableDCs = @()
 
@@ -5729,6 +6308,7 @@ function Start-ADHealthCheck {
         if (Test-IsCheckSelected '52_AnonymousLDAP')           { $r = Invoke-TimedCheck -CheckKey '52_AnonymousLDAP'           -ScriptBlock { Get-AnonymousLDAP };           $Global:Results['52_AnonymousLDAP']           = @($r) }
         if (Test-IsCheckSelected '53_GPPPasswords')            { $r = Invoke-TimedCheck -CheckKey '53_GPPPasswords'            -ScriptBlock { Get-GPPPasswords };            $Global:Results['53_GPPPasswords']            = @($r) }
         if (Test-IsCheckSelected '54_ProtectedUsers')          { $r = Invoke-TimedCheck -CheckKey '54_ProtectedUsers'          -ScriptBlock { Get-ProtectedUsersAudit };     $Global:Results['54_ProtectedUsers']          = @($r) }
+        if (Test-IsCheckSelected '62_ReverseLookup')           { $r = Invoke-TimedCheck -CheckKey '62_ReverseLookup'           -ScriptBlock { Get-ReverseLookupCompleteness };    $Global:Results['62_ReverseLookup']           = @($r) }
 
         # Inaktive Accounts - einmaliger Aufruf fuer 3 Check-Keys
         $wantInact = (Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')
