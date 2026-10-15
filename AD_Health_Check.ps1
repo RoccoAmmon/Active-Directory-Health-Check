@@ -4228,6 +4228,130 @@ function Test-Check-RCAudit {
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
 }
 
+function Get-SPNInventory {
+    <#
+    .SYNOPSIS
+        Inventarisiert alle SPNs nach Dienstklasse, Objekt, Host; erkennt verwaiste SPNs.
+    .NOTES
+        - Ergaenzt Check 38 (nur Dubletten)
+        - Row-Kinds: Zusammenfassung, Objekt, Klasse, Host, Fehler
+        - Schwellwerte: $Global:SPNMaxObjSpns (20), $Global:SPNMaxDnsProbe (200), $Global:SPNInventoryMaxRows (200)
+        - Meldet: SPNs auf deaktivierten Konten, unerwartete Klassen auf User-Konten ($Global:SPNUserAccountClassWarn)
+        - DNS-Aufloesung fuer SPN-Hostnamen (max $Global:SPNMaxDnsProbe)
+    #>
+    $result = @()
+    try {
+        $all = @(Get-ADObject -LDAPFilter '(servicePrincipalName=*)' -Properties 'servicePrincipalName','samAccountName','userAccountControl','objectClass','distinguishedName' -ErrorAction Stop)
+        $disabledFlag = 2
+        $classWarn = $Global:SPNUserAccountClassWarn
+        $maxObj = $Global:SPNMaxObjSpns
+        $maxDns = $Global:SPNMaxDnsProbe
+        $maxRows = $Global:SPNInventoryMaxRows
+        $dnsDone = 0
+
+        $byClass = @{}; $byHost = @{}; $byObj = @{}; $deaktSpns = 0; $unexpClass = @(); $dnsFail = @()
+        foreach ($o in $all) {
+            $spns = $o.servicePrincipalName
+            if (-not $spns) { continue }
+            $isDisabled = ($o.userAccountControl -band $disabledFlag)
+            $objClass = $o.objectClass
+            foreach ($spn in $spns) {
+                $class = $spn.Split('/')[0]
+                $hostPart = $spn.Split('/')[1]
+                $host = $hostPart.Split(':')[0]
+                if (-not $byClass.Contains($class)) { $byClass[$class] = 0 }; $byClass[$class]++
+                if (-not $byHost.Contains($host)) { $byHost[$host] = 0 }; $byHost[$host]++
+                if (-not $byObj.Contains($o.samAccountName)) { $byObj[$o.samAccountName] = @() }; $byObj[$o.samAccountName] += $spn
+                if ($isDisabled) { $deaktSpns++ }
+                if ($objClass -in $classWarn) { $unexpClass += "$($o.samAccountName) ($objClass): $spn" }
+                # DNS-Aufloesung
+                if ($dnsDone -lt $maxDns) {
+                    try { $ip = [System.Net.Dns]::GetHostAddresses($host); if (-not $ip) { $dnsFail += $host } } catch { $dnsFail += $host }
+                    $dnsDone++
+                }
+            }
+        }
+
+        # Zusammenfassung
+        $result += [pscustomobject]@{
+            Kind='Zusammenfassung'; Target='SPN-Inventar'; Risk=if ($deaktSpns -or $unexpClass.Count -or $dnsFail.Count) { 'WARN' } else { 'OK' }
+            Detail="Objekte: $($byObj.Count), SPNs gesamt: $($all | ForEach-Object { ($_.servicePrincipalName).Count } | Measure-Object -Sum).Sum, Klassen: $($byClass.Count), Hosts: $($byHost.Count), DeaktSPNs: $deaktSpns, UnerwKlassen: $($unexpClass.Count), DNS-Fails: $($dnsFail.Count)"
+            DeaktKonten=$deaktSpns; RowKey='Zusammenfassung|Bestand'
+        }
+
+        # Objekte mit vielen SPNs
+        foreach ($obj in $byObj.Keys | Sort-Object { -($byObj[$_].Count) }) {
+            $cnt = $byObj[$obj].Count
+            if ($cnt -gt $maxObj) {
+                $result += [pscustomobject]@{
+                    Kind='Objekt'; Target=$obj; Risk='WARN'
+                    Detail="$cnt SPNs (Schwellwert $maxObj): $($byObj[$obj] -join ', ')"
+                    RowKey="Objekt|$obj"
+                }
+            }
+        }
+
+        # Klassen-Uebersicht
+        foreach ($c in $byClass.Keys | Sort-Object) {
+            $result += [pscustomobject]@{
+                Kind='Klasse'; Target=$c; Risk='OK'
+                Detail="$($byClass[$c]) SPNs"; RowKey="Klasse|$c"
+            }
+        }
+
+        # Host-Uebersicht
+        foreach ($h in $byHost.Keys | Sort-Object) {
+            $result += [pscustomobject]@{
+                Kind='Host'; Target=$h; Risk='OK'
+                Detail="$($byHost[$h]) SPNs"; RowKey="Host|$h"
+            }
+        }
+
+        # Deaktivierte Konten
+        if ($deaktSpns -gt 0) {
+            $result += [pscustomobject]@{
+                Kind='DeaktKonten'; Target='SPNs auf deaktivierten Konten'; Risk='WARN'
+                Detail="$deaktSpns SPNs auf deaktivierten Konten"; DeaktKonten=$deaktSpns; RowKey='DeaktKonten|SPNs auf deaktivierten Konten'
+            }
+        }
+
+        # Unerwartete Klassen
+        if ($unexpClass.Count -gt 0) {
+            $result += [pscustomobject]@{
+                Kind='UnerwarteteKlasse'; Target='Unerwartete SPN-Klassen auf User-Konten'; Risk='WARN'
+                Detail=($unexpClass -join '; '); RowKey='UnerwarteteKlasse|User-Konten'
+            }
+        }
+
+        # DNS-Fails
+        if ($dnsFail.Count -gt 0) {
+            $result += [pscustomobject]@{
+                Kind='DNSFehler'; Target='SPN-Hostnamen ohne DNS-Aufloesung'; Risk='WARN'
+                Detail=($dnsFail | Select-Object -Unique -First $maxRows -join ', '); RowKey='DNSFehler|SPN-Hosts'
+            }
+        }
+    } catch {
+        $result += [pscustomobject]@{ Kind='Fehler'; Target='SPN-Inventar'; Detail="Abfrage fehlgeschlagen: $_"; Risk='WARN' }
+    }
+    return $result
+}
+
+function Test-Check-SPNInventory {
+    <#
+    .SYNOPSIS
+        Bewertet SPN-Inventar.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $rows = @($data | Where-Object { $_.Kind -ne 'Zusammenfassung' })
+    if ($rows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $warn = @($rows | Where-Object { $_.Risk -eq 'WARN' })
+    $findings = @($rows | Where-Object { $_.Risk -ne 'OK' } | ForEach-Object { $_.Detail })
+    $status = if ($warn.Count) { 'WARN' } else { 'OK' }
+    $summary = "$($rows.Count) SPN-Positionen: OK $($rows.Count - $warn.Count), WARN $($warn.Count)"
+    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
+}
+
 function Get-LAPSConfiguration {
     <#
     .SYNOPSIS
