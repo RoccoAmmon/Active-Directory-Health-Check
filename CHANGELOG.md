@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 > 🇩🇪 [Deutsch](#-deutsch) | 🇬🇧 [English](#-english)
 
@@ -8,6 +8,88 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇩🇪 Deutsch
+
+### [2.9] - 2026-10-15
+
+#### Hinzugefügt
+- **Check 56: Tote DCs & DC-Verfügbarkeit** – gleicht sieben unabhängige Quellen für „welche DCs gibt es" gegeneinander ab (Live-Bestand, Computerobjekte in `OU=Domain Controllers`, Serverobjekte samt NTDS-Settings im Config-NC, Replikationspartner aller Domänen u. a.) und listet jeden DC mit Live-/Verwaist-Status und DNS-Existenz
+  - Row-Kinds `DC` und `Quelle` (RowKey `Kind|Name`): jede Quelle wird separat bewertet, abweichende oder nicht auswertbare Quellen nennen die betroffenen Namen
+  - Neuer Schwellwert `$Global:StaleDCWarnAgeDays` (0 = jedes verwaiste DC-Objekt ist auffällig, ab 1 nur ältere)
+  - Registriert in der GUI-Gruppe „AD-Topologie & Objekte" und im Forest-Bereich des Shell-Menüs
+- **Check 57: RC4 / LM Belege je DC** – sammelt echte Belege, dass RC4/LM noch verwendet wird, statt nur die Konfiguration zu lesen: `AllowableEncryptionTypes` der Computer- und Benutzerkonten, `NoLMHash`-Kennzeichnung und ausgewertete Kerberos-Tickets 4768/4769 aus dem Security-Log
+  - Row-Kinds `Netlogon`, `NoLMHash`, `RC4-Tickets` (RowKey `Kind|DCName`)
+  - Zeitfenster und Stichprobengröße per `$Global:RC4EventDays` (7 Tage) und `$Global:RC4EventSampleLimit` (5000 Tickets je DC); ein nicht lesbares Security-Log wird als eigener Befund ausgewiesen, statt den Teil stillschweigend auszulassen
+  - Registriert in der GUI-Gruppe „Identity & Kerberos", im Pro-DC-Bereich des Shell-Menüs und in der Security-Suite
+- **Check 58: SPN-Inventar & Verwaiste SPNs** – inventarisiert alle SPNs nach Dienstklasse und Objekt und ergänzt Check 38 (prüft nur Dubletten)
+  - Row-Kinds `Zusammenfassung`, `Objekt`, `Klasse`, `Host`, `Fehler` (RowKey `Kind|Name`); RowFlags der Zusammenfassung werden nicht doppelt als Befund gezählt
+  - Meldet Objekte mit ungewöhnlich vielen SPNs (`$Global:SPNMaxObjSpns`, 20), SPNs auf deaktivierten Konten, unerwartete SPN-Klassen auf Benutzerkonten (`$Global:SPNUserAccountClassWarn`) und SPN-Hostnamen ohne DNS-Auflösung (max. `$Global:SPNMaxDnsProbe` = 200 Abfragen, Anzeige je Row-Kind auf `$Global:SPNInventoryMaxRows` = 200 begrenzt)
+  - Neue Spalte `DeaktKonten` (siehe „Behoben")
+  - Registriert in der GUI-Gruppe „Identity & Kerberos", im Forest-Bereich des Shell-Menüs und in der Security-Suite
+- **Check 59: Encryption-Types: Verteilung & AES-Abdeckung** – verteilt alle Konten nach EncType-Kombination, prüft die AES-Abdeckung gegen `$Global:EncTypesAesCoverageMin` (90 %) und korreliert die OS-Gruppe mit dem tatsächlich gesetzten EncType
+  - Row-Kinds `Verteilung`, `OS`, `Fazit` (Fazit-Row `AES-Abdeckung`) und `Fehler` (RowKey `Kind|Name`)
+  - Eine moderne OS-Gruppe ohne vollständige AES-Abdeckung wird gesondert gemeldet
+  - Registriert in der GUI-Gruppe „Identity & Kerberos", im Forest-Bereich des Shell-Menüs und in der Security-Suite
+- **Check 60: DNS-Zonen: SOA & Replikation** (Forest) – wertet die SOA-Refresh/-Expire-Werte aus und nutzt dafür die bislang ungenutzten Schwellwerte `$Global:DNSZoneRefreshMaxHours` (24) und `$Global:DNSZoneExpireMinDays` (7); zusätzlich werden pro Zone geprüft
+  - `ReplicationScope='Server'` (Zone nur auf einem Server, nicht repliziert) bzw. eine zwischen den DCs variierende Scope-Zuordnung
+  - `DynamicUpdate='None'` auf AD-integrierten Zonen (`NonsecureAndSecure` bleibt Check 6 vorbehalten)
+  - abweichende SOA-Seriennummern derselben Zone zwischen den DCs
+  - Row-Kinds `Zusammenfassung`, `Zone`, `Fehler` (RowKey `Kind|Name`); liefert die bisher ungenutzten Schwellwerte und ersetzt weder Check 6 noch Check 42
+  - Registriert in der GUI-Gruppe „DC-Infrastruktur" und im Forest-Bereich des Shell-Menüs
+- **Check 61: DNS-Forwarder & Conditional Forwarder** (Forest) – globale Forwarder inkl. Verfügbarkeit der Root-Hints sowie Conditional Forwarder mit Ziel-IP je DNS-Server
+  - Erkennt nur teilweise verteilte CF (registry-basiert, **nicht** repliziert), CF ohne MasterServer (keine Auflösung möglich) und Weiterleitungsschleifen, deren Ziel ein eigener DNS-Server ist
+  - Die Erreichbarkeit der Forwarder-IPs bleibt bewusst bei `dcdiag /test:DnsForwarders` in Check 3 (keine Doppelung); Row-Kinds `Zusammenfassung`, `ConditionalForwarder`, `Forwarder` (RowKey `Kind|Name`)
+  - Registriert in der GUI-Gruppe „DC-Infrastruktur" und im Forest-Bereich des Shell-Menüs
+- **Gesamtübersicht der Auffälligkeiten im HTML-Report** – eine Tabelle direkt hinter dem Executive Dashboard mit allen auffälligen Checks, nach Schwere sortiert; die Befunde je Check werden auf `$Global:ReportOverviewFindingsMax` (5) gekürzt, dahinter folgt „... und n weitere Befunde". Kein eigener Check, sondern ein Bestandteil des Reports
+- **Automatische Rechte-Erhöhung** – Windows verlangt Administratorrechte für DNS- und WMI-Abfragen (z. B. `root\MicrosoftDNS`); liefen die DNS-Checks ohne diese Rechte, meldeten sie trotz installiertem DNS-Modul „keine Zonen" bzw. „DNS-Abfrage fehlgeschlagen". Ohne Adminrechte startet sich das Skript jetzt selbst mit einer UAC-Abfrage neu; alle übergebenen Parameter bleiben erhalten (betrifft `-FullRun`, `-OnlyChecks`, `-OutputPath`, `-Language`, `-NoInteractive`, `-NoUpdateCheck`)
+  - Neue Funktionen `Test-IsElevated`, `Get-ElevationCommand` und `Start-ElevatedRestart`; ein Global-Flag (`ElevationHandled`) verhindert eine Endlosschleife
+  - Abbruch der UAC-Abfrage führt nicht zum Abbruch: es wird im aktuellen Kontext weitergemacht, die fehlenden Rechte werden dabei ausdrücklich benannt
+  - Neuer Parameter `-NoElevate` unterdrückt den Neustart (nützlich, wenn bewusst ohne Adminrechte getestet werden soll)
+
+#### Behoben
+- **Spaltenkopf `Deaktiviert` (Check 58)** wurde in englischen Berichten als `disabled` ausgegeben: der L10n-Schlüsselvergleich ist case-insensitiv und behält den ersten Eintrag (`deaktiviert=>disabled`), sodass der neu angelegte Eintrag `Deaktiviert=>Disabled` wirkungslos blieb. Die Spalte heißt jetzt `DeaktKonten` (=> `Disabled accounts`); die Klein-/Großschreibweise deutscher Fließtexte (`deaktiviert` => `disabled`) bleibt unverändert korrekt
+- **README-Changelog**: der v2.7-Eintrag „weiterhin 55 Checks" (DE) bzw. „still 55 checks" (EN) war durch einen globalen Ersetzungsvorgang bei 2.8 mit hochgezogen worden und lautet jetzt wieder 54
+- **README-Titel und Version-Badge** standen noch auf v2.7 (bei 2.8 nicht mitgeführt) und sind jetzt auf 2.9 gesetzt
+- **Check 56 hing bei ausführbaren Läufen kommentarlos in der Warteschlange**: `Get-ADComputer` in `Get-StaleDCObjects` (Quelle „Computerobjekte in `OU=Domain Controllers`") wurde ohne `-Filter` aufgerufen, wodurch PowerShell den fehlenden Parameter interaktiv abfragt – bei `-FullRun` oder als Scheduled-Task blieb der Lauf hier stehen. Aufruf mit `-Filter *` ergänzt
+- **Checks 7, 8 und 9 meldeten auf dem lokalen DNS-DC „keine Zonen" bzw. „nicht erreichbar"**: die DnsServer-Cmdlets wurden durchgehend mit `-ComputerName <DC>` aufgerufen, also auch gegen den **eigenen** Rechner. Ein `-ComputerName` auf sich selbst erzwingt einen CIM/WMI-Remoting-Umweg; ist WinRM-Loopback oder DCOM gesperrt, schlägt auch die Abfrage auf dem EIGENEN DC fehl, obwohl DNS installiert ist und der DC über Ping/AD/Replikation einwandfrei erreichbar bleibt. Check 42 war nicht betroffen, weil er bereits ohne `-ComputerName` abfragt. Neue Funktion `Get-DnsServerTargets` liefert eine Prüfreihenfolge: lokal zuerst **ohne** `-ComputerName` (in-process), dann `localhost`, dann der übergebene Name; remote nur der Name. Genutzt in `Get-DNSConfiguration`, `Get-DNSZoneConfiguration` und `Get-ConditionalForwarding`
+- **`Test-IsLocalComputer` erkannte den lokalen DC nicht in FQDN-Form**: Check 7 erhält den DC als FQDN (`dc.HostName`), Checks 8/9 als NetBIOS-Namen (`.Name`); der Vergleich war rein exakt, sodass Check 7 den lokalen DC stets als „remote" behandelte. Jetzt wird zusätzlich der Kurzname vor dem ersten Punkt verglichen
+- **Fehlermeldung von Check 8 war irreführend**: „kein DC mit auswertbaren DNS-Zonen (nicht erreichbar: ...)" behauptete eine Nichterreichbarkeit, obwohl nur die DNS-Abfrage scheiterte. Sie heißt jetzt „... (DNS-Abfrage fehlgeschlagen: ...)" und nennt zusätzlich die tatsächliche Ursache je DC; Check 9 nennt die Ursache ebenfalls
+- **Check 7 meldete `0.in-addr.arpa`, `127.in-addr.arpa` und `255.in-addr.arpa` als „nicht AD-integriert"**: diese drei Reverse-Lookup-Zonen legt der Windows-DNS-Dienst automatisch selbst an; sie sind korrekt **nicht** AD-integriert und auf jedem Windows-DNS-Server identisch vorhanden. Als Befund gemeldet war das reines Rauschen und lenkte von echten Problemen ab. Neue Liste `$Global:DNSDefaultReverseZones` wird in `Test-Check-DNS` von der Prüfung ausgenommen; eine **echte** Primary-Zone ohne AD-Integration und `NonsecureAndSecure`-Updates werden weiterhin gemeldet
+- **Check 8 meldete bei 8 von 9 Zonen „SOA-Expire 0 Tage unterschreitet die Schwelle"** – ein reiner Lesefehler: `[double]$rd.ExpireInterval.TotalDays` ergibt bei fehlender/anders benannter Eigenschaft `$null`, und `[double]$null` ist `0`. Der Wert flog also stillschweigend auf 0 und verletzte immer die Schwelle, obwohl er schlicht nicht lesbar war; eine Zone mit 0 Tagen Ablaufzeit wäre sofort defunkt. Neue Funktion `ConvertFrom-SOAInterval` wertet `[timespan]` **und** Sekunden-Zahlen (WMI-Abbild) korrekt aus, gibt bei nicht auslesbaren Werten `$null` zurück und lässt diese Werte unberücksichtigt – in den Spalten `Refresh`/`Expire` erscheint dann `-`. Wenn auf **allen** DCs einer Zone die Intervalle nicht lesbar sind, meldet der Check das jetzt ausdrücklich („SOA-Intervalle (Refresh/Expire) nicht auslesbar"), statt eine erfundene Schwellenverletzung zu behaupten. Zusätzlich wird mit zwei Nachkommastellen gerechnet, damit kleine echte Werte nicht mehr auf `0 d` abgerundet werden
+
+- **Check 8 fragte bei Forwarder-Zonen (z. B. 	est.de) unnotigerweise SOA ab**: Forwarder-Zonen enthalten per Definition keine Ressourcenrekorde und damit keine SOA. Die Abfrage schlug immer fehl („SOA-Abfrage fehlgeschlagen auf …") und war ein reiner Fehlalarm. Forwarder-Zonen werden jetzt vor der SOA-Lesung ausgelassen; sie erscheinen im Report mit - bei Refresh/Expire und ohne Befund
+- **Check 8 meldete TrustAnchors als „DynamicUpdate='None' auf AD-Zone"**: TrustAnchors ist die von Windows selbst angelegte DNSSEC-Trust-Anchor-Zone; dort sind statische Einträge korrekt und dynamische Registrierung unerwuenscht. Neue Liste $Global:DNSSystemZones wird von der DynamicUpdate-Pruefung ausgenommen
+
+#### Geändert
+- Version auf 2.9 erhöht (61 Checks)
+- 11 neue konfigurierbare Werte im Variablenblock: `RC4EventDays` (7), `RC4EventSampleLimit` (5000), `EncTypesAesCoverageMin` (90), `DNSZoneExpireMinDays` (7), `DNSZoneRefreshMaxHours` (24), `StaleDCWarnAgeDays` (0), `ReportOverviewFindingsMax` (5), `SPNMaxObjSpns` (20), `SPNMaxDnsProbe` (200), `SPNInventoryMaxRows` (200), `SPNUserAccountClassWarn`
+- L10n-Tabelle auf 717 DE/EN-Einträge erweitert (Glue 0/0); dublette DE-Schlüssel mit abweichender Übersetzung 11 → 10
+- Neuer Parameter `-NoElevate` in der Wiki-Parameterseite dokumentiert; `-OutputPath` (vorbestehender Skriptparameter) war dort nie aufgeführt und ist jetzt ebenfalls erfasst
+- README (Titel, Version-/Checks-Badge, Feature-Liste, beide Check-Tabellen, Changelog) und Wiki auf 61 Checks und Version 2.9 aktualisiert
+- Skript-Header: „54 thematisch sortierte Pruefpunkte" → 61, Versionshinweis „Version : 2.8 (55 Checks ...)" → „2.9 (61 Checks ...)"
+
+### [2.8] - 2026-10-14
+
+#### Hinzugefügt
+- **Check 55: KMS-Server & Konfiguration** – sucht KMS-Hosts per DNS-SRV (`_vlmcs._tcp.<ForestRoot>` bzw. `<Domain>`) und liest deren Konfiguration aus
+  - **Discovery**: `Resolve-DnsName -Type SRV` auf `_vlmcs._tcp.*` – eintraglose Zone wird als CRITICAL gemeldet (Clients finden keinen KMS-Host)
+  - **Konfiguration je Host** (WinRM oder lokal; nicht erreichbare Hosts werden als WARN mit Grund gemeldet): Dienst `KeyManagementService` inkl. StartTyp – **mehrstufig** erkannt (`Get-Service -Name`, `-DisplayName` EN/DE, die **vollständige** CIM-`Win32_Service`-Liste, zuletzt der Service-Registry-Schlüssel), Port aus `...\KeyManagementService\Parameters`, Port-Erreichbarkeit per TCP-Test auf localhost und der **laufende Prozess auf dem KMS-Port** (`Get-NetTCPConnection`), Aktivierungs-Zähler (`KeyManagementServiceCurrentCount/TotalRequests/FailedRequests`), Zeitraum und Retry-Intervall aus `...\SoftwareProtectionPlatform`, Host-Key (`PartialProductKey`) und Kanal aus `SoftwareLicensingService` (CIM, sonst WMI)
+  - **Robustes Registry-Lesen**: explizite 64-Bit-Registryansicht (überlebt 32-Bit-Umleitung) mit Fallback auf den PowerShell-Provider; ein lesbarer Schlüssel ohne KMS-Werte gilt als „keine KMS-Konfiguration", nicht als „kein Zugriff"
+  - **Bewertung**: CRITICAL bei fehlendem SRV-Eintrag, wenn der befragte Host **kein Windows-KMS** betreibt (Dienst nicht registriert), bei gestopptem Dienst, unerreichbarem Port oder Aktivierungs-Anzahl unter 5 (Server/Office); WARN unter 25 (Client-Schwelle), bei abweichendem Port ≠ 1688, ohne Host-Key, bei Retail-Kanal, >50 % fehlgeschlagenen Anfragen, nicht auslesbarem Dienst-Status oder nur einem Host (kein Failover)
+  - **Zusatz-Signale**: gesetztes `KeyManagementServiceName` auf einen fremden Rechner weist die Maschine als KMS-**Client** aus; installierte Rolle *Volume Activation Services* ohne Host-Key deutet auf einen entfernten oder nie installierten Host-Key hin (prüfen mit `slmgr /dlv`); ähnlich benannte Dienste (`KMS`/`KeyManagement`/`VolumeActivation`) werden aus derselben CIM-Abfrage erfasst und im `Detail` genannt
+  - **Hinweis-Zeile**: liegt kein SRV-Eintrag vor, werden zusätzlich alle erreichbaren DCs nach installiertem KMS-Dienst abgesucht
+  - Registriert in GUI-Gruppe „System & Updates", Shell-Menü (Bereich Forest) und gruppiertem HTML-Report; 20 Spalten inkl. neuer Spalte `Method` (Zugriffsweg: WinRM/Lokal/None), DE/EN übersetzt
+
+#### Behoben
+- **Check 55**: der unbelegte Platzhalter `-` im Key-Kanal wird nicht mehr als echter Wert gewertet – vorher meldete jeder Host ohne auslesbaren Kanal fälschlich „Key-Kanal '-' statt 'Volume' – ggf. Retail-Key statt Host-Key installiert"
+- **Check 55**: Fehlen Aktivierungs-Zähler wird bei fehlendem KMS-Dienst nicht mehr als separater Fund gemeldet (ist dort Selbstverständlichkeit)
+- **Check 55**: ein L10n-Eintrag (`) - Konfiguration konnte nicht gelesen werden`) griff mangels passender Umgebung nie und wurde korrigiert
+- **Check 55**: widersprüchliche Meldung bei Hosts mit installierter Rolle und antwortendem Port behoben – vorher hieß es pauschal „der Host ist KEIN KMS-Host!" und verwies zugleich auf den DNS-SRV-Eintrag, obwohl Rolle und Port dafür zu wenig Belege sind. Jetzt wird der Befund benannt (Dienst nicht registriert), die Indizien getrennt aufgeführt und der DNS-Hinweis nur noch gegeben, wenn für den Host **keinerlei** KMS-Spur existiert
+- **Check 55**: der Dienst wird auch gefunden, wenn er unter abweichendem Namen registriert ist – ausgewertet wird jetzt die vollständige `Win32_Service`-Liste statt nur nach dem exakten Namen zu filtern
+
+#### Geändert
+- Version auf 2.8 erhöht (55 Checks)
+- Neue konfigurierbare Schwellwerte `$Global:KMSMinCountServer` (5) und `$Global:KMSMinCountClient` (25) im Variablenblock
+- README (Badge, Feature-Liste, beide Check-Tabellen) und Wiki auf 55 Checks aktualisiert
 
 ### [2.7] - 2026-10-14
 
@@ -149,6 +231,88 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [2.9] - 2026-10-15
+
+#### Added
+- **Check 56: Dead DCs & DC availability** – cross-checks seven independent sources of "which DCs exist" (live inventory, computer objects in `OU=Domain Controllers`, server objects plus NTDS settings in the Config NC, replication partners of all domains, among others) and lists every DC with its live/orphaned status and DNS existence
+  - Row kinds `DC` and `Quelle` (row key `Kind|Name`): each source is assessed separately, diverging or unreadable sources name the affected objects
+  - New threshold `$Global:StaleDCWarnAgeDays` (0 = every orphaned DC object is flagged, 1 or more only older ones)
+  - Registered in the GUI group "AD topology & objects" and the forest section of the console menu
+- **Check 57: RC4 / LM evidence per DC** – collects actual evidence that RC4/LM is still in use instead of only reading configuration: `AllowableEncryptionTypes` of computer and user accounts, the `NoLMHash` flag and evaluated Kerberos tickets 4768/4769 from the security log
+  - Row kinds `Netlogon`, `NoLMHash`, `RC4-Tickets` (row key `Kind|DCName`)
+  - Time window and sample size via `$Global:RC4EventDays` (7 days) and `$Global:RC4EventSampleLimit` (5000 tickets per DC); an unreadable security log is reported as its own finding instead of silently skipping that part
+  - Registered in the GUI group "Identity & Kerberos", the per-DC section of the console menu and the security suite
+- **Check 58: SPN inventory & stale SPNs** – inventories all SPNs by service class and object, complementing check 38 (duplicate detection only)
+  - Row kinds `Zusammenfassung`, `Objekt`, `Klasse`, `Host`, `Fehler` (row key `Kind|Name`); summary row flags are not counted twice as findings
+  - Flags objects with an unusual number of SPNs (`$Global:SPNMaxObjSpns`, 20), SPNs on disabled accounts, unexpected SPN classes on user accounts (`$Global:SPNUserAccountClassWarn`) and SPN host names that do not resolve (max. `$Global:SPNMaxDnsProbe` = 200 lookups, output per row kind capped at `$Global:SPNInventoryMaxRows` = 200)
+  - New column `DeaktKonten` (see "Fixed")
+  - Registered in the GUI group "Identity & Kerberos", the forest section of the console menu and the security suite
+- **Check 59: Encryption types: distribution & AES coverage** – distributes all accounts by encryption type combination, checks AES coverage against `$Global:EncTypesAesCoverageMin` (90%) and correlates the OS group with the encryption type actually set
+  - Row kinds `Verteilung`, `OS`, `Fazit` (summary row `AES-Abdeckung`) and `Fehler` (row key `Kind|Name`)
+  - A modern OS group without full AES coverage is reported separately
+  - Registered in the GUI group "Identity & Kerberos", the forest section of the console menu and the security suite
+- **Check 60: DNS zones: SOA & replication** (forest) – evaluates the SOA refresh/expire values using the previously unused thresholds `$Global:DNSZoneRefreshMaxHours` (24) and `$Global:DNSZoneExpireMinDays` (7); additionally each zone is checked for
+  - `ReplicationScope='Server'` (zone on a single server, not replicated) or a scope assignment varying between the DCs
+  - `DynamicUpdate='None'` on AD-integrated zones (`NonsecureAndSecure` remains reserved for check 6)
+  - differing SOA serial numbers of the same zone between the DCs
+  - Row kinds `Zusammenfassung`, `Zone`, `Fehler` (row key `Kind|Name`); puts the previously unused thresholds to work and replaces neither check 6 nor check 42
+  - Registered in the GUI group "DC infrastructure" and the forest section of the console menu
+- **Check 61: DNS forwarders & conditional forwarders** (forest) – global forwarders including root hint availability as well as conditional forwarders with their target IP per DNS server
+  - Detects only partially distributed CFs (registry-based, **not** replicated), CFs without a master server (cannot resolve at all) and forwarding loops whose target is one of our own DNS servers
+  - The reachability of the forwarder IPs intentionally stays with `dcdiag /test:DnsForwarders` in check 3 (no duplication); row kinds `Zusammenfassung`, `ConditionalForwarder`, `Forwarder` (row key `Kind|Name`)
+  - Registered in the GUI group "DC infrastructure" and the forest section of the console menu
+- **Overall summary of findings in the HTML report** – a single table right behind the executive dashboard listing all flagged checks, sorted by severity; findings per check are capped at `$Global:ReportOverviewFindingsMax` (5), followed by "... and n more findings". Not a check of its own, but part of the report
+- **Automatic elevation** – Windows requires administrator rights for DNS and WMI queries (e.g. `root\MicrosoftDNS`); without those rights the DNS checks reported "no zones" or "DNS query failed" even though the DNS module was installed. If the script is not running with admin rights it now relaunches itself with a UAC prompt; all passed parameters are preserved (`-FullRun`, `-OnlyChecks`, `-OutputPath`, `-Language`, `-NoInteractive`, `-NoUpdateCheck`)
+  - New functions `Test-IsElevated`, `Get-ElevationCommand` and `Start-ElevatedRestart`; a global flag (`ElevationHandled`) prevents an infinite loop
+  - Cancelling the UAC prompt does not abort the run: it continues in the current context and explicitly names the missing rights
+  - New parameter `-NoElevate` suppresses the restart (useful when testing without admin rights on purpose)
+
+#### Fixed
+- **The column header `Deaktiviert` (check 58)** was rendered as `disabled` in English reports: the L10n key comparison is case-insensitive and keeps the first entry (`deaktiviert=>disabled`), which made the added entry `Deaktiviert=>Disabled` a no-op. The column is now called `DeaktKonten` (=> `Disabled accounts`); the case of German body text (`deaktiviert` => `disabled`) remains correct as before
+- **README changelog**: the v2.7 entry "still 55 checks" (EN) / "weiterhin 55 Checks" (DE) had been bumped along by a global replace when v2.8 was written and now reads 54 again
+- **README title and version badge** were still at v2.7 (not carried along in 2.8) and are now set to 2.9
+- **Check 56 hung silently in the queue during runs**: `Get-ADComputer` in `Get-StaleDCObjects` (source "computer objects in `OU=Domain Controllers`") was called without `-Filter`, making PowerShell prompt for the missing parameter interactively – with `-FullRun` or as a scheduled task the run stalled here. The call now includes `-Filter *`
+- **Checks 7, 8 and 9 reported "no zones" or "not reachable" on the local DNS DC**: the DnsServer cmdlets were called with `-ComputerName <DC>` throughout, including against the **local** machine. Passing `-ComputerName` for yourself forces a CIM/WMI remoting detour; if WinRM loopback or DCOM is blocked, the query fails even though DNS is installed and the DC is fully reachable via ping/AD/replication. Check 42 was not affected because it already queries without `-ComputerName`. The new function `Get-DnsServerTargets` returns an ordered list of targets to try: locally **without** `-ComputerName` (in-process) first, then `localhost`, then the given name; remotely just the name. Used in `Get-DNSConfiguration`, `Get-DNSZoneConfiguration` and `Get-ConditionalForwarding`
+- **`Test-IsLocalComputer` did not recognise the local DC in FQDN form**: check 7 receives the DC as an FQDN (`dc.HostName`) while checks 8/9 use the NetBIOS name (`.Name`); the comparison was strictly exact, so check 7 always treated the local DC as "remote". The first label before the dot is now compared as well
+- **Check 8's error message was misleading**: "no DC with evaluable DNS zones (not reachable: ...)" claimed unreachability when only the DNS query had failed. It now reads "... (DNS query failed: ...)" and additionally names the actual cause per DC; check 9 names the cause as well
+- **Check 7 flagged `0.in-addr.arpa`, `127.in-addr.arpa` and `255.in-addr.arpa` as "not AD-integrated"**: the Windows DNS server role creates these three reverse lookup zones automatically; they are correctly **not** AD-integrated and present on every Windows DNS server. Reporting them as a finding was pure noise that distracted from real problems. The new list `$Global:DNSDefaultReverseZones` is excluded from the check in `Test-Check-DNS`; a **genuine** primary zone without AD integration and `NonsecureAndSecure` updates are still reported
+- **Check 8 reported "SOA-Expire 0 days below threshold" for 8 of 9 zones** – a pure read error: `[double]$rd.ExpireInterval.TotalDays` yields `$null` when the property is missing or named differently, and `[double]$null` is `0`. The value silently became 0 and therefore always violated the threshold, even though it was simply unreadable; a zone with 0 days expiry would be broken immediately. The new function `ConvertFrom-SOAInterval` evaluates `[timespan]` **and** plain numbers (WMI representation) correctly, returns `$null` for unreadable values and leaves them out of the assessment – the `Refresh`/`Expire` columns then show `-`. If the intervals are unreadable on **all** DCs of a zone, the check now says so explicitly ("SOA intervals (refresh/expire) not readable") instead of claiming a fabricated threshold violation. Two decimal places are used as well so that small genuine values are no longer rounded down to `0 d`
+- **Check 8 queried SOA on Forwarder zones unnecessarily (e.g. 	est.de)**: Forwarder zones contain no resource records by definition and therefore no SOA. The query always failed ("SOA query failed on …") and was a pure false positive. Forwarder zones are now skipped before the SOA read; they appear in the report with - for Refresh/Expire and no finding
+- **Check 8 flagged TrustAnchors as "DynamicUpdate='None' on an AD zone"**: TrustAnchors is the DNSSEC trust anchor zone created by Windows itself; static entries are correct there and dynamic registration is undesirable. The new list $Global:DNSSystemZones is excluded from the DynamicUpdate check
+
+
+#### Changed
+- Version bumped to 2.9 (61 checks)
+- 11 new configurable values in the variables block: `RC4EventDays` (7), `RC4EventSampleLimit` (5000), `EncTypesAesCoverageMin` (90), `DNSZoneExpireMinDays` (7), `DNSZoneRefreshMaxHours` (24), `StaleDCWarnAgeDays` (0), `ReportOverviewFindingsMax` (5), `SPNMaxObjSpns` (20), `SPNMaxDnsProbe` (200), `SPNInventoryMaxRows` (200), `SPNUserAccountClassWarn`
+- L10n tables extended to 717 DE/EN entries (glue 0/0); duplicated German keys with conflicting translations 11 → 10
+- New parameter `-NoElevate` documented on the wiki parameter page; `-OutputPath` (pre-existing script parameter) had never been listed there and is now covered as well
+- README (title, version/checks badges, feature list, both check tables, changelog) and wiki updated to 61 checks and version 2.9
+- Script header: "54 thematisch sortierte Pruefpunkte" → 61, version note "Version : 2.8 (55 Checks ...)" → "2.9 (61 Checks ...)"
+
+### [2.8] - 2026-10-14
+
+#### Added
+- **Check 55: KMS servers & configuration** – locates KMS hosts via DNS SRV (`_vlmcs._tcp.<ForestRoot>` or `<Domain>`) and reads their configuration
+  - **Discovery**: `Resolve-DnsName -Type SRV` against `_vlmcs._tcp.*` – an empty zone is reported as CRITICAL (clients find no KMS host)
+  - **Per-host configuration** (WinRM or local; unreachable hosts are reported as WARN with the reason): the `KeyManagementService` service including start type – detected **in several stages** (`Get-Service -Name`, `-DisplayName` EN/DE, the **complete** CIM `Win32_Service` list, and finally the service registry key), the port from `...\KeyManagementService\Parameters`, a TCP reachability test of that port on localhost plus the **process listening on the KMS port** (`Get-NetTCPConnection`), the activation counters (`KeyManagementServiceCurrentCount/TotalRequests/FailedRequests`), the collection period and retry interval from `...\SoftwareProtectionPlatform`, and the host key (`PartialProductKey`) plus channel from `SoftwareLicensingService` (CIM, otherwise WMI)
+  - **Robust registry reading**: explicit 64-bit registry view (survives 32-bit redirection) with a PowerShell provider fallback; a readable key without KMS values counts as “no KMS configuration”, not as “no access”
+  - **Assessment**: CRITICAL for a missing SRV record, when the queried host does **not run Windows KMS** (service not registered), for a stopped service, an unreachable port or an activation count below 5 (server/office); WARN below 25 (client threshold), for a non-default port ≠ 1688, a missing host key, a retail channel, more than 50 % failed requests, an unreadable service status, or a single host (no failover)
+  - **Additional signals**: a set `KeyManagementServiceName` pointing at a foreign machine marks it as a KMS **client**; an installed *Volume Activation Services* role without a host key indicates a removed or never installed host key (check with `slmgr /dlv`); similarly named services (`KMS`/`KeyManagement`/`VolumeActivation`) are collected from the same CIM query and named in `Detail`
+  - **Note row**: when no SRV record exists, all reachable DCs are additionally scanned for an installed KMS service
+  - Registered in the GUI group "System & Updates", the shell menu (forest section) and the grouped HTML report; 20 columns including the new `Method` column (access path: WinRM/local/None), translated DE/EN
+
+#### Fixed
+- **Check 55**: the empty placeholder `-` for the key channel is no longer treated as a real value – previously every host without a readable channel falsely reported “key channel '-' instead of 'Volume' – possibly a retail key instead of a host key”
+- **Check 55**: a missing activation counter is no longer reported as a separate finding when the KMS service is absent (that is self-evident there)
+- **Check 55**: one L10n entry (`) - Konfiguration konnte nicht gelesen werden`) never matched due to a missing context and has been corrected
+- **Check 55**: contradictory output for hosts with an installed role and an answering port has been fixed – previously the check stated “the host is NOT a KMS host!” while simultaneously pointing at the DNS SRV record, even though a role and an open port are not enough evidence for that. The finding is now stated precisely (service not registered), the individual indicators are listed separately, and the DNS hint is only given when the host shows **no** KMS trace at all
+- **Check 55**: the service is now also found when it is registered under a diverging name – the complete `Win32_Service` list is evaluated instead of filtering only for the exact name
+
+#### Changed
+- Version bumped to 2.8 (55 checks)
+- New configurable thresholds `$Global:KMSMinCountServer` (5) and `$Global:KMSMinCountClient` (25) in the variables block
+- README (badge, feature list, both check tables) and wiki updated to 55 checks
 
 ### [2.7] - 2026-10-14
 

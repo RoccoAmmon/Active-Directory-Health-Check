@@ -1,10 +1,10 @@
-# 🛡️ Active Directory Health Check v2.7
+﻿# 🛡️ Active Directory Health Check v2.9
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.7-brightgreen.svg)]()
-[![Checks](https://img.shields.io/badge/Checks-54-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.9-brightgreen.svg)]()
+[![Checks](https://img.shields.io/badge/Checks-61-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
 > 🇩🇪 [Deutsch](#-deutsch) | 🇬🇧 [English](#-english)
@@ -18,7 +18,7 @@
 ### 📑 Inhaltsverzeichnis
 
 - [Features](#-features)
-- [Die 54 Checks](#-die-54-checks)
+- [Die 61 Checks](#-die-61-checks)
 - [Systemanforderungen](#-systemanforderungen)
 - [Installation](#-installation)
 - [Verwendung](#-verwendung)
@@ -35,9 +35,10 @@
 
 ### ✨ Features
 
-- 🎯 **54 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring)
+- 🎯 **61 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring)
 - 🖼️ **Moderne WPF-GUI** (Light Theme) mit Gruppen-Auswahl, Suite-Buttons und Ausgabepfad-Wahl
 - 🎨 **Farbcodierter HTML-Report** mit Executive Dashboard (OK / WARN / KRITISCH / INFO)
+- 📋 **Gesamtübersicht der Auffälligkeiten** – alle auffälligen Checks in einer Tabelle, nach Schwere sortiert, Befunde je Check gekürzt
 - 📊 **CSV-Export** aller Check-Ergebnisse
 - 🖥️ **Interaktives Startmenü** als Fallback für Konsolen-Betrieb
 - ⚡ **Parameter-basierte Ausführung** für Scheduled Tasks / Automatisierung
@@ -51,7 +52,7 @@
 - 📝 **Ausführliches Logging** (`C:\ScriptLog`)
 - 🔧 **Modular aufgebaut** - einzelne Checks können gezielt ausgeführt werden
 
-### 📋 Die 54 Checks
+### 📋 Die 61 Checks
 
 ### 🏗️ DC-Basis-Infrastruktur
 | # | Check | Beschreibung |
@@ -65,6 +66,8 @@
 | 6 | **DNS-Konfiguration** | Zonen, AD-Integration, Dynamic Updates |
 | 7 | **SYSVOL & NETLOGON** | Erreichbarkeit |
 | 8 | **NTDS-Datenbank** | Größe, freier Festplattenplatz |
+| 60 | **DNS-Zonen: SOA & Replikation** | SOA-Refresh/-Expire gegen die Schwellwerte, `ReplicationScope`, `DynamicUpdate=None`, Zonenkonsistenz zwischen den DCs |
+| 61 | **DNS-Forwarder & Conditional Forwarder** | Globale Forwarder inkl. Root-Hints, CF-Ziel-IPs, nur teilweise verteilte (registry-basierte) CF und Weiterleitungsschleifen |
 
 ### 🔒 Security: Netzwerk-Protokolle
 | # | Check | Beschreibung |
@@ -104,6 +107,7 @@
 | 29 | **Tombstone Lifetime** | Best Practice ≥180 Tage |
 | 30 | **Forest-/Domain-Level** | Functional Level |
 | 31 | **GPO-Health** | Sysvol/DS-Version-Mismatch |
+| 56 | **Tote DCs & DC-Verfügbarkeit** | Alte, verwaiste oder nie entfernte DC-Namen aus 7 Quellen plus Erreichbarkeit der DCs |
 
 ### 👤 Inaktive Accounts
 | # | Check | Beschreibung |
@@ -133,6 +137,7 @@
 | 42 | **DNS-Hygiene (Aging / Scavenging)** | Aging/Scavenging, Reverse-Zonen, Dynamic-Update-Risiken |
 | 43 | **LAPS-Konfiguration** | Local Admin Password Solution - Aktivierungsstatus, Computer-Abdeckung (ab Server 2019) |
 | 44 | **Konten ohne AES** | Findet Accounts mit RC4-only oder ohne AES-Verschluesselung (Sicherheitsrisiko) |
+| 58 | **SPN-Inventar & Verwaiste SPNs** | SPNs nach Dienstklasse, SPNs auf deaktivierten Konten, unerwartete SPN-Klassen auf User-Konten, SPN-Hosts ohne DNS-Auflösung |
 
 ### 🎯 Security: Angriffsvektoren 2025/2026
 | # | Check | Beschreibung |
@@ -145,6 +150,9 @@
 | 52 | **Anonymer LDAP-Zugriff** | Anonymer Bind-Test gegen PDC + dSHeuristics |
 | 53 | **GPP/cpassword in SYSVOL** | Klartext-dechiffrierbare Passwörter in GPP-XMLs (MS14-025) |
 | 54 | **Protected Users Audit** | Alle privilegierten Konten in der Protected-Users-Gruppe? |
+| 55 | **KMS-Server & Konfiguration** | KMS-Hosts per DNS-SRV (`_vlmcs._tcp`) finden und deren Konfiguration auslesen: Dienststatus, Port und lauschender Prozess, Aktivierungs-Anzahl (Schwellwerte konfigurierbar, Standard 5/25), Host-Key – inkl. Erkennung, ob der befragte Host überhaupt Windows-KMS betreibt |
+| 57 | **RC4 / LM Belege je DC** | `AllowableEncryptionTypes`, `NoLMHash` und Kerberos-Ereignisse 4768/4769 (RC4 vs. AES) je DC |
+| 59 | **Encryption-Types: Verteilung & AES-Abdeckung** | Verteilung nach EncType-Kombination, AES-Abdeckung gegen die Schwelle (Standard 90 %), Korrelation OS × EncType |
 
 ### 💻 Systemanforderungen
 
@@ -168,7 +176,7 @@ cd Active-Directory-Health-Check
 # Skript ausführen (interaktiv)
 .\AD_Health_Check.ps1
 
-# Oder automatisiert (alle 54 Checks)
+# Oder automatisiert (alle 61 Checks)
 .\AD_Health_Check.ps1 -FullRun
 ```
 
@@ -262,7 +270,24 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.7 (aktuell)
+### v2.9 (aktuell)
+- **6 neue Checks** (56–61): Tote DCs & DC-Verfügbarkeit (alte/verwaiste DC-Namen aus 7 Quellen), RC4 / LM Belege je DC, SPN-Inventar & verwaiste SPNs, Encryption-Type-Verteilung mit AES-Abdeckung, DNS-Zonen (SOA & Replikation), DNS-Forwarder & Conditional Forwarder
+- **Gesamtübersicht der Auffälligkeiten** im HTML-Report – eine Tabelle mit allen auffälligen Checks, nach Schwere sortiert, Befunde je Check auf `ReportOverviewFindingsMax` (5) gekürzt
+- Version 2.9 (61 Checks); 11 neue konfigurierbare Werte, u. a. `EncTypesAesCoverageMin`, `DNSZoneRefreshMaxHours`, `DNSZoneExpireMinDays`, `StaleDCWarnAgeDays`, `RC4EventDays` und die SPN-Inventar-Limits
+- L10n-Tabellen mit 717 DE/EN-Einträgen; Spaltenkopf „DeaktKonten" statt „Deaktiviert", weil der case-insensitive Schlüsselvergleich sonst den Großbuchstaben verschluckte
+- **Neu:** automatische Rechte-Erhöhung – ohne Adminrechte startet sich das Skript mit UAC-Abfrage selbst neu (alle Parameter bleiben erhalten); Unterdrückung über den neuen Parameter `-NoElevate`
+- **Behoben:** Check 56 rief `Get-ADComputer` ohne `-Filter` auf und hing dadurch bei `-FullRun` oder als Scheduled-Task interaktiv in der Warteschlange
+- **Behoben:** Checks 7–9 fragten DNS auch auf dem lokalen DC über `-ComputerName` ab (Remoting-Umweg über sich selbst) und meldeten dort fälschlich „keine Zonen" bzw. „nicht erreichbar"; neue Funktion `Get-DnsServerTargets` versucht lokal in-process, dann `localhost`, dann den Namen – Check 42 lief davon nicht betroffen. `Test-IsLocalComputer` erkennt den lokalen DC zudem in FQDN-Form
+- **Behoben:** Check 7 meldete die automatisch angelegten Reverse-Zonen `0./127./255.in-addr.arpa` als „nicht AD-integriert" – die sind korrekt so und werden jetzt über `$Global:DNSDefaultReverseZones` ausgenommen
+- **Behoben:** Check 8 meldete bei fast jeder Zone „SOA-Expire 0 Tage unterschreitet die Schwelle", weil ein nicht auslesbarer Wert stillschweigend zu `0` wurde; neue Funktion `ConvertFrom-SOAInterval` unterscheidet `[timespan]`, Sekunden und fehlend, und meldet Unlesbarkeit ausdrücklich
+- **Behoben:** Check 8 fragte bei Forwarder-Zonen (z. B. 	est.de) unnotigerweise SOA ab – Forwarder-Zonen enthalten per Definition keine SOA und die Abfrage schlug immer fehl. Forwarder-Zonen werden jetzt vor der SOA-Lesung ausgelassen
+- **Behoben:** Check 8 meldete TrustAnchors als „DynamicUpdate='None' auf AD-Zone" – die von Windows selbst angelegte DNSSEC-Trust-Anchor-Zone hat statische Einträge, dynamische Registrierung waere dort unerwuenscht. Neue Liste $Global:DNSSystemZones wird von der DynamicUpdate-Pruefung ausgenommen
+
+### v2.8
+- **Check 55: KMS-Server & Konfiguration** – KMS-Hosts per DNS-SRV (`_vlmcs._tcp`) finden und deren Konfiguration auslesen (Dienst, Port, lauschender Prozess, Aktivierungs-Anzahl mit Schwellwerten 5/25, Host-Key), mehrstufig bewertet
+- Version 2.8 (55 Checks); neue Schwellwerte `KMSMinCountServer` (5) und `KMSMinCountClient` (25)
+
+### v2.7
 - **Update-Anzeige gegen GitLab-Releases** – beim Start wird das neueste Release abgefragt (Timeout 3 s); GUI: klickbares Badge neben der Versionsnummer („🔄 Update verfügbar: v2.8", Klick öffnet die Release-Seite), Konsole/Skript: Infozeile `[i] Update verfügbar: v2.8 (aktuell v2.7) - <URL>`
 - Neuer Parameter `-NoUpdateCheck` unterdrückt die Abfrage (Airgap / Luftschacht, streng firewalled Server)
 - Versionsnummer jetzt sichtbar im GUI-Kopf (neben dem Titel)
@@ -328,7 +353,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 ### 📑 Table of Contents
 
 - [Features](#-features)
-- [The 54 Checks](#-the-54-checks)
+- [The 61 Checks](#-the-61-checks)
 - [System Requirements](#-system-requirements)
 - [Installation](#-installation)
 - [Usage](#-usage)
@@ -345,9 +370,10 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 
 ### ✨ Features
 
-- 🎯 **54 best-practice checks**, sorted thematically (DC fundamentals, security, structure, monitoring)
+- 🎯 **61 best-practice checks**, sorted thematically (DC fundamentals, security, structure, monitoring)
 - 🖼️ **Modern WPF GUI** (light theme) with group selection, suite buttons and output path selection
 - 🎨 **Color-coded HTML report** with executive dashboard (OK / WARN / CRITICAL / INFO)
+- 📋 **Overall summary of findings** – all flagged checks in a single table, sorted by severity, findings per check capped
 - 📊 **CSV export** of all check results
 - 🖥️ **Interactive start menu** as a fallback for console operation
 - ⚡ **Parameter-based execution** for scheduled tasks / automation
@@ -361,7 +387,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 - 📝 **Verbose logging** (`C:\ScriptLog`)
 - 🔧 **Modular design** – individual checks can be run selectively
 
-### 📋 The 54 Checks
+### 📋 The 61 Checks
 
 ### 🏗️ DC Core Infrastructure
 | # | Check | Description |
@@ -375,6 +401,8 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 6 | **DNS Configuration** | Zones, AD integration, dynamic updates |
 | 7 | **SYSVOL & NETLOGON** | Reachability |
 | 8 | **NTDS Database** | Size, free disk space |
+| 60 | **DNS zones: SOA & replication** | SOA refresh/expire against the thresholds, `ReplicationScope`, `DynamicUpdate=None`, zone consistency across the DCs |
+| 61 | **DNS forwarders & conditional forwarders** | Global forwarders incl. root hints, CF target IPs, partially distributed (registry-based) CF and forwarding loops |
 
 ### 🔒 Security: Network Protocols
 | # | Check | Description |
@@ -414,6 +442,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 29 | **Tombstone Lifetime** | Best practice ≥180 days |
 | 30 | **Forest/Domain Level** | Functional level |
 | 31 | **GPO Health** | SYSVOL/DS version mismatch |
+| 56 | **Dead DCs & DC availability** | Old, orphaned or never removed DC names from 7 sources plus DC reachability |
 
 ### 👤 Inactive Accounts
 | # | Check | Description |
@@ -443,6 +472,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 42 | **DNS Hygiene (Aging / Scavenging)** | Aging/scavenging, reverse zones, dynamic update risks |
 | 43 | **LAPS Configuration** | Local Admin Password Solution – activation status, computer coverage (Server 2019 and later) |
 | 44 | **Accounts without AES** | Finds accounts with RC4-only or without AES encryption (security risk) |
+| 58 | **SPN inventory & stale SPNs** | SPNs by service class, SPNs on disabled accounts, unexpected SPN classes on user accounts, SPN hosts without DNS resolution |
 
 ### 🎯 Security: Attack Vectors 2025/2026
 | # | Check | Description |
@@ -455,6 +485,9 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 52 | **Anonymous LDAP Access** | Anonymous bind test against the PDC + dSHeuristics |
 | 53 | **GPP/cpassword in SYSVOL** | Passwords in GPP XML files that can be decrypted to plain text (MS14-025) |
 | 54 | **Protected Users Audit** | Are all privileged accounts in the Protected Users group? |
+| 55 | **KMS servers & configuration** | Find KMS hosts via DNS SRV (`_vlmcs._tcp`) and read their configuration: service status, port and listening process, activation count (configurable thresholds, default 5/25), host key – including detection of whether the queried host runs Windows KMS at all |
+| 57 | **RC4 / LM evidence per DC** | `AllowableEncryptionTypes`, `NoLMHash` and Kerberos events 4768/4769 (RC4 vs. AES) per DC |
+| 59 | **Encryption types: distribution & AES coverage** | Distribution by encryption type combination, AES coverage against the threshold (default 90%), correlation of OS × encryption type |
 
 ### 💻 System Requirements
 
@@ -478,7 +511,7 @@ cd Active-Directory-Health-Check
 # Run the script (interactive)
 .\AD_Health_Check.ps1
 
-# Or automated (all 54 checks)
+# Or automated (all 61 checks)
 .\AD_Health_Check.ps1 -FullRun
 ```
 
@@ -572,7 +605,24 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.7 (current)
+### v2.9 (current)
+- **6 new checks** (56–61): Dead DCs & DC availability (old/orphaned DC names from 7 sources), RC4 / LM evidence per DC, SPN inventory & stale SPNs, encryption type distribution with AES coverage, DNS zones (SOA & replication), DNS forwarders & conditional forwarders
+- **Overall summary of findings** in the HTML report – one table with all flagged checks, sorted by severity, findings per check capped at `ReportOverviewFindingsMax` (5)
+- Version 2.9 (61 checks); 11 new configurable values, among them `EncTypesAesCoverageMin`, `DNSZoneRefreshMaxHours`, `DNSZoneExpireMinDays`, `StaleDCWarnAgeDays`, `RC4EventDays` and the SPN inventory limits
+- L10n tables with 717 DE/EN entries; column header "DeaktKonten" instead of "Deaktiviert", because the case-insensitive key lookup swallowed the capital letter
+- **New:** automatic elevation – without admin rights the script relaunches itself with a UAC prompt (all parameters are preserved); suppress it with the new parameter `-NoElevate`
+- **Fixed:** check 56 called `Get-ADComputer` without `-Filter` and therefore stalled interactively in the queue with `-FullRun` or as a scheduled task
+- **Fixed:** checks 7–9 queried DNS on the local DC via `-ComputerName` as well (a remoting detour over itself) and falsely reported "no zones" or "not reachable" there; the new function `Get-DnsServerTargets` tries in-process locally, then `localhost`, then the given name – check 42 was never affected. `Test-IsLocalComputer` also recognises the local DC in FQDN form
+- **Fixed:** check 7 reported the automatically created reverse zones `0./127./255.in-addr.arpa` as "not AD-integrated" – they are correctly like that and are now excluded via `$Global:DNSDefaultReverseZones`
+- **Fixed:** check 8 reported "SOA-Expire 0 days below threshold" for almost every zone because an unreadable value silently became `0`; the new function `ConvertFrom-SOAInterval` distinguishes `[timespan]`, seconds and missing, and reports unreadability explicitly
+- **Fixed:** check 8 queried SOA on Forwarder zones unnecessarily (e.g. 	est.de) - Forwarder zones contain no SOA by definition and the query always failed. Forwarder zones are now skipped before the SOA read
+- **Fixed:** check 8 flagged TrustAnchors as "DynamicUpdate='None' on an AD zone" - the DNSSEC trust anchor zone created by Windows itself has static entries there; dynamic registration is undesirable. The new list $Global:DNSSystemZones is excluded from the DynamicUpdate check
+
+### v2.8
+- **Check 55: KMS servers & configuration** – find KMS hosts via DNS SRV (`_vlmcs._tcp`) and read their configuration (service, port, listening process, activation count with thresholds 5/25, host key), assessed on multiple levels
+- Version 2.8 (55 checks); new thresholds `KMSMinCountServer` (5) and `KMSMinCountClient` (25)
+
+### v2.7
 - **Update check against GitLab releases** – the latest release is queried at startup (3 s timeout); GUI: clickable badge next to the version number (“🔄 Update available: v2.8”, clicking opens the release page), console/script: info line `[i] Update available: v2.8 (current v2.7) - <URL>`
 - New `-NoUpdateCheck` parameter suppresses the query (airgapped / strictly firewalled servers)
 - Version number now visible in the GUI header (next to the title)
