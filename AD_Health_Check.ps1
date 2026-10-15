@@ -1275,7 +1275,6 @@ function Show-HealthCheckGUI {
     $lblOutputPath  = $window.FindName('lblOutputPath')
     $btnLangDe      = $window.FindName('btnLangDe')
     $btnLangEn      = $window.FindName('btnLangEn')
-    $lblVersion     = $window.FindName('lblVersion')
     $brdUpdate      = $window.FindName('brdUpdate')
     $lblUpdate      = $window.FindName('lblUpdate')
 
@@ -1376,8 +1375,8 @@ function Show-HealthCheckGUI {
             $cb.Tag = $checkKey
             $cb.IsChecked = $true
             $cb.FontSize = 12
-            $cb.Add_Checked({ param($sender,$e); & $updateCount $state $lblCount }.GetNewClosure())
-            $cb.Add_Unchecked({ param($sender,$e); & $updateCount $state $lblCount }.GetNewClosure())
+            $cb.Add_Checked({ param($s,$e); & $updateCount $state $lblCount }.GetNewClosure())
+            $cb.Add_Unchecked({ param($s,$e); & $updateCount $state $lblCount }.GetNewClosure())
             $groupPanel.Children.Add($cb) | Out-Null
             $state.AllCheckBoxes[$checkKey] = $cb
             $checksInGroup.Add($cb) | Out-Null
@@ -1389,14 +1388,14 @@ function Show-HealthCheckGUI {
         # Gruppen-Checkbox steuert Kinder
         $childList = $checksInGroup.ToArray()
         $grpCb.Add_Checked({
-            param($sender,$e)
+            param($s,$e)
             $state.SuppressEvents = $true
             foreach ($child in $childList) { $child.IsChecked = $true }
             $state.SuppressEvents = $false
             & $updateCount $state $lblCount
         }.GetNewClosure())
         $grpCb.Add_Unchecked({
-            param($sender,$e)
+            param($s,$e)
             $state.SuppressEvents = $true
             foreach ($child in $childList) { $child.IsChecked = $false }
             $state.SuppressEvents = $false
@@ -1425,13 +1424,13 @@ function Show-HealthCheckGUI {
     }
 
     $btnLangDe.Add_Click({
-        param($sender,$e)
+        param($s,$e)
         Set-HealthCheckLanguage -Code 'de'
         & $applyLanguage
     }.GetNewClosure())
 
     $btnLangEn.Add_Click({
-        param($sender,$e)
+        param($s,$e)
         Set-HealthCheckLanguage -Code 'en'
         & $applyLanguage
     }.GetNewClosure())
@@ -1448,7 +1447,7 @@ function Show-HealthCheckGUI {
     }.GetNewClosure())
 
     $btnAll.Add_Click({
-        param($sender,$e)
+        param($s,$e)
         $state.SuppressEvents = $true
         foreach ($cb in $state.AllCheckBoxes.Values) { $cb.IsChecked = $true }
         foreach ($gb in $state.GroupCheckBoxes.Values) { $gb.IsChecked = $true }
@@ -1457,7 +1456,7 @@ function Show-HealthCheckGUI {
     }.GetNewClosure())
 
     $btnNone.Add_Click({
-        param($sender,$e)
+        param($s,$e)
         $state.SuppressEvents = $true
         foreach ($cb in $state.AllCheckBoxes.Values) { $cb.IsChecked = $false }
         foreach ($gb in $state.GroupCheckBoxes.Values) { $gb.IsChecked = $false }
@@ -1467,33 +1466,33 @@ function Show-HealthCheckGUI {
 
     # Suite-Buttons
     $btnSuiteDC.Add_Click({
-        param($sender,$e)
+        param($s,$e)
         & $activateSuite $state $lblCount 'DC-Infrastruktur' $updateCount
     }.GetNewClosure())
 
     $btnSuiteSecurity.Add_Click({
-        param($sender,$e)
+        param($s,$e)
         & $activateSuite $state $lblCount 'Security & Hardening' $updateCount
     }.GetNewClosure())
 
     $btnSuiteIdentity.Add_Click({
-        param($sender,$e)
+        param($s,$e)
         & $activateSuite $state $lblCount 'Identity & Kerberos' $updateCount
     }.GetNewClosure())
 
     $btnSuiteTopo.Add_Click({
-        param($sender,$e)
+        param($s,$e)
         & $activateSuite $state $lblCount 'AD-Topologie & Objekte' $updateCount
     }.GetNewClosure())
 
     $btnSuiteSystem.Add_Click({
-        param($sender,$e)
+        param($s,$e)
         & $activateSuite $state $lblCount 'System & Updates' $updateCount
     }.GetNewClosure())
 
     # Start
     $btnStart.Add_Click({
-        param($sender,$e)
+        param($s,$e)
         $selected = @()
         foreach ($k in $state.AllCheckBoxes.Keys) {
             if ($state.AllCheckBoxes[$k].IsChecked) { $selected += $k }
@@ -1512,7 +1511,7 @@ function Show-HealthCheckGUI {
         $state.Window.Close()
     }.GetNewClosure())
 
-    $btnCancel.Add_Click({ param($sender,$e); $state.Window.Close() }.GetNewClosure())
+    $btnCancel.Add_Click({ param($s,$e); $state.Window.Close() }.GetNewClosure())
 
     # === Update-Anzeige: asynchron pruefen, Badge nur bei neuerer Version einblenden ===
     # Shared State (wie $state) - Hashtable-Zugriffe funktionieren zuverlaessig in Event-Handlern
@@ -3834,7 +3833,7 @@ function Get-KMSConfiguration {
     $result = @()
     try {
         $forest = Get-ADForest -ErrorAction Stop
-        $domain = Get-ADDomain -ErrorAction Stop
+        
         $dcs = @(Get-ADDomainController -Filter * -ErrorAction Stop | Where-Object { $_.IPv4Address })
         if ($dcs.Count -eq 0) {
             return @([pscustomobject]@{ Kind='Fehler'; Target='KMS'; Detail='Keine erreichbaren DCs'; Risk='WARN' })
@@ -3863,10 +3862,10 @@ function Get-KMSConfiguration {
 
         # 3) Konfiguration je Host auslesen
         foreach ($hostEntry in $kmsHosts.GetEnumerator()) {
-            $host = $hostEntry.Key
+            $kmsHost = $hostEntry.Key
             $meta = $hostEntry.Value
             $detail = [ordered]@{
-                HostName = $host
+                HostName = $kmsHost
                 HasSRV   = $meta.SRV
                 Source   = $meta.Source
                 Service  = 'Nicht gefunden'
@@ -3881,13 +3880,13 @@ function Get-KMSConfiguration {
                 Issue          = $null
             }
 
-            $target = $host
+            $target = $kmsHost
             $cim = $null
             try {
                 $cim = New-CimSession -ComputerName $target -OperationTimeoutSec 10 -ErrorAction Stop
             } catch {
                 $detail.Issue = "CIM-Verbindung fehlgeschlagen: $_"
-                $result += [pscustomobject]@{ Kind='Host'; Target=$host; Detail=($detail.Values -join ' | '); Risk='WARN'; HostName=$host; Service=$detail.Service; StartType=$detail.StartType; Port=$detail.Port; Process=$detail.Process; ActivationCount=$detail.ActivationCount; RequestCount=$detail.RequestCount; FailedCount=$detail.FailedCount; PartialProductKey=$detail.PartialProductKey; KeyChannel=$detail.KeyChannel; HasSRV=$detail.HasSRV }
+                $result += [pscustomobject]@{ Kind='Host'; Target=$kmsHost; Detail=($detail.Values -join ' | '); Risk='WARN'; HostName=$kmsHost; Service=$detail.Service; StartType=$detail.StartType; Port=$detail.Port; Process=$detail.Process; ActivationCount=$detail.ActivationCount; RequestCount=$detail.RequestCount; FailedCount=$detail.FailedCount; PartialProductKey=$detail.PartialProductKey; KeyChannel=$detail.KeyChannel; HasSRV=$detail.HasSRV }
                 continue
             }
 
@@ -3951,13 +3950,13 @@ function Get-KMSConfiguration {
             if ($detail.Port -ne '-' -and $detail.Port -ne 1688) { $issues += "Port $($detail.Port) != 1688"; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
             if ($detail.PartialProductKey -eq '-') { $issues += 'Kein Host-Key (PartialProductKey)'; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
             if ($detail.KeyChannel -ne 'Volume') { $issues += "Key-Kanal '$($detail.KeyChannel)' != Volume"; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
-            if ($detail.FailedCount -gt 0 -and ($detail.RequestCount -gt 0) -and ($detail.FailedCount / $detail.RequestCount) > 0.5) { $issues += "Mehr als 50% Fehlanfragen"; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
+            if ($detail.FailedCount -gt 0 -and ($detail.RequestCount -gt 0) -and (($detail.FailedCount / $detail.RequestCount) -gt 0.5)) { $issues += "Mehr als 50% Fehlanfragen"; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
             if ($detail.HasSRV -and $kmsHosts.Count -eq 1) { $issues += 'Nur ein KMS-Host (kein Failover)'; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
 
             $detail.Issue = if ($issues.Count) { $issues -join ' | ' } else { 'OK' }
             $result += [pscustomobject]@{
-                Kind='Host'; Target=$host; Detail=($detail.Values -join ' | '); Risk=$risk
-                HostName=$host; Service=$detail.Service; StartType=$detail.StartType; Port=$detail.Port
+                Kind='Host'; Target=$kmsHost; Detail=($detail.Values -join ' | '); Risk=$risk
+                HostName=$kmsHost; Service=$detail.Service; StartType=$detail.StartType; Port=$detail.Port
                 Process=$detail.Process; ActivationCount=$detail.ActivationCount; RequestCount=$detail.RequestCount
                 FailedCount=$detail.FailedCount; PartialProductKey=$detail.PartialProductKey; KeyChannel=$detail.KeyChannel
                 HasSRV=$detail.HasSRV; Method=$detail.Source
@@ -4015,7 +4014,7 @@ function Get-StaleDCObjects {
     $result = @()
     try {
         $forest = Get-ADForest -ErrorAction Stop
-        $domain = Get-ADDomain -ErrorAction Stop
+        
         $domainDN = $domain.DistinguishedName
         $configNC = "CN=Configuration,$domainDN"
         $dcOU = "OU=Domain Controllers,$domainDN"
@@ -4292,15 +4291,15 @@ function Get-SPNInventory {
             foreach ($spn in $spns) {
                 $class = $spn.Split('/')[0]
                 $hostPart = $spn.Split('/')[1]
-                $host = $hostPart.Split(':')[0]
+                $spnHost = $hostPart.Split(':')[0]
                 if (-not $byClass.Contains($class)) { $byClass[$class] = 0 }; $byClass[$class]++
-                if (-not $byHost.Contains($host)) { $byHost[$host] = 0 }; $byHost[$host]++
+                if (-not $byHost.Contains($spnHost)) { $byHost[$spnHost] = 0 }; $byHost[$spnHost]++
                 if (-not $byObj.Contains($o.samAccountName)) { $byObj[$o.samAccountName] = @() }; $byObj[$o.samAccountName] += $spn
                 if ($isDisabled) { $deaktSpns++ }
                 if ($objClass -in $classWarn) { $unexpClass += "$($o.samAccountName) ($objClass): $spn" }
                 # DNS-Aufloesung
                 if ($dnsDone -lt $maxDns) {
-                    try { $ip = [System.Net.Dns]::GetHostAddresses($host); if (-not $ip) { $dnsFail += $host } } catch { $dnsFail += $host }
+                    try { $ip = [System.Net.Dns]::GetHostAddresses($spnHost); if (-not $ip) { $dnsFail += $spnHost } } catch { $dnsFail += $spnHost }
                     $dnsDone++
                 }
             }
@@ -4843,18 +4842,18 @@ function Get-LAPSConfiguration {
     try {
         # Prüfung: LAPS im Forest aktiviert? (Schema-Erweiterung vorhanden)
         $forest = Get-ADForest -ErrorAction Stop
-        $domain = Get-ADDomain -ErrorAction Stop
+        
         
         # LAPS wird über ms-mcs-admpwd Attribut konfiguriert
         # Prüfe, ob LAPS-Objekt im Konfigurationsbereich existiert
         $lapsConfPath = "CN=ms-Mcs-AdmPwd,CN=Schema,CN=Configuration,$($forest.RootDomain.Replace('.',',DC='))"
         $lapsExists = $false
         try {
-            $lapsObj = Get-ADObject -Identity $lapsConfPath -ErrorAction Stop
+            $null = Get-ADObject -Identity $lapsConfPath -ErrorAction Stop
             $lapsExists = $true
         } catch {}
         
-        $lapsStatus = if ($lapsExists) { 'Aktiviert' } else { 'NICHT aktiviert' }
+        
         $result += [pscustomobject]@{
             Type='Forest-Config'; Target='LAPS Schema-Extension'; LAPSEnabled=$lapsExists; ComputerCount=0; ConfiguredCount=0
             UnconfiguredCount=0; ConfiguredPercent=0; OSUnsupported=0; Issue=if (-not $lapsExists) { 'LAPS Schema-Erweiterung nicht installiert' } else { 'OK' }
@@ -5247,7 +5246,7 @@ function Get-DCSyncPermissions {
     #>
     $result = @()
     try {
-        $domain = Get-ADDomain -ErrorAction Stop
+        
         $domainSID = $domain.DomainSID.Value
         $acl = Get-Acl -Path "AD:$($domain.DistinguishedName)" -ErrorAction Stop
         $rightMap = @{
@@ -5470,7 +5469,7 @@ function Get-MachineAccountQuota {
     #>
     $result = @()
     try {
-        $domain = Get-ADDomain -ErrorAction Stop
+        
         $root = Get-ADObject -Identity $domain.DistinguishedName -Properties ms-DS-MachineAccountQuota -ErrorAction Stop
         $q = -1
         try { $q = [int]$root.'ms-DS-MachineAccountQuota' } catch {}
@@ -5555,7 +5554,7 @@ function Get-GPPPasswords {
     #>
     $result = @()
     try {
-        $domain = Get-ADDomain -ErrorAction Stop
+        
         $polPath = "\\$($domain.DNSRoot)\SYSVOL\$($domain.DNSRoot)\Policies"
         if (-not (Test-Path -LiteralPath $polPath)) {
             $result += [pscustomobject]@{ Kind='Error'; Datei='(SYSVOL)'; Benutzer='-'; Detail="SYSVOL-Pfad nicht erreichbar: $polPath"; Risk='-' }
@@ -5603,7 +5602,7 @@ function Get-ProtectedUsersAudit {
     #>
     $result = @()
     try {
-        $domain = Get-ADDomain -ErrorAction Stop
+        
         $forest = Get-ADForest -ErrorAction Stop
         $domainSID = $domain.DomainSID.Value
         $rootDomainSID = $null
