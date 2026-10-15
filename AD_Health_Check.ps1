@@ -3959,6 +3959,173 @@ function Test-Check-KMS {
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
 }
 
+function Get-StaleDCObjects {
+    <#
+    .SYNOPSIS
+        Gleicht 7 unabhaengige Quellen fuer „welche DCs gibt es“ gegeneinander ab.
+    .NOTES
+        Quellen:
+        1. Live-DCs (Get-ADDomainController -Filter *)
+        2. Computer-Objekte in OU=Domain Controllers
+        3. Server-Objekte + NTDS-Settings im Config-NC
+        4. Replikationspartner aller Domänen
+        5. FSMO-Rollen-Inhaber
+        6. DNS SRV _ldap._tcp.dc._msdcs
+        7. DNS A-Eintraege fuer DC-Hostnamen
+        Bewertung:
+        - CRITICAL: Aktiver DC deaktiviert / ohne DNS-A / ohne DNS-SRV
+        - CRITICAL: Nicht-lebender DC traegt noch FSMO/NTDS/Account-Reste
+        - WARN: Inkonsistenzen zwischen Quellen
+        Schwellwert: $Global:StaleDCWarnAgeDays (0 = jedes verwaiste Objekt)
+    #>
+    $result = @()
+    try {
+        $forest = Get-ADForest -ErrorAction Stop
+        $domain = Get-ADDomain -ErrorAction Stop
+        $domainDN = $domain.DistinguishedName
+        $configNC = "CN=Configuration,$domainDN"
+        $dcOU = "OU=Domain Controllers,$domainDN"
+
+        # Quelle 1: Live DCs
+        $liveDCs = @(Get-ADDomainController -Filter * -ErrorAction Stop | Select-Object -ExpandProperty Name | Sort-Object -Unique)
+
+        # Quelle 2: Computer-Objekte in DC-OU
+        $ouComputers = @()
+        try { $ouComputers = @(Get-ADComputer -SearchBase $dcOU -Filter * -ErrorAction Stop | Select-Object -ExpandProperty Name | Sort-Object -Unique) } catch {}
+
+        # Quelle 3: Server-Objekte + NTDS-Settings im Config-NC
+        $configServers = @()
+        try {
+            $servers = Get-ADObject -SearchBase $configNC -LDAPFilter '(objectClass=server)' -Properties 'name' -ErrorAction Stop
+            foreach ($s in $servers) {
+                $ntds = Get-ADObject -SearchBase "CN=NTDS Settings,$($s.DistinguishedName)" -LDAPFilter '(objectClass=nTDSDSA)' -ErrorAction SilentlyContinue
+                if ($ntds) { $configServers += $s.Name }
+            }
+        } catch {}
+        $configServers = $configServers | Sort-Object -Unique
+
+        # Quelle 4: Replikationspartner
+        $replPartners = @()
+        try {
+            $parts = Get-ADReplicationPartnerMetadata -Target $forest.RootDomain -Scope Forest -ErrorAction Stop
+            $replPartners = @($parts | Select-Object -ExpandProperty Server | Sort-Object -Unique)
+        } catch {}
+
+        # Quelle 5: FSMO
+        $fsmo = @()
+        try {
+            $f = Get-ADForest -ErrorAction Stop; $d = Get-ADDomain -ErrorAction Stop
+            $fsmo += $f.SchemaMaster, $f.DomainNamingMaster, $d.PDCEmulator, $d.RIDMaster, $d.InfrastructureMaster
+        } catch {}
+        $fsmo = $fsmo | Where-Object { $_ } | Sort-Object -Unique
+
+        # Quelle 6: DNS SRV _ldap._tcp.dc._msdcs
+        $srvDCs = @()
+        try {
+            $srv = Resolve-DnsName -Name "_ldap._tcp.dc._msdcs.$($forest.RootDomain)" -Type SRV -ErrorAction Stop -DnsOnly
+            $srvDCs = @($srv | Select-Object -ExpandProperty NameHost | ForEach-Object { $_.TrimEnd('.') } | Sort-Object -Unique)
+        } catch {}
+
+        # Quelle 7: DNS A-Eintraege fuer Live-DCs
+        $dnsA = @()
+        foreach ($dc in $liveDCs) {
+            try {
+                $a = Resolve-DnsName -Name $dc -Type A -ErrorAction Stop -DnsOnly
+                if ($a) { $dnsA += $dc }
+            } catch {}
+        }
+
+        # Alle gefundenen Namen sammeln
+        $allNames = @($liveDCs + $ouComputers + $configServers + $replPartners + $fsmo + $srvDCs + $dnsA) | Sort-Object -Unique
+
+        # Bewertung je Name
+        foreach ($name in $allNames) {
+            $row = [ordered]@{
+                Name = $name
+                Live = $false
+                InOU = $false
+                InConfig = $false
+                InRepl = $false
+                InFSMO = $false
+                InSRV = $false
+                InDNS = $false
+                Issues = @()
+            }
+            if ($liveDCs -contains $name) { $row.Live = $true }
+            if ($ouComputers -contains $name) { $row.InOU = $true }
+            if ($configServers -contains $name) { $row.InConfig = $true }
+            if ($replPartners -contains $name) { $row.InRepl = $true }
+            if ($fsmo -contains $name) { $row.InFSMO = $true }
+            if ($srvDCs -contains $name) { $row.InSRV = $true }
+            if ($dnsA -contains $name) { $row.InDNS = $true }
+
+            # Bewertung
+            if ($row.Live) {
+                if (-not $row.InOU) { $row.Issues += 'Computer-Objekt in OU=Domain Controllers fehlt' }
+                if (-not $row.InConfig) { $row.Issues += 'NTDS-Settings im Config-NC fehlen' }
+                if (-not $row.InDNS) { $row.Issues += 'Kein DNS-A-Eintrag' }
+                if (-not $row.InSRV) { $row.Issues += 'Kein DNS-SRV (_ldap._tcp)' }
+            }
+            else {
+                # Nicht live, aber in anderen Quellen vorhanden -> verwaister DC
+                $sources = @()
+                if ($row.InOU) { $sources += 'OU' }
+                if ($row.InConfig) { $sources += 'Config' }
+                if ($row.InRepl) { $sources += 'Repl' }
+                if ($row.InFSMO) { $sources += 'FSMO' }
+                if ($row.InSRV) { $sources += 'SRV' }
+                if ($row.InDNS) { $sources += 'DNS' }
+                if ($sources.Count) {
+                    $row.Issues += "Verwaist, aber in Quellen: $($sources -join ', ')"
+                }
+            }
+
+            # Ausgabe
+            $detail = "Live:$($row.Live) OU:$($row.InOU) Config:$($row.InConfig) Repl:$($row.InRepl) FSMO:$($row.InFSMO) SRV:$($row.InSRV) DNS:$($row.InDNS)"
+            if ($row.Issues.Count) { $detail += " | " + ($row.Issues -join '; ') }
+            $risk = if ($row.Issues.Count -and $row.Live) { 'CRITICAL' } elseif ($row.Issues.Count -and -not $row.Live) { 'CRITICAL' } elseif ($row.Issues.Count) { 'WARN' } else { 'OK' }
+
+            $result += [pscustomobject]@{
+                Kind='DC'; Target=$name; Risk=$risk; Detail=$detail
+                Live=$row.Live; InOU=$row.InOU; InConfig=$row.InConfig; InRepl=$row.InRepl
+                InFSMO=$row.InFSMO; InSRV=$row.InSRV; InDNS=$row.InDNS
+                RowKey="DC|$name"
+            }
+        }
+
+        # Quellen-Zusammenfassung
+        $qNames = @('Live','OU','Config','Repl','FSMO','SRV','DNS')
+        $qCounts = @($liveDCs.Count, $ouComputers.Count, $configServers.Count, $replPartners.Count, $fsmo.Count, $srvDCs.Count, $dnsA.Count)
+        for ($i=0; $i -lt $qNames.Count; $i++) {
+            $result += [pscustomobject]@{
+                Kind='Quelle'; Target=$qNames[$i]; Risk='OK'
+                Detail="Quelle $($qNames[$i]): $($qCounts[$i]) Eintraege"
+                RowKey="Quelle|$($qNames[$i])"
+            }
+        }
+    } catch {
+        $result += [pscustomobject]@{ Kind='Fehler'; Target='StaleDCs'; Detail="Abfrage fehlgeschlagen: $_"; Risk='WARN' }
+    }
+    return $result
+}
+
+function Test-Check-StaleDCs {
+    <#
+    .SYNOPSIS
+        Bewertet Stale-DC-Analyse.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $dcRows = @($data | Where-Object { $_.Kind -eq 'DC' })
+    if ($dcRows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine DC-Daten' }
+    $critical = @($dcRows | Where-Object { $_.Risk -eq 'CRITICAL' })
+    $warn = @($dcRows | Where-Object { $_.Risk -eq 'WARN' })
+    $findings = @($dcRows | Where-Object { $_.Risk -ne 'OK' } | ForEach-Object { $_.Detail })
+    $status = if ($critical.Count) { 'CRITICAL' } elseif ($warn.Count) { 'WARN' } else { 'OK' }
+    $summary = "$($dcRows.Count) DCs geprueft: OK $($dcRows.Count - $critical.Count - $warn.Count), WARN $($warn.Count), CRITICAL $($critical.Count)"
+    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
+}
+
 function Get-LAPSConfiguration {
     <#
     .SYNOPSIS
