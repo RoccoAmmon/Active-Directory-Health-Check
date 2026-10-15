@@ -140,7 +140,7 @@ $Global:ServiceMap = [ordered]@{
 $Global:CheckGroups = [ordered]@{
     'DC-Infrastruktur' = @(
         '01_DCSystemInfo','02_Services','03_DCDiag','04_Replication','04b_ReplicationFailures',
-        '05_FSMO','06_DNS','61_Forwarder','62_ReverseLookup','07_SYSVOL','08_Database','34_TimeSync','35_Backup'
+        '05_FSMO','06_DNS','60_ZonenSOA','61_Forwarder','62_ReverseLookup','07_SYSVOL','08_Database','34_TimeSync','35_Backup'
     )
     'Security & Hardening' = @(
         '09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity',
@@ -172,6 +172,7 @@ $Global:ReportTitles = [ordered]@{
     '04b_ReplicationFailures'    = 'Replikations-Fehler (Forest)'
     '05_FSMO'                    = 'FSMO-Rollen'
     '06_DNS'                     = 'DNS-Konfiguration'
+    '60_ZonenSOA'                = 'DNS-Zonen: SOA & Replikation'
     '61_Forwarder'               = 'DNS-Forwarder & Conditional Forwarder'
     '62_ReverseLookup'           = 'DNS-Reverse-Lookup-Vollstaendigkeit'
     '07_SYSVOL'                  = 'SYSVOL & NETLOGON'
@@ -1616,7 +1617,7 @@ function Show-ScriptMenu {
                 '32b_InactiveComputers','32c_PasswordNeverExpires','35_Backup','38_SPNDuplicates',
                 '39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                 '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','61_Forwarder','62_ReverseLookup')
+                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','60_ZonenSOA','61_Forwarder','62_ReverseLookup')
     $sec = @('09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
              '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
              '20_KerberoastingRisk','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
@@ -4663,6 +4664,175 @@ function Test-Check-ConditionalForwarders {
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
 }
 
+function Get-DNSZoneConfiguration {
+    <#
+    .SYNOPSIS
+        DNS-Zonen: SOA-Refresh/-Expire, ReplicationScope, DynamicUpdate, Seriennummern-Konsistenz.
+    .NOTES
+        - Forest-weiter Check (Check 60)
+        - Nutzt $Global:DNSZoneRefreshMaxHours (24), $Global:DNSZoneExpireMinDays (7)
+        - Prueft: ReplicationScope='Server', DynamicUpdate='None' auf AD-Zonen, abweichende SOA-Serien/Scopes
+        - Nutzt Get-DnsServerTargets fuer lokale/remote Abfragen
+        - ConvertFrom-SOAInterval wertet [timespan] und Sekunden korrekt aus
+    #>
+    $result = @()
+    try {
+        $dcs = @(Get-ADDomainController -Filter * -ErrorAction Stop | Where-Object { $_.IPv4Address })
+        if ($dcs.Count -eq 0) { return @([pscustomobject]@{ Kind='Fehler'; Target='DNS-Zonen'; Detail='Keine erreichbaren DCs'; Risk='WARN' }) }
+
+        $byZone = @{}; $qErr = @{}
+        foreach ($dc in $dcs) {
+            $allZones = @()
+            foreach ($t in (Get-DnsServerTargets -ComputerName $dc)) {
+                try { $allZones = @(Get-DnsServerZone @t -ErrorAction Stop); break } catch {}
+            }
+            if ($allZones.Count -eq 0) { $qErr += "${dc}: keine Zonen"; continue }
+
+            foreach ($z in $allZones) {
+                $n = [string]$z.ZoneName
+                if (-not $n) { continue }
+                if ($n -in $Global:DNSDefaultReverseZones) { continue }
+                if ($z.ZoneType -eq 'Forwarder') { continue }
+                if (-not $byZone.Contains($n)) {
+                    $byZone[$n] = [pscustomobject]@{
+                        Name=$n; Dc=0; Scope=@(); Updates=@(); Ds=@(); Type=@()
+                        Serials=@(); Refresh=@(); Expire=@(); SoaErr=0; SoaDcs=@(); NoSoaInt=0
+                    }
+                }
+                $b = $byZone[$n]
+                $b.Dc++
+                $sc = [string]$z.ReplicationScope; if (-not $sc) { $sc = '-' }
+                $up = [string]$z.DynamicUpdate;   if (-not $up) { $up = '-' }
+                $ds = [string]$z.IsDsIntegrated;  if (-not $ds) { $ds = '-' }
+                $ty = [string]$z.ZoneType;        if (-not $ty) { $ty = '-' }
+                if ($b.Scope   -notcontains $sc) { $b.Scope   = @($b.Scope)   + $sc }
+                if ($b.Updates -notcontains $up) { $b.Updates = @($b.Updates) + $up }
+                if ($b.Ds      -notcontains $ds) { $b.Ds      = @($b.Ds)      + $ds }
+                if ($b.Type    -notcontains $ty) { $b.Type    = @($b.Type)    + $ty }
+
+                # SOA abfragen
+                try {
+                    $soaRec = $null
+                    foreach ($t in (Get-DnsServerTargets -ComputerName $dc)) {
+                        try { $soaRec = @(Get-DnsServerResourceRecord @t -ZoneName $n -RRType SOA -ErrorAction Stop) | Select-Object -First 1; break } catch {}
+                    }
+                    if (-not $soaRec) { throw 'keine SOA-Ressource' }
+                    $rd = $soaRec.RecordData
+                    if ($null -eq $rd) { throw 'keine SOA-Ressource' }
+                    $ser  = [int]$rd.SerialNumber
+                    $refH = ConvertFrom-SOAInterval -Value $rd.RefreshInterval -Unit Hours
+                    $expD = ConvertFrom-SOAInterval -Value $rd.ExpireInterval  -Unit Days
+                    if ($b.Serials -notcontains $ser)  { $b.Serials = @($b.Serials) + $ser }
+                    if ($null -ne $refH -and $b.Refresh -notcontains $refH) { $b.Refresh = @($b.Refresh) + $refH }
+                    if ($null -ne $expD -and $b.Expire  -notcontains $expD) { $b.Expire  = @($b.Expire)  + $expD }
+                    if ($null -eq $refH -and $null -eq $expD) { $b.NoSoaInt++ }
+                } catch { $b.SoaErr++; if ($b.SoaDcs -notcontains $dc) { $b.SoaDcs = @($b.SoaDcs) + $dc } }
+            }
+        }
+
+        if ($byZone.Count -eq 0) {
+            $why = if ($qErr.Count) { 'kein DC mit auswertbaren DNS-Zonen (DNS-Abfrage fehlgeschlagen: ' + ($qErr -join ', ') + ')' } else { 'keine DNS-Zonen gefunden' }
+            return @([pscustomobject]@{
+                Kind='Fehler'; Name='Abfrage'; ZoneTyp='-'; Replikation='-'; Updates='-'; Serien='-'; Refresh='-'; Expire='-'
+                Detail='Abfrage der DNS-Zonen fehlgeschlagen: ' + $why; Risk='WARN'
+            })
+        }
+
+        $nTotal=0; $okN=0; $badN=0; $flagSrv=0; $flagRef=0; $flagExp=0; $flagMix=0
+        foreach ($k in ($byZone.Keys | Sort-Object)) {
+            $b = $byZone[$k]
+            $nTotal++
+            $scopeList = ($b.Scope   | Sort-Object) -join ', '
+            $updList   = ($b.Updates | Sort-Object) -join ', '
+            $typeList  = ($b.Type    | Sort-Object) -join ', '
+            $serList   = ($b.Serials | Sort-Object) -join ' / '
+
+            $issues = @(); $risk = 'OK'; $mix = $false
+            $isAd = ($b.Ds -contains 'True')
+
+            if ($b.Scope -contains 'Server') {
+                $issues += "ReplicationScope='Server' - Zone nur auf einem Server, nicht repliziert"
+                $risk = 'CRITICAL'; $flagSrv++
+            } elseif ($b.Scope.Count -gt 1) {
+                $issues += "ReplicationScope variiert zwischen DCs ($scopeList)"
+                $risk = 'WARN'; $mix = $true
+            }
+
+            if ($isAd -and $b.Updates -contains 'None' -and -not ($Global:DNSSystemZones -contains $b.Name)) {
+                $issues += "DynamicUpdate='None' auf AD-Zone - Eintraege werden nicht dynamisch registriert"
+                if ($risk -ne 'CRITICAL') { $risk = 'WARN' }
+            }
+
+            if ($b.Serials.Count -gt 1) {
+                $issues += "SOA-Seriennummer variiert zwischen DCs ($serList) - Zonenstand nicht ueberall identisch"
+                if ($risk -ne 'CRITICAL') { $risk = 'WARN' }; $mix = $true
+            }
+
+            $maxRef = if ($b.Refresh.Count) { ($b.Refresh | Measure-Object -Maximum).Maximum } else { $null }
+            if ($null -ne $maxRef -and [double]$maxRef -gt [double]$Global:DNSZoneRefreshMaxHours) {
+                $issues += "SOA-Refresh $maxRef h ueberschreitet die Schwelle"
+                if ($risk -ne 'CRITICAL') { $risk = 'WARN' }; $flagRef++
+            }
+            $minExp = if ($b.Expire.Count) { ($b.Expire | Measure-Object -Minimum).Minimum } else { $null }
+            if ($null -ne $minExp -and [double]$minExp -lt [double]$Global:DNSZoneExpireMinDays) {
+                $issues += "SOA-Expire $minExp Tage unterschreitet die Schwelle"
+                if ($risk -ne 'CRITICAL') { $risk = 'WARN' }; $flagExp++
+            }
+
+            if ($b.SoaErr -gt 0 -and $b.SoaErr -ge $b.Dc) {
+                $issues += 'SOA-Abfrage fehlgeschlagen auf ' + ($b.SoaDcs -join ', ')
+                if ($risk -ne 'CRITICAL') { $risk = 'WARN' }
+            }
+            elseif ($b.NoSoaInt -gt 0 -and $b.NoSoaInt -ge $b.Dc) {
+                $issues += 'SOA-Intervalle (Refresh/Expire) nicht auslesbar - Schwellen koennen nicht geprueft werden'
+                if ($risk -ne 'CRITICAL') { $risk = 'WARN' }
+            }
+
+            if ($mix) { $flagMix++ }
+            if ($issues.Count -eq 0) { $okN++ } else { $badN++ }
+
+            $result += [pscustomobject]@{
+                Kind='Zone'; Name=$b.Name
+                ZoneTyp=$typeList; Replikation=$scopeList; Updates=$updList; Serien=$serList
+                Refresh=$(if ($null -ne $maxRef) { "$maxRef h" } else { '-' })
+                Expire=$(if ($null -ne $minExp) { "$minExp d" } else { '-' })
+                Detail=($issues -join ' | '); Risk=$risk
+                RowKey="Zone|$k"
+            }
+        }
+
+        $sum = "Zusammenfassung: $nTotal Zone(n) ausgewertet (DCs: $($dcs.Count)): unauffaellig $okN, auffaellig $badN | SOA ueber der Refresh-Schwelle: $flagRef, SOA unter der Expire-Schwelle: $flagExp, nicht repliziert: $flagSrv, inkonsistent: $flagMix"
+        $sumRisk = if ($flagSrv -or $flagRef -or $flagExp) { 'CRITICAL' } elseif ($badN) { 'WARN' } else { 'OK' }
+        $result += [pscustomobject]@{
+            Kind='Zusammenfassung'; Name='Bestand'
+            ZoneTyp='-'; Replikation='-'; Updates='-'; Serien='-'; Refresh='-'; Expire='-'
+            Detail=$sum; Risk=$sumRisk
+            RowKey='Zusammenfassung|Bestand'
+        }
+    } catch {
+        $result += [pscustomobject]@{ Kind='Fehler'; Target='DNS-Zonen'; Detail="Abfrage fehlgeschlagen: $_"; Risk='WARN' }
+    }
+    return $result
+}
+
+function Test-Check-ZonenSOA {
+    <#
+    .SYNOPSIS
+        Bewertet DNS-Zonen (SOA & Replikation).
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $zoneRows = @($data | Where-Object { $_.Kind -eq 'Zone' })
+    if ($zoneRows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $sumRow = @($data | Where-Object { $_.Kind -eq 'Zusammenfassung' })
+    $critical = @($zoneRows | Where-Object { $_.Risk -eq 'CRITICAL' })
+    $warn = @($zoneRows | Where-Object { $_.Risk -eq 'WARN' })
+    $findings = @($zoneRows | Where-Object { $_.Risk -ne 'OK' } | ForEach-Object { $_.Detail })
+    $status = if ($critical.Count) { 'CRITICAL' } elseif ($warn.Count) { 'WARN' } else { 'OK' }
+    $summary = if ($sumRow) { $sumRow[0].Detail } else { "$($zoneRows.Count) Zonen: OK $($zoneRows.Count - $critical.Count - $warn.Count), WARN $($warn.Count), CRITICAL $($critical.Count)" }
+    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
+}
+
 function Get-LAPSConfiguration {
     <#
     .SYNOPSIS
@@ -6418,6 +6588,7 @@ function Invoke-AllAssessments {
         '52_AnonymousLDAP'           = { Test-Check-AnonymousLDAP           $Global:Results['52_AnonymousLDAP'] }
         '53_GPPPasswords'            = { Test-Check-GPPPasswords            $Global:Results['53_GPPPasswords'] }
         '54_ProtectedUsers'          = { Test-Check-ProtectedUsers          $Global:Results['54_ProtectedUsers'] }
+        '60_ZonenSOA'                = { Test-Check-ZonenSOA              $Global:Results['60_ZonenSOA'] }
         '61_Forwarder'               = { Test-Check-ConditionalForwarders  $Global:Results['61_Forwarder'] }
         '62_ReverseLookup'           = { Test-Check-ReverseLookupComplete  $Global:Results['62_ReverseLookup'] }
     }
