@@ -140,7 +140,7 @@ $Global:ServiceMap = [ordered]@{
 $Global:CheckGroups = [ordered]@{
     'DC-Infrastruktur' = @(
         '01_DCSystemInfo','02_Services','03_DCDiag','04_Replication','04b_ReplicationFailures',
-        '05_FSMO','06_DNS','62_ReverseLookup','07_SYSVOL','08_Database','34_TimeSync','35_Backup'
+        '05_FSMO','06_DNS','61_Forwarder','62_ReverseLookup','07_SYSVOL','08_Database','34_TimeSync','35_Backup'
     )
     'Security & Hardening' = @(
         '09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity',
@@ -172,6 +172,7 @@ $Global:ReportTitles = [ordered]@{
     '04b_ReplicationFailures'    = 'Replikations-Fehler (Forest)'
     '05_FSMO'                    = 'FSMO-Rollen'
     '06_DNS'                     = 'DNS-Konfiguration'
+    '61_Forwarder'               = 'DNS-Forwarder & Conditional Forwarder'
     '62_ReverseLookup'           = 'DNS-Reverse-Lookup-Vollstaendigkeit'
     '07_SYSVOL'                  = 'SYSVOL & NETLOGON'
     '08_Database'                = 'NTDS-Datenbank'
@@ -479,6 +480,38 @@ nachfolgende DNS-Server ohne Ziel-IP hinterlegt: =>following DNS servers without
 Forwarder-Ziel ist ein eigener DNS-Server (=>forwarder target is one of our own DNS servers (
 ) - kann Weiterleitungsschleife verursachen=>) - may cause a forwarding loop
 hinterlegt auf =>configured on 
+Kein _vlmcs SRV-Eintrag=>no _vlmcs SRV record
+Dienst nicht lauffaehig =>service not running 
+Port nicht abhoerend=>port not listening
+Aktivierungen < Server-Min=>activations below server min
+Anfragen < Client-Min=>requests below client min
+Port != 1688=>port != 1688
+Kein Host-Key =>no host key
+Key-Kanal != Volume=>key channel != Volume
+Mehr als 50% Fehlanfragen=>more than 50% failed requests
+Nur ein KMS-Host =>only one KMS host
+Kein _vlmcs SRV-Eintrag=>no _vlmcs SRV record
+Dienst nicht lauffaehig=>service not running
+Port nicht abhoerend=>port not listening
+Aktivierungen < Server-Min=>activations below server min
+Anfragen < Client-Min=>requests below client min
+Port != 1688=>port != 1688
+Kein Host-Key =>no host key
+Key-Kanal != Volume=>key channel != Volume
+Mehr als 50% Fehlanfragen=>more than 50% failed requests
+Nur ein KMS-Host=>only one KMS host
+Globaler Forwarder=>Global Forwarder
+Conditional Forwarder=>Conditional Forwarder
+Root Hints=>Root Hints
+Kein globaler Forwarder auf keinem DNS-Server konfiguriert=>no global forwarder configured on any DNS server
+Inkonsistente globale Forwarder=>inconsistent global forwarders
+Globale Forwarder konsistent=>global forwarders consistent
+Nur teilweise verteilt=>partially distributed
+Kein MasterServer hinterlegt - Conditional Forwarder kann keine Aufloesung leisten=>no master server configured - the conditional forwarder cannot resolve
+Keine Root Hints auf keinem DNS-Server=>no root hints on any DNS server
+Inkonsistente Root Hints=>inconsistent root hints
+Root Hints konsistent=>root hints consistent
+Kein globaler Forwarder UND keine Root-Hints -> externe Aufloesung moeglicherweise nicht moeglich=>no global forwarder AND no root hints - external resolution may not be possible 
 SOA-Intervalle (Refresh/Expire) nicht auslesbar - Schwellen koennen nicht geprueft werden=>SOA intervals (refresh/expire) not readable - thresholds cannot be checked
 Keine Reverse-Lookup-Zonen gefunden=>No reverse lookup zones found
 DNS-Reverse-Lookup-Vollstaendigkeit=>DNS reverse lookup completeness
@@ -1583,7 +1616,7 @@ function Show-ScriptMenu {
                 '32b_InactiveComputers','32c_PasswordNeverExpires','35_Backup','38_SPNDuplicates',
                 '39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                 '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','62_ReverseLookup')
+                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','61_Forwarder','62_ReverseLookup')
     $sec = @('09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
              '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
              '20_KerberoastingRisk','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
@@ -4448,6 +4481,187 @@ function Test-Check-EncryptionTypes {
     $summary = "$($rows.Count) EncType-Positionen: OK $($rows.Count - $critical.Count - $warn.Count), WARN $($warn.Count), CRITICAL $($critical.Count)"
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
 }
+    
+function Get-ConditionalForwarding {
+    <#
+    .SYNOPSIS
+        Globale DNS-Forwarder und Conditional Forwarder, ueber alle DNS-Server aggregiert.
+    .NOTES
+        NICHT dupliziert:
+          Check 3 -> dcdiag /test:DnsForwarders meldet nur "forwarder nicht erreichbar" je DC;
+                        kein Inventar und keinen Abgleich zwischen den Servern
+          Check 6 -> Zonen (ZoneType, IsDsIntegrated, DynamicUpdate) via Get-DnsServerZone
+          Check 42 -> Scavenging, Aging, Reverse-Lookup-Zonen
+          Check 60 -> SOA-Werte, ReplicationScope, Zonenkonsistenz
+        Neu hier:
+          - Conditional Forwarder: Ziel-IPs und auf welchen DNS-Servern sie hinterlegt sind
+          - Registry-basierte CF, die nur auf einem Teil der DNS-Server liegen
+          - CF ohne Ziel-IP sowie Ziele, die auf eigene DNS-Server zeigen (Weiterleitungsschleife)
+          - Globale Forwarder zwischen den DNS-Servern ungleich
+          - Kein globaler Forwarder UND keine Root-Hints -> externe Aufloesung tot
+        Bewusst NICHT: Erreichbarkeit der Forwarder-IPs - das leistet dcdiag /test:DnsForwarders.
+    #>
+    $result = @()
+    try {
+        $dcs = @(Get-ADDomainController -Filter * -ErrorAction Stop | Where-Object { $_.IPv4Address })
+        if ($dcs.Count -eq 0) { return @([pscustomobject]@{ Kind='Fehler'; Target='Forwarder'; Detail='Keine erreichbaren DCs'; Risk='WARN' }) }
+
+        $allGlobalForwarders = @{}
+        $allCondForwarders = @{}
+        $allRootHints = @{}
+        $dnsServers = @()
+
+        foreach ($dc in $dcs) {
+            $name = $dc.HostName
+            $dnsServers += $name
+            $gf = @(); $cf = @(); $rh = @()
+
+            foreach ($t in (Get-DnsServerTargets -ComputerName $dc)) {
+                # Globale Forwarder
+                try { $gf = @(Get-DnsServerForwarder @t -ErrorAction Stop) } catch {}
+                # Conditional Forwarder
+                try { $cf = @(Get-DnsServerConditionalForwarderZone @t -ErrorAction Stop) } catch {}
+                # Root Hints
+                try { $rh = @(Get-DnsServerRootHint @t -ErrorAction Stop) } catch {}
+            }
+
+            # Globale Forwarder aggregieren
+            $ips = @($gf | ForEach-Object { $_.IPAddress } | Sort-Object -Unique)
+            $key = $ips -join ','
+            if (-not $allGlobalForwarders.ContainsKey($key)) { $allGlobalForwarders[$key] = @{ IPs=$ips; Servers=@() } }
+            $allGlobalForwarders[$key].Servers += $name
+
+            # Conditional Forwarder aggregieren
+            foreach ($z in $cf) {
+                $name = $z.ZoneName
+                $master = @($z.MasterServers | ForEach-Object { $_.IPAddress } | Sort-Object -Unique)
+                $mkey = $master -join ','
+                if (-not $allCondForwarders.ContainsKey($name)) { $allCondForwarders[$name] = @{} }
+                if (-not $allCondForwarders[$name].ContainsKey($mkey)) { $allCondForwarders[$name][$mkey] = @{ Masters=$master; Servers=@() } }
+                $allCondForwarders[$name][$mkey].Servers += $name
+            }
+
+            # Root Hints aggregieren
+            $rhIPs = @($rh | ForEach-Object { $_.IPAddress } | Sort-Object -Unique)
+            $rhKey = $rhIPs -join ','
+            if (-not $allRootHints.ContainsKey($rhKey)) { $allRootHints[$rhKey] = @{ IPs=$rhIPs; Servers=@() } }
+            $allRootHints[$rhKey].Servers += $name
+        }
+
+        # 1) Globale Forwarder - Konsistenz pruefen
+        if ($allGlobalForwarders.Count -eq 0) {
+            $result += [pscustomobject]@{
+                Kind='Forwarder'; Target='Globaler Forwarder'; Risk='CRITICAL'
+                Detail='Kein globaler Forwarder auf keinem DNS-Server konfiguriert'; RowKey='Forwarder|Global'
+            }
+        }
+        elseif ($allGlobalForwarders.Count -gt 1) {
+            $details = @()
+            foreach ($k in $allGlobalForwarders.Keys) {
+                $v = $allGlobalForwarders[$k]
+                $details += "IPs: $($v.IPs -join ', ') auf $($v.Servers.Count) Server ($($v.Servers -join ', '))"
+            }
+            $result += [pscustomobject]@{
+                Kind='Forwarder'; Target='Globaler Forwarder'; Risk='WARN'
+                Detail="Inkonsistente globale Forwarder: $($details -join ' | ')"; RowKey='Forwarder|Global'
+            }
+        }
+        else {
+            $v = $allGlobalForwarders.Values[0]
+            $result += [pscustomobject]@{
+                Kind='Forwarder'; Target='Globaler Forwarder'; Risk='OK'
+                Detail="Globale Forwarder konsistent: $($v.IPs -join ', ') auf allen $($v.Servers.Count) DNS-Servern"; RowKey='Forwarder|Global'
+            }
+        }
+
+        # 2) Conditional Forwarder
+        foreach ($zone in ($allCondForwarders.Keys | Sort-Object)) {
+            $entries = $allCondForwarders[$zone]
+            if ($entries.Count -gt 1) {
+                $details = @()
+                foreach ($mkey in $entries.Keys) {
+                    $v = $entries[$mkey]
+                    $details += "Master: $($v.Masters -join ', ') auf $($v.Servers.Count) Server ($($v.Servers -join ', '))"
+                }
+                $result += [pscustomobject]@{
+                    Kind='ConditionalForwarder'; Target=$zone; Risk='WARN'
+                    Detail="Nur teilweise verteilt: $($details -join ' | ')"; RowKey="ConditionalForwarder|$zone"
+                }
+            }
+            else {
+                $mkey = $entries.Keys[0]
+                $v = $entries[$mkey]
+                $risk = 'OK'; $issues = @()
+                if ($v.Masters.Count -eq 0) { $issues += 'Kein MasterServer hinterlegt - Conditional Forwarder kann keine Aufloesung leisten'; $risk = 'CRITICAL' }
+                foreach ($m in $v.Masters) {
+                    if ($dnsServers -contains $m) { $issues += "Forwarder-Ziel $m ist ein eigener DNS-Server"; $risk = 'WARN' }
+                }
+                $result += [pscustomobject]@{
+                    Kind='ConditionalForwarder'; Target=$zone; Risk=$risk
+                    Detail="Ziel-IPs: $($v.Masters -join ', ') auf $($v.Servers.Count) Server ($($v.Servers -join ', ')) $(if ($issues.Count) { '| ' + ($issues -join '; ') })"
+                    RowKey="ConditionalForwarder|$zone"
+                }
+            }
+        }
+
+        # 3) Root Hints
+        if ($allRootHints.Count -eq 0) {
+            $result += [pscustomobject]@{
+                Kind='Forwarder'; Target='Root Hints'; Risk='WARN'
+                Detail='Keine Root Hints auf keinem DNS-Server'; RowKey='Forwarder|RootHints'
+            }
+        }
+        elseif ($allRootHints.Count -gt 1) {
+            $details = @()
+            foreach ($k in $allRootHints.Keys) {
+                $v = $allRootHints[$k]
+                $details += "IPs: $($v.IPs -join ', ') auf $($v.Servers.Count) Server"
+            }
+            $result += [pscustomobject]@{
+                Kind='Forwarder'; Target='Root Hints'; Risk='WARN'
+                Detail="Inkonsistente Root Hints: $($details -join ' | ')"; RowKey='Forwarder|RootHints'
+            }
+        }
+        else {
+            $v = $allRootHints.Values[0]
+            $result += [pscustomobject]@{
+                Kind='Forwarder'; Target='Root Hints'; Risk='OK'
+                Detail="Root Hints konsistent: $($v.IPs.Count) IPs auf allen $($v.Servers.Count) DNS-Servern"; RowKey='Forwarder|RootHints'
+            }
+        }
+
+        # 4) Externe Aufloesung moeglich?
+        $hasGlobal = $allGlobalForwarders.Count -gt 0
+        $hasRootHints = $allRootHints.Count -gt 0
+        if (-not $hasGlobal -and -not $hasRootHints) {
+            $result += [pscustomobject]@{
+                Kind='Forwarder'; Target='Externe Aufloesung'; Risk='CRITICAL'
+                Detail='Kein globaler Forwarder UND keine Root-Hints -> externe Aufloesung moeglicherweise nicht moeglich'; RowKey='Forwarder|ExternalResolution'
+            }
+        }
+
+    } catch {
+        $result += [pscustomobject]@{ Kind='Fehler'; Target='Forwarder'; Detail="Abfrage fehlgeschlagen: $_"; Risk='WARN' }
+    }
+    return $result
+}
+
+function Test-Check-ConditionalForwarders {
+    <#
+    .SYNOPSIS
+        Bewertet Conditional Forwarder, globale Forwarder und Root Hints.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $rows = @($data | Where-Object { $_.Kind -in @('Forwarder','ConditionalForwarder') })
+    if ($rows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Forwarder-Daten' }
+    $critical = @($rows | Where-Object { $_.Risk -eq 'CRITICAL' })
+    $warn = @($rows | Where-Object { $_.Risk -eq 'WARN' })
+    $findings = @($rows | Where-Object { $_.Risk -ne 'OK' } | ForEach-Object { $_.Detail })
+    $status = if ($critical.Count) { 'CRITICAL' } elseif ($warn.Count) { 'WARN' } else { 'OK' }
+    $summary = "$($rows.Count) Forwarder-Positionen: OK $($rows.Count - $critical.Count - $warn.Count), WARN $($warn.Count), CRITICAL $($critical.Count)"
+    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
+}
 
 function Get-LAPSConfiguration {
     <#
@@ -6204,6 +6418,7 @@ function Invoke-AllAssessments {
         '52_AnonymousLDAP'           = { Test-Check-AnonymousLDAP           $Global:Results['52_AnonymousLDAP'] }
         '53_GPPPasswords'            = { Test-Check-GPPPasswords            $Global:Results['53_GPPPasswords'] }
         '54_ProtectedUsers'          = { Test-Check-ProtectedUsers          $Global:Results['54_ProtectedUsers'] }
+        '61_Forwarder'               = { Test-Check-ConditionalForwarders  $Global:Results['61_Forwarder'] }
         '62_ReverseLookup'           = { Test-Check-ReverseLookupComplete  $Global:Results['62_ReverseLookup'] }
     }
     $toAssess = @()
@@ -6798,6 +7013,7 @@ function Start-ADHealthCheck {
         if (Test-IsCheckSelected '52_AnonymousLDAP')           { $r = Invoke-TimedCheck -CheckKey '52_AnonymousLDAP'           -ScriptBlock { Get-AnonymousLDAP };           $Global:Results['52_AnonymousLDAP']           = @($r) }
         if (Test-IsCheckSelected '53_GPPPasswords')            { $r = Invoke-TimedCheck -CheckKey '53_GPPPasswords'            -ScriptBlock { Get-GPPPasswords };            $Global:Results['53_GPPPasswords']            = @($r) }
         if (Test-IsCheckSelected '54_ProtectedUsers')          { $r = Invoke-TimedCheck -CheckKey '54_ProtectedUsers'          -ScriptBlock { Get-ProtectedUsersAudit };     $Global:Results['54_ProtectedUsers']          = @($r) }
+        if (Test-IsCheckSelected '61_Forwarder')               { $r = Invoke-TimedCheck -CheckKey '61_Forwarder'               -ScriptBlock { Get-ConditionalForwarding };      $Global:Results['61_Forwarder']               = @($r) }
         if (Test-IsCheckSelected '62_ReverseLookup')           { $r = Invoke-TimedCheck -CheckKey '62_ReverseLookup'           -ScriptBlock { Get-ReverseLookupCompleteness };    $Global:Results['62_ReverseLookup']           = @($r) }
 
         # Inaktive Accounts - einmaliger Aufruf fuer 3 Check-Keys
