@@ -1,8 +1,8 @@
 ﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.7 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.10 mit Best-Practice-Bewertung.
 .DESCRIPTION
-    54 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
+    63 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
     interaktivem Startmenue.
     Zweisprachig (Deutsch/Englisch): Die Ausgabesprache wird automatisch aus der
@@ -29,7 +29,7 @@
     (fuer Luftschacht-/Airgap-Umgebungen oder streng firewalled Server).
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.7 (54 Checks, Internationalisierung DE/EN, Update-Anzeige GitLab)
+    Version : 2.10 (63 Checks, Internationalisierung DE/EN, Update-Anzeige GitLab)
     Sprache : automatisch aus dem Betriebssystem, sonst -Language <de|en>
     LogPfad : C:\ScriptLog
 .EXAMPLE
@@ -59,10 +59,10 @@ param(
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.7"
+$Global:ScriptVersion   = "2.10"
 $Global:NoUpdateCheck   = [bool]$NoUpdateCheck
 $Global:Timestamp       = Get-Date -Format "yyyyMMdd_HHmmss"
-$Global:LogDirectory    = if ($OutputPath) { $OutputPath } else { "C:\ScriptLog" }
+$Global:LogDirectory    = if ($OutputPath) { $OutputPath } else { "C:\AD_Health_Check_Log" }
 $Global:ReportDirectory = Join-Path $Global:LogDirectory "AD_HealthCheck_$Global:Timestamp"
 $Global:LogFile         = Join-Path $Global:LogDirectory "$Global:ScriptName`_$Global:Timestamp.log"
 $Global:HtmlReport      = Join-Path $Global:ReportDirectory "AD_HealthCheck_Report_$Global:Timestamp.html"
@@ -140,7 +140,7 @@ $Global:ServiceMap = [ordered]@{
 $Global:CheckGroups = [ordered]@{
     'DC-Infrastruktur' = @(
         '01_DCSystemInfo','02_Services','03_DCDiag','04_Replication','04b_ReplicationFailures',
-        '05_FSMO','06_DNS','60_ZonenSOA','61_Forwarder','62_ReverseLookup','07_SYSVOL','08_Database','34_TimeSync','35_Backup'
+        '05_FSMO','06_DNS','60_ZonenSOA','61_Forwarder','62_ReverseLookup','07_SYSVOL','08_Database','34_TimeSync','35_Backup','55_KMS','56_StaleDCs'
     )
     'Security & Hardening' = @(
         '09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity',
@@ -150,10 +150,10 @@ $Global:CheckGroups = [ordered]@{
     'Identity & Kerberos' = @(
         '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
         '20_KerberoastingRisk','38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','43_LAPS','44_AccountsWithoutAES',
-        '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA','54_ProtectedUsers'
+        '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA','54_ProtectedUsers','57_RCAudit','58_SPNInventory','59_EncryptionTypes'
     )
     'AD-Topologie & Objekte' = @(
-        '25_Sites','26_Subnets','27_Trusts','28_ADRecycleBin','29_TombstoneLifetime',
+        '25_Sites','26_Subnets','63_SubnetReverse','27_Trusts','28_ADRecycleBin','29_TombstoneLifetime',
         '30_Levels','31_GPO','32a_InactiveUsers','32b_InactiveComputers','32c_PasswordNeverExpires'
     )
     'System & Updates' = @(
@@ -195,6 +195,7 @@ $Global:ReportTitles = [ordered]@{
     '24_Certificates'            = 'Zertifikate'
     '25_Sites'                   = 'AD-Sites'
     '26_Subnets'                 = 'AD-Subnetze'
+    '63_SubnetReverse'           = 'AD-Subnetze vs. Reverse-Lookup-Zonen'
     '27_Trusts'                  = 'Vertrauensstellungen'
     '28_ADRecycleBin'            = 'AD Recycle Bin'
     '29_TombstoneLifetime'       = 'Tombstone Lifetime'
@@ -225,6 +226,11 @@ $Global:ReportTitles = [ordered]@{
     '52_AnonymousLDAP'           = 'Anonymer LDAP-Zugriff'
     '53_GPPPasswords'            = 'GPP/cpassword in SYSVOL'
     '54_ProtectedUsers'          = 'Protected Users Audit'
+    '55_KMS'                     = 'KMS-Server & Konfiguration'
+    '56_StaleDCs'                = 'Tote DCs & DC-Verfuegbarkeit'
+    '57_RCAudit'                 = 'RC4 / LM Belege je DC'
+    '58_SPNInventory'            = 'SPN-Inventar & Verwaiste SPNs'
+    '59_EncryptionTypes'         = 'Encryption-Types: Verteilung & AES-Abdeckung'
 }
 
 #endregion
@@ -279,6 +285,7 @@ Secure Boot Zertifikats-Update (UEFI CA 2023)=>Secure Boot certificate update (U
 Zertifikate=>Certificates
 AD-Sites=>AD Sites
 AD-Subnetze=>AD Subnets
+AD-Subnetze vs. Reverse-Lookup-Zonen=>AD subnets vs. reverse lookup zones
 Vertrauensstellungen=>Trust relationships
 Forest-/Domain-Level=>Forest / domain level
 GPO-Health=>GPO Health
@@ -299,6 +306,14 @@ SMB-Freigaben (Shares)=>SMB shares
 RC4 -> AES Migrations-Audit (CVE-2026-20833)=>RC4 -> AES migration audit (CVE-2026-20833)
 DCSync-Berechtigungen (Replikations-Rechte)=>DCSync permissions (replication rights)
 Anonymer LDAP-Zugriff=>Anonymous LDAP access
+KMS-Server & Konfiguration=>KMS server & configuration
+Tote DCs & DC-Verfuegbarkeit=>Dead DCs & DC availability
+RC4 / LM Belege je DC=>RC4 / LM evidence per DC
+SPN-Inventar & Verwaiste SPNs=>SPN inventory & orphaned SPNs
+Encryption-Types: Verteilung & AES-Abdeckung=>Encryption types: distribution & AES coverage
+DNS-Zonen: SOA & Replikation=>DNS zones: SOA & replication
+DNS-Forwarder & Conditional Forwarder=>DNS forwarders & conditional forwarders
+DNS-Reverse-Lookup-Vollstaendigkeit=>DNS reverse lookup completeness
 # ---- Check-Gruppen / GUI-Kategorien ----
 DC-Infrastruktur=>DC Infrastructure
 AD-Topologie & Objekte=>AD topology & objects
@@ -1616,13 +1631,13 @@ function Show-ScriptMenu {
                 '32b_InactiveComputers','32c_PasswordNeverExpires','35_Backup','38_SPNDuplicates',
                 '39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                 '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','60_ZonenSOA','61_Forwarder','62_ReverseLookup')
+                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse')
     $sec = @('09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
              '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
              '20_KerberoastingRisk','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
              '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','43_LAPS','44_AccountsWithoutAES',
              '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers')
+             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','57_RCAudit','58_SPNInventory','59_EncryptionTypes')
 
     while ($true) {
         Clear-Host
@@ -3685,12 +3700,12 @@ function Get-ReverseLookupCompleteness {
         if ($dcs.Count -eq 0) {
             return @([pscustomobject]@{ Kind='Fehler'; Target='Reverse Lookup'; Status='WARN'; Detail='Kein erreichbarer DC mit IPv4 gefunden'; Risk='WARN' })
         }
-        $dc = $dcs[0]
+        $dcName = [string]$dcs[0].HostName
 
-        # Alle Primary-Zonen (Forward und Reverse) vom DC holen
+        # Alle Zonen (Forward und Reverse) vom DC holen
         $allZones = @()
-        try { $allZones = @(Get-DnsServerZone -ComputerName $dc -ErrorAction Stop) } catch {
-            return @([pscustomobject]@{ Kind='Fehler'; Target='Reverse Lookup'; Status='WARN'; Detail='Keine DNS-Zonen vom DC abrufbar'; Risk='WARN' })
+        foreach ($t in (Get-DnsServerTargets -ComputerName $dcName)) {
+            try { $allZones = @(Get-DnsServerZone @t -ErrorAction Stop); break } catch {}
         }
         if ($allZones.Count -eq 0) {
             return @([pscustomobject]@{ Kind='Fehler'; Target='Reverse Lookup'; Status='WARN'; Detail='Keine DNS-Zonen vom DC abrufbar'; Risk='WARN' })
@@ -3699,33 +3714,41 @@ function Get-ReverseLookupCompleteness {
         # Forward-Zonen filtern (Primary, nicht Reverse, nicht Forwarder-Typ)
         $forwardZones = @($allZones | Where-Object { $_.ZoneType -eq 'Primary' -and -not $_.IsReverseLookupZone -and $_.ZoneType -ne 'Forwarder' })
 
-        # Alle A/AAAA Records aus Forward-Zonen sammeln
+        # Alle A/AAAA Records aus Forward-Zonen sammeln (Fehler werden gezaehlt, nicht verschluckt)
         $forwardIPs = @{}
+        $recErrors = @()
         foreach ($zone in $forwardZones) {
-            $zn = $zone.ZoneName
-            try {
-                $records = @(Get-DnsServerResourceRecord -ComputerName $dc -ZoneName $zn -RRType 'A','AAAA' -ErrorAction Stop)
+            $zn = [string]$zone.ZoneName
+            foreach ($rrt in 'A','AAAA') {
+                $records = @()
+                $rrErr = $null
+                foreach ($t in (Get-DnsServerTargets -ComputerName $dcName)) {
+                    try { $records = @(Get-DnsServerResourceRecord @t -ZoneName $zn -RRType $rrt -ErrorAction Stop); $rrErr = $null; break } catch { $rrErr = $_.Exception.Message }
+                }
+                if ($rrErr) { $recErrors += "$($zn)/$($rrt): $rrErr"; continue }
                 foreach ($rec in $records) {
                     $rd = $rec.RecordData
-                    if ($null -ne $rd) {
-                        $ip = if ($rec.RRType -eq 'A') { [string]$rd.IPv4Address } else { [string]$rd.IPv6Address }
-                        if ($ip) {
-                            $key = "$zn|$ip"
-                            if (-not $forwardIPs.ContainsKey($key)) {
-                                $forwardIPs[$key] = [pscustomobject]@{
-                                    ZoneName = $zn; IP = $ip; RRType = $rec.RRType; HostName = [string]$rec.HostName
-                                }
-                            }
+                    $ip = if ($rrt -eq 'A') { [string]$rd.IPv4Address } else { [string]$rd.IPv6Address }
+                    if (-not $ip) { continue }
+                    $key = "$zn|$ip"
+                    if (-not $forwardIPs.ContainsKey($key)) {
+                        $forwardIPs[$key] = [pscustomobject]@{
+                            ZoneName = $zn; IP = $ip; RRType = $rrt; HostName = [string]$rec.HostName
                         }
                     }
                 }
-            } catch {}
+            }
         }
 
         if ($forwardIPs.Count -eq 0) {
+            $zoneList = @($forwardZones | ForEach-Object { [string]$_.ZoneName }) -join ', '
+            if (-not $zoneList) { $zoneList = '(keine Primary-Forward-Zone gefunden)' }
+            $detail = "Keine A/AAAA Records gelesen - Forward-Zonen: $zoneList"
+            if ($recErrors.Count -gt 0) { $detail += " | Fehler: $($recErrors -join '; ')" }
             $result += [pscustomobject]@{
-                Kind='Summary'; Target='Reverse Lookup'; Status='OK'
-                Detail='Keine A/AAAA Records in Forward-Zonen gefunden'; Risk='OK'
+                Kind='Summary'; Target='Reverse Lookup'
+                Status=$(if ($recErrors.Count -gt 0 -or $forwardZones.Count -eq 0) { 'WARN' } else { 'OK' })
+                Detail=$detail; Risk=$(if ($recErrors.Count -gt 0 -or $forwardZones.Count -eq 0) { 'WARN' } else { 'OK' })
             }
             return $result
         }
@@ -3733,19 +3756,19 @@ function Get-ReverseLookupCompleteness {
         # Existierende Reverse-Zonen ermitteln
         $reverseZoneNames = @($allZones | Where-Object { $_.IsReverseLookupZone } | ForEach-Object { $_.ZoneName })
 
-        function Get-ReverseZoneNameFromIP {
+        function Get-ReverseZoneInfoFromIP {
             param([string]$IP)
             if ($IP -match '^\d+\.\d+\.\d+\.\d+$') {
-                $octets = $IP.Split('.')
-                if ($octets.Count -eq 4) { return ('{2}.{1}.{0}.in-addr.arpa' -f $octets[0], $octets[1], $octets[2]) }
+                $o = $IP.Split('.')
+                return @{ Ptr = ('{3}.{2}.{1}.{0}.in-addr.arpa' -f $o[0], $o[1], $o[2], $o[3]); Zone = ('{2}.{1}.{0}.in-addr.arpa' -f $o[0], $o[1], $o[2]) }
             }
-            elseif ($IP -match ':') {
+            if ($IP -match ':') {
                 try {
-                    $ip6 = [System.Net.IPAddress]::Parse($IP).GetAddressBytes()
-                    $nibbles = ($ip6 | ForEach-Object { '{0:X2}' -f $_ }) -join ''
-                    $nibbles = $nibbles.PadLeft(32, '0')
-                    $rev = ($nibbles.ToCharArray() | ForEach-Object { $_ }) -join '.'
-                    return "$rev.ip6.arpa"
+                    $bytes = [System.Net.IPAddress]::Parse($IP).GetAddressBytes()
+                    $nib = @((($bytes | ForEach-Object { '{0:x2}' -f $_ }) -join '').ToCharArray())
+                    [array]::Reverse($nib)
+                    $labels = @($nib | ForEach-Object { [string]$_ })
+                    return @{ Ptr = (($labels -join '.') + '.ip6.arpa'); Zone = ((@($labels[16..31]) -join '.') + '.ip6.arpa') }
                 } catch {}
             }
             return $null
@@ -3754,12 +3777,15 @@ function Get-ReverseLookupCompleteness {
         $missing = @()
         foreach ($kv in $forwardIPs.GetEnumerator()) {
             $entry = $kv.Value
-            $revZone = Get-ReverseZoneNameFromIP -IP $entry.IP
-            if ($null -eq $revZone) {
-                $missing += [pscustomobject]@{ ZoneName=$entry.ZoneName; IP=$entry.IP; HostName=$entry.HostName; Reason='IP-Format nicht erkannt' }
+            $info = Get-ReverseZoneInfoFromIP -IP $entry.IP
+            if ($null -eq $info) {
+                $missing += [pscustomobject]@{ ZoneName=$entry.ZoneName; IP=$entry.IP; HostName=$entry.HostName; MissingReverseZone='(IP-Format nicht erkannt)' }
+                continue
             }
-            elseif ($reverseZoneNames -notcontains $revZone) {
-                $missing += [pscustomobject]@{ ZoneName=$entry.ZoneName; IP=$entry.IP; HostName=$entry.HostName; MissingReverseZone=$revZone }
+            $ptr = $info.Ptr.ToLower()
+            $covered = @($reverseZoneNames | Where-Object { $z = ([string]$_).ToLower(); $ptr -eq $z -or $ptr.EndsWith('.' + $z) })
+            if ($covered.Count -eq 0) {
+                $missing += [pscustomobject]@{ ZoneName=$entry.ZoneName; IP=$entry.IP; HostName=$entry.HostName; MissingReverseZone=$info.Zone }
             }
         }
 
@@ -3818,6 +3844,171 @@ function Test-Check-ReverseLookupComplete {
 }
 
 
+function Get-SubnetReverseMatch {
+    <#
+    .SYNOPSIS
+        Listet alle AD-Subnetze mit zugeordneter Site und prueft die passende Reverse-Lookup-Zone.
+    .NOTES
+        - Forest-weiter Check (Subnetze aus Sites & Services, Reverse-Zonen vom DC)
+        - Nur IPv4. Zone = Oktett-Grenze des Praefix (/24 -> 3 Oktette, /16 -> 2, /8 -> 1)
+        - Reverse-Zonen ohne Subnetz werden als INFO gemeldet (Default-Zonen ausgenommen)
+    #>
+    $result = @()
+    $zonesOk = $false
+    try {
+        $subnets = @(Get-ADReplicationSubnet -Filter * -Properties * -ErrorAction Stop)
+
+        $reverseZoneNames = @()
+        $aRecordIPs = @()
+        $recErrors = @()
+        $dcs = @(Get-ADDomainController -Filter * -ErrorAction Stop | Where-Object { $_.IPv4Address })
+        if ($dcs.Count -gt 0) {
+            $dcName = [string]$dcs[0].HostName
+            $allZones = @()
+            foreach ($t in (Get-DnsServerTargets -ComputerName $dcName)) {
+                try { $allZones = @(Get-DnsServerZone @t -ErrorAction Stop); $zonesOk = $true; break } catch {}
+            }
+            if ($zonesOk) {
+                $reverseZoneNames = @($allZones | Where-Object { $_.IsReverseLookupZone } | ForEach-Object { ([string]$_.ZoneName).ToLower() })
+                $forwardZones = @($allZones | Where-Object { $_.ZoneType -eq 'Primary' -and -not $_.IsReverseLookupZone })
+                foreach ($zone in $forwardZones) {
+                    $zn = [string]$zone.ZoneName
+                    $rrErr = 'Keine Verbindung zum DC'
+                    foreach ($t in (Get-DnsServerTargets -ComputerName $dcName)) {
+                        try {
+                            $aRecordIPs += @(Get-DnsServerResourceRecord @t -ZoneName $zn -RRType A -ErrorAction Stop | ForEach-Object { [string]$_.RecordData.IPv4Address } | Where-Object { $_ })
+                            $rrErr = $null
+                            break
+                        } catch { $rrErr = $_.Exception.Message }
+                    }
+                    if ($rrErr) { $recErrors += "$($zn): $rrErr" }
+                }
+                $aRecordIPs = @($aRecordIPs | Sort-Object -Unique)
+            }
+        }
+        if (-not $zonesOk) {
+            $result += [pscustomobject]@{ Kind='Fehler'; Target='Reverse-Zonen'; Detail='Reverse-Zonen nicht abrufbar'; Risk='WARN' }
+        }
+
+        $defaults = @($Global:DNSDefaultReverseZones | ForEach-Object { ([string]$_).ToLower() })
+        $matchedZones = @()
+
+        foreach ($s in $subnets) {
+            $name = [string]$s.Name
+            $siteName = if ($s.Site) { ([string]$s.Site) -replace '^CN=([^,]+).*$', '$1' } else { '' }
+            $siteText = if ($siteName) { $siteName } else { '(keine Site)' }
+            $desc = [string]$s.Description
+
+            $isV4 = $name -match '^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})$'
+            if (-not $isV4) {
+                $result += [pscustomobject]@{ Kind='Subnet'; Target=$name; Site=$siteText; Description=$desc; ReverseZone=''; Risk='INFO'; Detail="Site: $siteText | Kein IPv4-Subnetz (Reverse-Pruefung nicht moeglich)" }
+                continue
+            }
+            $prefix = [int]$Matches[5]
+            $octs = @($Matches[1], $Matches[2], $Matches[3])
+            $octCount = if ($prefix -ge 24) { 3 } elseif ($prefix -ge 16) { 2 } else { 1 }
+            $rev = @($octs[0..($octCount - 1)])
+            [array]::Reverse($rev)
+            $expected = (($rev -join '.') + '.in-addr.arpa').ToLower()
+
+            $covering = @()
+            if ($zonesOk) {
+                $covering = @($reverseZoneNames | Where-Object { $expected -eq $_ -or $expected.EndsWith('.' + $_) })
+                $matchedZones += $covering
+            }
+            $zoneText = if (-not $zonesOk) { "$expected (unbekannt)" } elseif ($covering.Count -gt 0) { "$expected (vorhanden)" } else { "$expected (fehlt)" }
+
+            $issues = @()
+            if (-not $siteName) { $issues += 'keine Site zugeordnet' }
+            if ($zonesOk -and $covering.Count -eq 0) { $issues += "Reverse-Zone fehlt: $expected" }
+            $risk = if ($issues.Count) { 'WARN' } else { 'OK' }
+            $detail = "Site: $siteText | Reverse-Zone: $zoneText"
+            if ($issues.Count) { $detail += ' | ' + ($issues -join '; ') }
+
+            $result += [pscustomobject]@{
+                Kind='Subnet'; Target=$name; Site=$siteText; Description=$desc
+                ReverseZone=$expected; Risk=$risk; Detail=$detail
+            }
+        }
+
+        if ($zonesOk) {
+            foreach ($z in $reverseZoneNames) {
+                if ($z -notlike '*.in-addr.arpa') { continue }
+                if ($defaults -contains $z -or $matchedZones -contains $z) { continue }
+                $result += [pscustomobject]@{
+                    Kind='ZoneOhneSubnet'; Target=$z; Site=''; Description=''
+                    ReverseZone=$z; Risk='INFO'; Detail='Reverse-Zone ohne passendes AD-Subnetz'
+                }
+            }
+        }
+
+        $toInt = { param([string]$ip) $o = @($ip.Split('.') | ForEach-Object { [int64]$_ }); ([int64]$o[0] -shl 24) -bor ([int64]$o[1] -shl 16) -bor ([int64]$o[2] -shl 8) -bor [int64]$o[3] }
+        $ranges = @()
+        foreach ($s in $subnets) {
+            if ([string]$s.Name -match '^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/(\d{1,2})$') {
+                $ipPart = $Matches[1]
+                $p = [int]$Matches[2]
+                $mask = if ($p -eq 0) { [int64]0 } else { ([int64]4294967295 -shl (32 - $p)) -band [int64]4294967295 }
+                $ranges += [pscustomobject]@{ Net = ((& $toInt $ipPart) -band $mask); Mask = $mask }
+            }
+        }
+
+        $gapRows = @()
+        if ($zonesOk) {
+            $ipGroups = @{}
+            foreach ($ip in $aRecordIPs) {
+                if ($ip -notmatch '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') { continue }
+                if ($ip -like '127.*' -or $ip -like '169.254.*' -or $ip -eq '0.0.0.0') { continue }
+                $ipInt = & $toInt $ip
+                if (@($ranges | Where-Object { ($ipInt -band $_.Mask) -eq $_.Net }).Count -gt 0) { continue }
+                $netKey = (($ip.Split('.')[0..2]) -join '.') + '.0/24'
+                if (-not $ipGroups.ContainsKey($netKey)) { $ipGroups[$netKey] = @() }
+                $ipGroups[$netKey] += $ip
+            }
+            foreach ($k in @($ipGroups.Keys | Sort-Object)) {
+                $ips = @($ipGroups[$k] | Sort-Object { [version]$_ })
+                $gapRows += [pscustomobject]@{
+                    Kind='DNSNetzOhneSubnet'; Target=$k; Site=''; Description=''; ReverseZone=''; Risk='WARN'
+                    Detail="DNS-A-Records: $($ips.Count) (z.B. $((@($ips | Select-Object -First 3)) -join ', ')) | kein AD-Subnetz"
+                }
+            }
+        }
+        foreach ($e in $recErrors) {
+            $result += [pscustomobject]@{ Kind='Fehler'; Target=$e; Detail='A-Records nicht lesbar'; Risk='WARN' }
+        }
+        $result += $gapRows
+
+        $subRows = @($result | Where-Object { $_.Kind -eq 'Subnet' })
+        $warnCount = @($subRows | Where-Object { $_.Risk -eq 'WARN' }).Count
+        $orphanCount = @($result | Where-Object { $_.Kind -eq 'ZoneOhneSubnet' }).Count
+        $gapCount = @($gapRows).Count
+        $sumRisk = if ($warnCount -or $gapCount -or $recErrors.Count -or -not $zonesOk) { 'WARN' } else { 'OK' }
+        $result += [pscustomobject]@{
+            Kind='Summary'; Target='Subnetze'; Risk=$sumRisk
+            Detail="$($subRows.Count) Subnetze, $warnCount mit Hinweis, $gapCount DNS-Netz(e) ohne Subnetz, $orphanCount Reverse-Zone(n) ohne Subnetz"
+        }
+    } catch {
+        $result += [pscustomobject]@{ Kind='Fehler'; Target='Subnetze'; Detail="Abfrage fehlgeschlagen: $_"; Risk='WARN' }
+    }
+    return $result
+}
+
+function Test-Check-SubnetReverse {
+    <#
+    .SYNOPSIS
+        Bewertet das Ergebnis von Get-SubnetReverseMatch.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $subs = @($data | Where-Object { $_.Kind -eq 'Subnet' })
+    $summary = @($data | Where-Object { $_.Kind -eq 'Summary' })
+    $sumText = if ($summary.Count) { $summary[0].Detail } else { "$($subs.Count) Subnetze" }
+    $findings = @($data | Where-Object { $_.Kind -ne 'Summary' -and $_.Risk -in @('WARN','CRITICAL') } | ForEach-Object { "$($_.Target): $($_.Detail)" })
+    if ($subs.Count -eq 0) { $findings = @('Keine AD-Subnetze definiert') + $findings }
+    $status = if ($findings.Count) { 'WARN' } else { 'OK' }
+    New-Assessment -OverallStatus $status -Summary $sumText -Findings $findings
+}
+
 function Get-KMSConfiguration {
     <#
     .SYNOPSIS
@@ -3833,7 +4024,7 @@ function Get-KMSConfiguration {
     $result = @()
     try {
         $forest = Get-ADForest -ErrorAction Stop
-        
+        $domain = Get-ADDomain -ErrorAction Stop
         $dcs = @(Get-ADDomainController -Filter * -ErrorAction Stop | Where-Object { $_.IPv4Address })
         if ($dcs.Count -eq 0) {
             return @([pscustomobject]@{ Kind='Fehler'; Target='KMS'; Detail='Keine erreichbaren DCs'; Risk='WARN' })
@@ -3846,7 +4037,9 @@ function Get-KMSConfiguration {
             try {
                 $records = Resolve-DnsName -Name $srv -Type SRV -ErrorAction Stop -DnsOnly
                 foreach ($r in $records) {
-                    $hn = $r.NameHost.TrimEnd('.')
+                    $hnRaw = if ($r.PSObject.Properties['NameTarget']) { [string]$r.NameTarget } elseif ($r.PSObject.Properties['NameHost']) { [string]$r.NameHost } else { '' }
+                    if (-not $hnRaw) { continue }
+                    $hn = $hnRaw.TrimEnd('.')
                     if (-not $kmsHosts.ContainsKey($hn)) { $kmsHosts[$hn] = @{ SRV=$true; Source=$srv } }
                 }
             } catch {}
@@ -3992,10 +4185,19 @@ function Test-Check-KMS {
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
 }
 
+function Convert-DCSourceName {
+    param([string]$Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return $null }
+    $clean = $Name.Trim().TrimEnd('.')
+    if (-not $clean) { return $null }
+    if ($clean.Contains('.')) { $clean = $clean.Substring(0, $clean.IndexOf('.')) }
+    return $clean
+}
+
 function Get-StaleDCObjects {
     <#
     .SYNOPSIS
-        Gleicht 7 unabhaengige Quellen fuer „welche DCs gibt es“ gegeneinander ab.
+        Gleicht 10 unabhaengige Quellen fuer „welche DCs gibt es“ gegeneinander ab.
     .NOTES
         Quellen:
         1. Live-DCs (Get-ADDomainController -Filter *)
@@ -4005,6 +4207,9 @@ function Get-StaleDCObjects {
         5. FSMO-Rollen-Inhaber
         6. DNS SRV _ldap._tcp.dc._msdcs
         7. DNS A-Eintraege fuer DC-Hostnamen
+        8. DNS SRV _gc._tcp (Forest)
+        9. DNS SRV _kerberos._tcp (Domain)
+        10. DNS SRV _kpasswd._tcp (Domain)
         Bewertung:
         - CRITICAL: Aktiver DC deaktiviert / ohne DNS-A / ohne DNS-SRV
         - CRITICAL: Nicht-lebender DC traegt noch FSMO/NTDS/Account-Reste
@@ -4014,17 +4219,19 @@ function Get-StaleDCObjects {
     $result = @()
     try {
         $forest = Get-ADForest -ErrorAction Stop
-        
-        $domainDN = $domain.DistinguishedName
+        $adDomain = Get-ADDomain -ErrorAction Stop
+        $domainDN = $adDomain.DistinguishedName
         $configNC = "CN=Configuration,$domainDN"
         $dcOU = "OU=Domain Controllers,$domainDN"
 
         # Quelle 1: Live DCs
-        $liveDCs = @(Get-ADDomainController -Filter * -ErrorAction Stop | Select-Object -ExpandProperty Name | Sort-Object -Unique)
+        $dcObjs = @(Get-ADDomainController -Filter * -ErrorAction Stop)
+        $liveDCs = @($dcObjs | Select-Object -ExpandProperty Name | ForEach-Object { Convert-DCSourceName -Name $_ } | Where-Object { $_ } | Sort-Object -Unique)
+        $gcDCs = @($dcObjs | Where-Object { $_.IsGlobalCatalog } | Select-Object -ExpandProperty Name | ForEach-Object { Convert-DCSourceName -Name $_ } | Where-Object { $_ } | Sort-Object -Unique)
 
         # Quelle 2: Computer-Objekte in DC-OU
         $ouComputers = @()
-        try { $ouComputers = @(Get-ADComputer -SearchBase $dcOU -Filter * -ErrorAction Stop | Select-Object -ExpandProperty Name | Sort-Object -Unique) } catch {}
+        try { $ouComputers = @(Get-ADComputer -SearchBase $dcOU -Filter * -ErrorAction Stop | Select-Object -ExpandProperty Name | ForEach-Object { Convert-DCSourceName -Name $_ } | Where-Object { $_ } | Sort-Object -Unique) } catch {}
 
         # Quelle 3: Server-Objekte + NTDS-Settings im Config-NC
         $configServers = @()
@@ -4032,16 +4239,19 @@ function Get-StaleDCObjects {
             $servers = Get-ADObject -SearchBase $configNC -LDAPFilter '(objectClass=server)' -Properties 'name' -ErrorAction Stop
             foreach ($s in $servers) {
                 $ntds = Get-ADObject -SearchBase "CN=NTDS Settings,$($s.DistinguishedName)" -LDAPFilter '(objectClass=nTDSDSA)' -ErrorAction SilentlyContinue
-                if ($ntds) { $configServers += $s.Name }
+                if ($ntds) { $configServers += (Convert-DCSourceName -Name $s.Name) }
             }
         } catch {}
-        $configServers = $configServers | Sort-Object -Unique
+        $configServers = $configServers | Where-Object { $_ } | Sort-Object -Unique
+
+        # Quelle 11: alle Server-Objekte unter CN=Sites (auch ohne NTDS-Settings)
+        $siteServers = @($servers | Where-Object { $_.DistinguishedName -like '*,CN=Sites,*' } | ForEach-Object { Convert-DCSourceName -Name $_.Name } | Where-Object { $_ } | Sort-Object -Unique)
 
         # Quelle 4: Replikationspartner
         $replPartners = @()
         try {
             $parts = Get-ADReplicationPartnerMetadata -Target $forest.RootDomain -Scope Forest -ErrorAction Stop
-            $replPartners = @($parts | Select-Object -ExpandProperty Server | Sort-Object -Unique)
+            $replPartners = @($parts | Select-Object -ExpandProperty Server | ForEach-Object { Convert-DCSourceName -Name $_ } | Where-Object { $_ } | Sort-Object -Unique)
         } catch {}
 
         # Quelle 5: FSMO
@@ -4050,26 +4260,34 @@ function Get-StaleDCObjects {
             $f = Get-ADForest -ErrorAction Stop; $d = Get-ADDomain -ErrorAction Stop
             $fsmo += $f.SchemaMaster, $f.DomainNamingMaster, $d.PDCEmulator, $d.RIDMaster, $d.InfrastructureMaster
         } catch {}
-        $fsmo = $fsmo | Where-Object { $_ } | Sort-Object -Unique
+        $fsmo = @($fsmo | ForEach-Object { Convert-DCSourceName -Name $_ } | Where-Object { $_ } | Sort-Object -Unique)
+
+        $readSrv = {
+            param([string]$QName)
+            try {
+                $rec = Resolve-DnsName -Name $QName -Type SRV -ErrorAction Stop -DnsOnly
+                @($rec | ForEach-Object { if ($_.PSObject.Properties['NameTarget']) { [string]$_.NameTarget } elseif ($_.PSObject.Properties['NameHost']) { [string]$_.NameHost } } | ForEach-Object { Convert-DCSourceName -Name $_ } | Where-Object { $_ } | Sort-Object -Unique)
+            } catch { @() }
+        }
 
         # Quelle 6: DNS SRV _ldap._tcp.dc._msdcs
-        $srvDCs = @()
-        try {
-            $srv = Resolve-DnsName -Name "_ldap._tcp.dc._msdcs.$($forest.RootDomain)" -Type SRV -ErrorAction Stop -DnsOnly
-            $srvDCs = @($srv | Select-Object -ExpandProperty NameHost | ForEach-Object { $_.TrimEnd('.') } | Sort-Object -Unique)
-        } catch {}
+        $srvDCs = @(& $readSrv "_ldap._tcp.dc._msdcs.$($forest.RootDomain)")
+        # Quelle 8-10: DNS SRV _gc, _kerberos, _kpasswd
+        $srvGC   = @(& $readSrv "_gc._tcp.$($forest.RootDomain)")
+        $srvKerb = @(& $readSrv "_kerberos._tcp.$($adDomain.DNSRoot)")
+        $srvKpw  = @(& $readSrv "_kpasswd._tcp.$($adDomain.DNSRoot)")
 
         # Quelle 7: DNS A-Eintraege fuer Live-DCs
         $dnsA = @()
-        foreach ($dc in $liveDCs) {
+        foreach ($dcHost in @(Get-ADDomainController -Filter * -ErrorAction SilentlyContinue | ForEach-Object { $_.HostName })) {
             try {
-                $a = Resolve-DnsName -Name $dc -Type A -ErrorAction Stop -DnsOnly
-                if ($a) { $dnsA += $dc }
+                $a = Resolve-DnsName -Name $dcHost -Type A -ErrorAction Stop -DnsOnly
+                if ($a) { $dnsA += (Convert-DCSourceName -Name $dcHost) }
             } catch {}
         }
 
         # Alle gefundenen Namen sammeln
-        $allNames = @($liveDCs + $ouComputers + $configServers + $replPartners + $fsmo + $srvDCs + $dnsA) | Sort-Object -Unique
+        $allNames = @($liveDCs + $ouComputers + $configServers + $replPartners + $fsmo + $srvDCs + $srvGC + $srvKerb + $srvKpw + $siteServers + $dnsA) | Sort-Object -Unique
 
         # Bewertung je Name
         foreach ($name in $allNames) {
@@ -4082,6 +4300,10 @@ function Get-StaleDCObjects {
                 InFSMO = $false
                 InSRV = $false
                 InDNS = $false
+                InGC = $false
+                InKerb = $false
+                InKpw = $false
+                InSites = $false
                 Issues = @()
             }
             if ($liveDCs -contains $name) { $row.Live = $true }
@@ -4091,6 +4313,10 @@ function Get-StaleDCObjects {
             if ($fsmo -contains $name) { $row.InFSMO = $true }
             if ($srvDCs -contains $name) { $row.InSRV = $true }
             if ($dnsA -contains $name) { $row.InDNS = $true }
+            if ($srvGC -contains $name) { $row.InGC = $true }
+            if ($srvKerb -contains $name) { $row.InKerb = $true }
+            if ($srvKpw -contains $name) { $row.InKpw = $true }
+            if ($siteServers -contains $name) { $row.InSites = $true }
 
             # Bewertung
             if ($row.Live) {
@@ -4098,6 +4324,9 @@ function Get-StaleDCObjects {
                 if (-not $row.InConfig) { $row.Issues += 'NTDS-Settings im Config-NC fehlen' }
                 if (-not $row.InDNS) { $row.Issues += 'Kein DNS-A-Eintrag' }
                 if (-not $row.InSRV) { $row.Issues += 'Kein DNS-SRV (_ldap._tcp)' }
+                if ($gcDCs -contains $name -and -not $row.InGC) { $row.Issues += 'Kein DNS-SRV (_gc._tcp)' }
+                if (-not $row.InKerb) { $row.Issues += 'Kein DNS-SRV (_kerberos._tcp)' }
+                if (-not $row.InKpw) { $row.Issues += 'Kein DNS-SRV (_kpasswd._tcp)' }
             }
             else {
                 # Nicht live, aber in anderen Quellen vorhanden -> verwaister DC
@@ -4107,6 +4336,11 @@ function Get-StaleDCObjects {
                 if ($row.InRepl) { $sources += 'Repl' }
                 if ($row.InFSMO) { $sources += 'FSMO' }
                 if ($row.InSRV) { $sources += 'SRV' }
+                if ($row.InGC) { $sources += 'SRV-GC' }
+                if ($row.InKerb) { $sources += 'SRV-KDC' }
+                if ($row.InKpw) { $sources += 'SRV-KPW' }
+                if ($row.InSites) { $sources += 'Sites' }
+                if ($row.InSites -and -not $row.InConfig) { $row.Issues += 'Server-Objekt in Sites ohne NTDS-Settings (kein DC)' }
                 if ($row.InDNS) { $sources += 'DNS' }
                 if ($sources.Count) {
                     $row.Issues += "Verwaist, aber in Quellen: $($sources -join ', ')"
@@ -4114,7 +4348,7 @@ function Get-StaleDCObjects {
             }
 
             # Ausgabe
-            $detail = "Live:$($row.Live) OU:$($row.InOU) Config:$($row.InConfig) Repl:$($row.InRepl) FSMO:$($row.InFSMO) SRV:$($row.InSRV) DNS:$($row.InDNS)"
+            $detail = "Live:$($row.Live) OU:$($row.InOU) Config:$($row.InConfig) Repl:$($row.InRepl) FSMO:$($row.InFSMO) SRV:$($row.InSRV) DNS:$($row.InDNS) GC:$($row.InGC) KDC:$($row.InKerb) KPW:$($row.InKpw) Sites:$($row.InSites)"
             if ($row.Issues.Count) { $detail += " | " + ($row.Issues -join '; ') }
             $risk = if ($row.Issues.Count -and $row.Live) { 'CRITICAL' } elseif ($row.Issues.Count -and -not $row.Live) { 'CRITICAL' } elseif ($row.Issues.Count) { 'WARN' } else { 'OK' }
 
@@ -4122,13 +4356,14 @@ function Get-StaleDCObjects {
                 Kind='DC'; Target=$name; Risk=$risk; Detail=$detail
                 Live=$row.Live; InOU=$row.InOU; InConfig=$row.InConfig; InRepl=$row.InRepl
                 InFSMO=$row.InFSMO; InSRV=$row.InSRV; InDNS=$row.InDNS
+                InGC=$row.InGC; InKerb=$row.InKerb; InKpw=$row.InKpw; InSites=$row.InSites
                 RowKey="DC|$name"
             }
         }
 
         # Quellen-Zusammenfassung
-        $qNames = @('Live','OU','Config','Repl','FSMO','SRV','DNS')
-        $qCounts = @($liveDCs.Count, $ouComputers.Count, $configServers.Count, $replPartners.Count, $fsmo.Count, $srvDCs.Count, $dnsA.Count)
+        $qNames = @('Live','OU','Config','Repl','FSMO','SRV','DNS','GC','KDC','KPW','Sites')
+        $qCounts = @($liveDCs.Count, $ouComputers.Count, $configServers.Count, $replPartners.Count, $fsmo.Count, $srvDCs.Count, $dnsA.Count, $srvGC.Count, $srvKerb.Count, $srvKpw.Count, $siteServers.Count)
         for ($i=0; $i -lt $qNames.Count; $i++) {
             $result += [pscustomobject]@{
                 Kind='Quelle'; Target=$qNames[$i]; Risk='OK'
@@ -4261,6 +4496,16 @@ function Test-Check-RCAudit {
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
 }
 
+function Convert-SPNHostName {
+    param([string]$HostName)
+    if ([string]::IsNullOrWhiteSpace($HostName)) { return $null }
+    $clean = $HostName.Trim().TrimEnd('.')
+    if (-not $clean) { return $null }
+    $clean = $clean.Split(':')[0]
+    if ($clean.Contains('.')) { $clean = $clean.Substring(0, $clean.IndexOf('.')) }
+    return $clean
+}
+
 function Get-SPNInventory {
     <#
     .SYNOPSIS
@@ -4291,7 +4536,7 @@ function Get-SPNInventory {
             foreach ($spn in $spns) {
                 $class = $spn.Split('/')[0]
                 $hostPart = $spn.Split('/')[1]
-                $spnHost = $hostPart.Split(':')[0]
+                $spnHost = Convert-SPNHostName -HostName $hostPart
                 if (-not $byClass.Contains($class)) { $byClass[$class] = 0 }; $byClass[$class]++
                 if (-not $byHost.Contains($spnHost)) { $byHost[$spnHost] = 0 }; $byHost[$spnHost]++
                 if (-not $byObj.Contains($o.samAccountName)) { $byObj[$o.samAccountName] = @() }; $byObj[$o.samAccountName] += $spn
@@ -4358,9 +4603,10 @@ function Get-SPNInventory {
 
         # DNS-Fails
         if ($dnsFail.Count -gt 0) {
+            $dnsFailText = @($dnsFail | Select-Object -Unique -First $maxRows) -join ', '
             $result += [pscustomobject]@{
                 Kind='DNSFehler'; Target='SPN-Hostnamen ohne DNS-Aufloesung'; Risk='WARN'
-                Detail=($dnsFail | Select-Object -Unique -First $maxRows -join ', '); RowKey='DNSFehler|SPN-Hosts'
+                Detail=$dnsFailText; RowKey='DNSFehler|SPN-Hosts'
             }
         }
     } catch {
@@ -4426,24 +4672,26 @@ function Get-EncryptionTypeDistribution {
         foreach ($os in $osDist.Keys | Sort-Object) {
             $d = $osDist[$os]
             $pct = if ($d.Total -gt 0) { [math]::Round($d.AES / $d.Total * 100, 1) } else { 0 }
+            $withoutAes = $d.Total - $d.AES
             $isModern = $modernOS | Where-Object { $os -like "*$_*" }
             $risk = 'OK'
             if ($isModern -and $d.AES -eq 0) { $risk = 'CRITICAL' }
             elseif ($pct -lt $Global:EncTypesAesCoverageMin) { $risk = 'WARN' }
             $result += [pscustomobject]@{
                 Kind='OS'; Target=$os; Risk=$risk
-                Detail="Total: $($d.Total), AES: $($d.AES) ($pct%)"
+                Detail="OS $($os): $($d.Total) Konten, $($d.AES) mit AES ($pct%), $withoutAes ohne AES"
                 RowKey="OS|$os"
             }
         }
 
         # Fazit: AES-Abdeckung
         $covPct = if ($total -gt 0) { [math]::Round($aesCount / $total * 100, 1) } else { 0 }
+        $withoutAes = $total - $aesCount
         $fazitRisk = if ($covPct -lt $Global:EncTypesAesCoverageMin) { 'CRITICAL' } else { 'OK' }
         $result += [pscustomobject]@{
             Kind='Fazit'; Target='AES-Abdeckung'; Risk=$fazitRisk
-            Detail="AES-Abdeckung: $covPct% ($aesCount / $total) – Schwelle: $Global:EncTypesAesCoverageMin%"
-            RowKey='Fazit|AES-Abdeckung'
+            Detail="AES-Abdeckung: $covPct% ($aesCount / $total Konten). $withoutAes Konten ohne AES; Schwelle: $Global:EncTypesAesCoverageMin%."
+            TotalAccounts=$total; AesAccounts=$aesCount; RowKey='Fazit|AES-Abdeckung'
         }
 
         # Moderne OS ohne AES als separater Befund
@@ -4476,9 +4724,18 @@ function Test-Check-EncryptionTypes {
     if ($rows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
     $critical = @($rows | Where-Object { $_.Risk -eq 'CRITICAL' })
     $warn = @($rows | Where-Object { $_.Risk -eq 'WARN' })
+    $fazit = @($data | Where-Object { $_.Kind -eq 'Fazit' -and $_.Target -eq 'AES-Abdeckung' } | Select-Object -First 1)
+    $totalAccounts = if ($fazit) { [int]$fazit.TotalAccounts } else { 0 }
+    $aesAccounts = if ($fazit) { [int]$fazit.AesAccounts } else { 0 }
+    $nonAesAccounts = $totalAccounts - $aesAccounts
     $findings = @($rows | Where-Object { $_.Risk -ne 'OK' } | ForEach-Object { $_.Detail })
     $status = if ($critical.Count) { 'CRITICAL' } elseif ($warn.Count) { 'WARN' } else { 'OK' }
-    $summary = "$($rows.Count) EncType-Positionen: OK $($rows.Count - $critical.Count - $warn.Count), WARN $($warn.Count), CRITICAL $($critical.Count)"
+    $summary = if ($totalAccounts -gt 0) {
+        "$totalAccounts Konten geprueft: $aesAccounts mit AES, $nonAesAccounts ohne AES; WARN $($warn.Count), CRITICAL $($critical.Count)"
+    }
+    else {
+        "$($rows.Count) EncType-Positionen: OK $($rows.Count - $critical.Count - $warn.Count), WARN $($warn.Count), CRITICAL $($critical.Count)"
+    }
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
 }
     
@@ -4516,13 +4773,22 @@ function Get-ConditionalForwarding {
             $dnsServers += $name
             $gf = @(); $cf = @(); $rh = @()
 
+            $cfErr = $null
             foreach ($t in (Get-DnsServerTargets -ComputerName $dc)) {
-                # Globale Forwarder
-                try { $gf = @(Get-DnsServerForwarder @t -ErrorAction Stop) } catch {}
-                # Conditional Forwarder
-                try { $cf = @(Get-DnsServerConditionalForwarderZone @t -ErrorAction Stop) } catch {}
-                # Root Hints
-                try { $rh = @(Get-DnsServerRootHint @t -ErrorAction Stop) } catch {}
+                try { $gf = @(Get-DnsServerForwarder @t -ErrorAction Stop); break } catch {}
+            }
+            foreach ($t in (Get-DnsServerTargets -ComputerName $dc)) {
+                try { $cf = @(Get-DnsServerZone @t -ErrorAction Stop | Where-Object { $_.ZoneType -eq 'Forwarder' }); $cfErr = $null; break } catch { $cfErr = $_.Exception.Message }
+            }
+            $rhErr = $null
+            foreach ($t in (Get-DnsServerTargets -ComputerName $dc)) {
+                try { $rh = @(Get-DnsServerRootHint @t -ErrorAction Stop); $rhErr = $null; break } catch { $rhErr = $_.Exception.Message }
+            }
+            if ($cfErr) {
+                $result += [pscustomobject]@{ Kind='Fehler'; Target='Conditional Forwarder'; Detail="CF-Abfrage auf $name fehlgeschlagen: $cfErr"; Risk='WARN' }
+            }
+            if ($rhErr) {
+                $result += [pscustomobject]@{ Kind='Fehler'; Target='Root Hints'; Detail="Root-Hint-Abfrage auf $name fehlgeschlagen: $rhErr"; Risk='WARN' }
             }
 
             # Globale Forwarder aggregieren
@@ -4533,16 +4799,20 @@ function Get-ConditionalForwarding {
 
             # Conditional Forwarder aggregieren
             foreach ($z in $cf) {
-                $name = $z.ZoneName
-                $master = @($z.MasterServers | ForEach-Object { $_.IPAddress } | Sort-Object -Unique)
+                $zoneName = [string]$z.ZoneName
+                $master = @($z.MasterServers | ForEach-Object { if ($_.PSObject.Properties['IPAddress']) { [string]$_.IPAddress } else { [string]$_ } } | Where-Object { $_ } | Sort-Object -Unique)
                 $mkey = $master -join ','
-                if (-not $allCondForwarders.ContainsKey($name)) { $allCondForwarders[$name] = @{} }
-                if (-not $allCondForwarders[$name].ContainsKey($mkey)) { $allCondForwarders[$name][$mkey] = @{ Masters=$master; Servers=@() } }
-                $allCondForwarders[$name][$mkey].Servers += $name
+                if (-not $allCondForwarders.ContainsKey($zoneName)) { $allCondForwarders[$zoneName] = @{} }
+                if (-not $allCondForwarders[$zoneName].ContainsKey($mkey)) { $allCondForwarders[$zoneName][$mkey] = @{ Masters=$master; Servers=@() } }
+                $allCondForwarders[$zoneName][$mkey].Servers += $name
             }
 
             # Root Hints aggregieren
-            $rhIPs = @($rh | ForEach-Object { $_.IPAddress } | Sort-Object -Unique)
+            $rhIPs = @($rh | ForEach-Object { $_.IPAddress } | ForEach-Object {
+                if ($_ -is [System.Net.IPAddress]) { $_.IPAddressToString }
+                elseif ($_.PSObject.Properties['RecordData']) { $_.RecordData.IPv4Address.IPAddressToString; $_.RecordData.IPv6Address.IPAddressToString }
+                else { [string]$_ }
+            } | Where-Object { $_ } | Sort-Object -Unique)
             $rhKey = $rhIPs -join ','
             if (-not $allRootHints.ContainsKey($rhKey)) { $allRootHints[$rhKey] = @{ IPs=$rhIPs; Servers=@() } }
             $allRootHints[$rhKey].Servers += $name
@@ -4661,6 +4931,22 @@ function Test-Check-ConditionalForwarders {
     $status = if ($critical.Count) { 'CRITICAL' } elseif ($warn.Count) { 'WARN' } else { 'OK' }
     $summary = "$($rows.Count) Forwarder-Positionen: OK $($rows.Count - $critical.Count - $warn.Count), WARN $($warn.Count), CRITICAL $($critical.Count)"
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
+}
+
+function ConvertFrom-SOAInterval {
+    param($Value, [ValidateSet('Hours','Days')][string]$Unit)
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [timespan]) { $sec = $Value.TotalSeconds }
+    else {
+        $sec = 0.0
+        if (-not [double]::TryParse([string]$Value, [ref]$sec)) {
+            $ts = [timespan]::Zero
+            if ([timespan]::TryParse([string]$Value, [ref]$ts)) { $sec = $ts.TotalSeconds } else { return $null }
+        }
+    }
+    if ($sec -le 0) { return $null }
+    $div = if ($Unit -eq 'Hours') { 3600.0 } else { 86400.0 }
+    [math]::Round($sec / $div, 2)
 }
 
 function Get-DNSZoneConfiguration {
@@ -5247,6 +5533,7 @@ function Get-DCSyncPermissions {
     $result = @()
     try {
         
+        $domain = Get-ADDomain -ErrorAction Stop
         $domainSID = $domain.DomainSID.Value
         $acl = Get-Acl -Path "AD:$($domain.DistinguishedName)" -ErrorAction Stop
         $rightMap = @{
@@ -5470,6 +5757,7 @@ function Get-MachineAccountQuota {
     $result = @()
     try {
         
+        $domain = Get-ADDomain -ErrorAction Stop
         $root = Get-ADObject -Identity $domain.DistinguishedName -Properties ms-DS-MachineAccountQuota -ErrorAction Stop
         $q = -1
         try { $q = [int]$root.'ms-DS-MachineAccountQuota' } catch {}
@@ -5555,6 +5843,7 @@ function Get-GPPPasswords {
     $result = @()
     try {
         
+        $domain = Get-ADDomain -ErrorAction Stop
         $polPath = "\\$($domain.DNSRoot)\SYSVOL\$($domain.DNSRoot)\Policies"
         if (-not (Test-Path -LiteralPath $polPath)) {
             $result += [pscustomobject]@{ Kind='Error'; Datei='(SYSVOL)'; Benutzer='-'; Detail="SYSVOL-Pfad nicht erreichbar: $polPath"; Risk='-' }
@@ -5604,6 +5893,7 @@ function Get-ProtectedUsersAudit {
     try {
         
         $forest = Get-ADForest -ErrorAction Stop
+        $domain = Get-ADDomain -ErrorAction Stop
         $domainSID = $domain.DomainSID.Value
         $rootDomainSID = $null
         try { $rootDomainSID = (Get-ADDomain -Identity $forest.RootDomain -ErrorAction Stop).DomainSID.Value } catch { $rootDomainSID = $domainSID }
@@ -6587,9 +6877,15 @@ function Invoke-AllAssessments {
         '52_AnonymousLDAP'           = { Test-Check-AnonymousLDAP           $Global:Results['52_AnonymousLDAP'] }
         '53_GPPPasswords'            = { Test-Check-GPPPasswords            $Global:Results['53_GPPPasswords'] }
         '54_ProtectedUsers'          = { Test-Check-ProtectedUsers          $Global:Results['54_ProtectedUsers'] }
+        '55_KMS'                     = { Test-Check-KMS                     $Global:Results['55_KMS'] }
+        '56_StaleDCs'                = { Test-Check-StaleDCs                $Global:Results['56_StaleDCs'] }
+        '57_RCAudit'                 = { Test-Check-RCAudit                 $Global:Results['57_RCAudit'] }
+        '58_SPNInventory'            = { Test-Check-SPNInventory            $Global:Results['58_SPNInventory'] }
+        '59_EncryptionTypes'         = { Test-Check-EncryptionTypes         $Global:Results['59_EncryptionTypes'] }
         '60_ZonenSOA'                = { Test-Check-ZonenSOA              $Global:Results['60_ZonenSOA'] }
         '61_Forwarder'               = { Test-Check-ConditionalForwarders  $Global:Results['61_Forwarder'] }
         '62_ReverseLookup'           = { Test-Check-ReverseLookupComplete  $Global:Results['62_ReverseLookup'] }
+        '63_SubnetReverse'           = { Test-Check-SubnetReverse          $Global:Results['63_SubnetReverse'] }
     }
     $toAssess = @()
     foreach ($k in $Global:ReportTitles.Keys) {
@@ -7108,7 +7404,7 @@ function Start-ADHealthCheck {
                                              '28_ADRecycleBin','29_TombstoneLifetime','30_Levels','31_GPO','35_Backup',
                                              '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                                              '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers') |
+                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse') |
                      Where-Object { $Global:SelectedChecks -contains $_ }
         $selInact = if ((Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')) { 1 } else { 0 }
         $Global:ProgressStats.TotalChecks = ($selPerDC.Count * $dcCountReachable) + $selForest.Count + $selInact + $dcCount
@@ -7183,8 +7479,15 @@ function Start-ADHealthCheck {
         if (Test-IsCheckSelected '52_AnonymousLDAP')           { $r = Invoke-TimedCheck -CheckKey '52_AnonymousLDAP'           -ScriptBlock { Get-AnonymousLDAP };           $Global:Results['52_AnonymousLDAP']           = @($r) }
         if (Test-IsCheckSelected '53_GPPPasswords')            { $r = Invoke-TimedCheck -CheckKey '53_GPPPasswords'            -ScriptBlock { Get-GPPPasswords };            $Global:Results['53_GPPPasswords']            = @($r) }
         if (Test-IsCheckSelected '54_ProtectedUsers')          { $r = Invoke-TimedCheck -CheckKey '54_ProtectedUsers'          -ScriptBlock { Get-ProtectedUsersAudit };     $Global:Results['54_ProtectedUsers']          = @($r) }
+        if (Test-IsCheckSelected '55_KMS')                     { $r = Invoke-TimedCheck -CheckKey '55_KMS'                     -ScriptBlock { Get-KMSConfiguration };        $Global:Results['55_KMS']                     = @($r) }
+        if (Test-IsCheckSelected '56_StaleDCs')                { $r = Invoke-TimedCheck -CheckKey '56_StaleDCs'                -ScriptBlock { Get-StaleDCObjects };          $Global:Results['56_StaleDCs']                = @($r) }
+        if (Test-IsCheckSelected '57_RCAudit')                 { $r = Invoke-TimedCheck -CheckKey '57_RCAudit'                 -ScriptBlock { Get-RCAudit };                 $Global:Results['57_RCAudit']                 = @($r) }
+        if (Test-IsCheckSelected '58_SPNInventory')            { $r = Invoke-TimedCheck -CheckKey '58_SPNInventory'            -ScriptBlock { Get-SPNInventory };            $Global:Results['58_SPNInventory']            = @($r) }
+        if (Test-IsCheckSelected '59_EncryptionTypes')         { $r = Invoke-TimedCheck -CheckKey '59_EncryptionTypes'         -ScriptBlock { Get-EncryptionTypeDistribution }; $Global:Results['59_EncryptionTypes']         = @($r) }
+        if (Test-IsCheckSelected '60_ZonenSOA')                { $r = Invoke-TimedCheck -CheckKey '60_ZonenSOA'                -ScriptBlock { Get-DNSZoneConfiguration };    $Global:Results['60_ZonenSOA']                = @($r) }
         if (Test-IsCheckSelected '61_Forwarder')               { $r = Invoke-TimedCheck -CheckKey '61_Forwarder'               -ScriptBlock { Get-ConditionalForwarding };      $Global:Results['61_Forwarder']               = @($r) }
         if (Test-IsCheckSelected '62_ReverseLookup')           { $r = Invoke-TimedCheck -CheckKey '62_ReverseLookup'           -ScriptBlock { Get-ReverseLookupCompleteness };    $Global:Results['62_ReverseLookup']           = @($r) }
+        if (Test-IsCheckSelected '63_SubnetReverse') { $r = Invoke-TimedCheck -CheckKey '63_SubnetReverse' -ScriptBlock { Get-SubnetReverseMatch }; $Global:Results['63_SubnetReverse'] = @($r) }
 
         # Inaktive Accounts - einmaliger Aufruf fuer 3 Check-Keys
         $wantInact = (Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')
@@ -7255,8 +7558,10 @@ function Start-ADHealthCheck {
 
         Write-Log "==================== AD HEALTH CHECK ENDE ====================" -Level OK -NoConsole
 
-        # Optional: HTML-Report automatisch oeffnen
-        # Start-Process $Global:HtmlReport
+        if (-not $NoInteractive -and [Environment]::UserInteractive -and (Test-Path $Global:HtmlReport)) {
+            $answer = Read-Host (Format-L10n -Text 'HTML-Report jetzt oeffnen? (J/N)')
+            if ($answer -match '^(j|y)') { Start-Process $Global:HtmlReport }
+        }
 
     } catch {
         Write-Progress -Activity "AD Health Check" -Completed

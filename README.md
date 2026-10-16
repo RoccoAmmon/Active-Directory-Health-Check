@@ -1,10 +1,10 @@
-﻿# 🛡️ Active Directory Health Check v2.9
+﻿# 🛡️ Active Directory Health Check v2.10
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.9-brightgreen.svg)]()
-[![Checks](https://img.shields.io/badge/Checks-61-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.10-brightgreen.svg)]()
+[![Checks](https://img.shields.io/badge/Checks-63-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
 > 🇩🇪 [Deutsch](#-deutsch) | 🇬🇧 [English](#-english)
@@ -18,7 +18,7 @@
 ### 📑 Inhaltsverzeichnis
 
 - [Features](#-features)
-- [Die 61 Checks](#-die-61-checks)
+- [Die 63 Checks](#-die-63-checks)
 - [Systemanforderungen](#-systemanforderungen)
 - [Installation](#-installation)
 - [Verwendung](#-verwendung)
@@ -35,7 +35,7 @@
 
 ### ✨ Features
 
-- 🎯 **61 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring)
+- 🎯 **63 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring)
 - 🖼️ **Moderne WPF-GUI** (Light Theme) mit Gruppen-Auswahl, Suite-Buttons und Ausgabepfad-Wahl
 - 🎨 **Farbcodierter HTML-Report** mit Executive Dashboard (OK / WARN / KRITISCH / INFO)
 - 📋 **Gesamtübersicht der Auffälligkeiten** – alle auffälligen Checks in einer Tabelle, nach Schwere sortiert, Befunde je Check gekürzt
@@ -52,7 +52,7 @@
 - 📝 **Ausführliches Logging** (`C:\ScriptLog`)
 - 🔧 **Modular aufgebaut** - einzelne Checks können gezielt ausgeführt werden
 
-### 📋 Die 61 Checks
+### 📋 Die 63 Checks
 
 ### 🏗️ DC-Basis-Infrastruktur
 | # | Check | Beschreibung |
@@ -68,6 +68,7 @@
 | 8 | **NTDS-Datenbank** | Größe, freier Festplattenplatz |
 | 60 | **DNS-Zonen: SOA & Replikation** | SOA-Refresh/-Expire gegen die Schwellwerte, `ReplicationScope`, `DynamicUpdate=None`, Zonenkonsistenz zwischen den DCs |
 | 61 | **DNS-Forwarder & Conditional Forwarder** | Globale Forwarder inkl. Root-Hints, CF-Ziel-IPs, nur teilweise verteilte (registry-basierte) CF und Weiterleitungsschleifen |
+| 62 | **DNS-Reverse-Lookup-Vollständigkeit** | Fehlende Reverse-Zonen zu allen A/AAAA-Records der Forward-Zonen |
 
 ### 🔒 Security: Netzwerk-Protokolle
 | # | Check | Beschreibung |
@@ -108,6 +109,7 @@
 | 30 | **Forest-/Domain-Level** | Functional Level |
 | 31 | **GPO-Health** | Sysvol/DS-Version-Mismatch |
 | 56 | **Tote DCs & DC-Verfügbarkeit** | Alte, verwaiste oder nie entfernte DC-Namen aus 7 Quellen plus Erreichbarkeit der DCs |
+| 63 | **AD-Subnetze vs. Reverse-Lookup-Zonen** | Subnetz → Site und passende Reverse-Zone, DNS-Netze ohne AD-Subnetz, Reverse-Zonen ohne Subnetz |
 
 ### 👤 Inaktive Accounts
 | # | Check | Beschreibung |
@@ -176,7 +178,7 @@ cd Active-Directory-Health-Check
 # Skript ausführen (interaktiv)
 .\AD_Health_Check.ps1
 
-# Oder automatisiert (alle 61 Checks)
+# Oder automatisiert (alle 63 Checks)
 .\AD_Health_Check.ps1 -FullRun
 ```
 
@@ -270,7 +272,13 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.9 (aktuell)
+### v2.10 (aktuell)
+- **Check 62: DNS-Reverse-Lookup-Vollständigkeit** – prüft zu allen A/AAAA-Records der Primary-Forward-Zonen, ob eine passende Reverse-Zone existiert; fehlende Zonen werden mit IPs und Hosts gemeldet
+- **Check 63: AD-Subnetze vs. Reverse-Lookup-Zonen** – listet alle AD-Subnetze mit Site und Reverse-Zone; meldet DNS-Netze ohne AD-Subnetz (A-Records aller Forward-Zonen) und Reverse-Zonen ohne Subnetz
+- **Behoben:** `$Global:ScriptVersion` stand noch auf 2.7 (Report-Kopf, Update-Check, Fenstertitel)
+- Version 2.10 (63 Checks)
+
+### v2.9
 - **6 neue Checks** (56–61): Tote DCs & DC-Verfügbarkeit (alte/verwaiste DC-Namen aus 7 Quellen), RC4 / LM Belege je DC, SPN-Inventar & verwaiste SPNs, Encryption-Type-Verteilung mit AES-Abdeckung, DNS-Zonen (SOA & Replikation), DNS-Forwarder & Conditional Forwarder
 - **Gesamtübersicht der Auffälligkeiten** im HTML-Report – eine Tabelle mit allen auffälligen Checks, nach Schwere sortiert, Befunde je Check auf `ReportOverviewFindingsMax` (5) gekürzt
 - Version 2.9 (61 Checks); 11 neue konfigurierbare Werte, u. a. `EncTypesAesCoverageMin`, `DNSZoneRefreshMaxHours`, `DNSZoneExpireMinDays`, `StaleDCWarnAgeDays`, `RC4EventDays` und die SPN-Inventar-Limits
@@ -353,7 +361,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 ### 📑 Table of Contents
 
 - [Features](#-features)
-- [The 61 Checks](#-the-61-checks)
+- [The 63 Checks](#-the-63-checks)
 - [System Requirements](#-system-requirements)
 - [Installation](#-installation)
 - [Usage](#-usage)
@@ -370,7 +378,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 
 ### ✨ Features
 
-- 🎯 **61 best-practice checks**, sorted thematically (DC fundamentals, security, structure, monitoring)
+- 🎯 **63 best-practice checks**, sorted thematically (DC fundamentals, security, structure, monitoring)
 - 🖼️ **Modern WPF GUI** (light theme) with group selection, suite buttons and output path selection
 - 🎨 **Color-coded HTML report** with executive dashboard (OK / WARN / CRITICAL / INFO)
 - 📋 **Overall summary of findings** – all flagged checks in a single table, sorted by severity, findings per check capped
@@ -387,7 +395,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 - 📝 **Verbose logging** (`C:\ScriptLog`)
 - 🔧 **Modular design** – individual checks can be run selectively
 
-### 📋 The 61 Checks
+### 📋 The 63 Checks
 
 ### 🏗️ DC Core Infrastructure
 | # | Check | Description |
@@ -403,6 +411,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 8 | **NTDS Database** | Size, free disk space |
 | 60 | **DNS zones: SOA & replication** | SOA refresh/expire against the thresholds, `ReplicationScope`, `DynamicUpdate=None`, zone consistency across the DCs |
 | 61 | **DNS forwarders & conditional forwarders** | Global forwarders incl. root hints, CF target IPs, partially distributed (registry-based) CF and forwarding loops |
+| 62 | **DNS reverse lookup completeness** | Missing reverse zones for all A/AAAA records of the forward zones |
 
 ### 🔒 Security: Network Protocols
 | # | Check | Description |
@@ -443,6 +452,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 30 | **Forest/Domain Level** | Functional level |
 | 31 | **GPO Health** | SYSVOL/DS version mismatch |
 | 56 | **Dead DCs & DC availability** | Old, orphaned or never removed DC names from 7 sources plus DC reachability |
+| 63 | **AD subnets vs. reverse lookup zones** | Subnet → site and matching reverse zone, DNS networks without an AD subnet, reverse zones without a subnet |
 
 ### 👤 Inactive Accounts
 | # | Check | Description |
@@ -511,7 +521,7 @@ cd Active-Directory-Health-Check
 # Run the script (interactive)
 .\AD_Health_Check.ps1
 
-# Or automated (all 61 checks)
+# Or automated (all 63 checks)
 .\AD_Health_Check.ps1 -FullRun
 ```
 
@@ -605,7 +615,13 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.9 (current)
+### v2.10 (current)
+- **Check 62: DNS reverse lookup completeness** – checks for all A/AAAA records of the primary forward zones whether a matching reverse zone exists; missing zones are reported with IPs and hosts
+- **Check 63: AD subnets vs. reverse lookup zones** – lists all AD subnets with site and reverse zone; reports DNS networks without an AD subnet (A records of all forward zones) and reverse zones without a subnet
+- **Fixed:** `$Global:ScriptVersion` was still 2.7 (report header, update check, window title)
+- Version 2.10 (63 checks)
+
+### v2.9
 - **6 new checks** (56–61): Dead DCs & DC availability (old/orphaned DC names from 7 sources), RC4 / LM evidence per DC, SPN inventory & stale SPNs, encryption type distribution with AES coverage, DNS zones (SOA & replication), DNS forwarders & conditional forwarders
 - **Overall summary of findings** in the HTML report – one table with all flagged checks, sorted by severity, findings per check capped at `ReportOverviewFindingsMax` (5)
 - Version 2.9 (61 checks); 11 new configurable values, among them `EncTypesAesCoverageMin`, `DNSZoneRefreshMaxHours`, `DNSZoneExpireMinDays`, `StaleDCWarnAgeDays`, `RC4EventDays` and the SPN inventory limits

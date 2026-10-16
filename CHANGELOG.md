@@ -9,6 +9,23 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [2.10] - 2026-10-16
+
+#### Hinzugefügt
+- **Check 62: DNS-Reverse-Lookup-Vollständigkeit** – sammelt alle A- und AAAA-Records aller Primary-Forward-Zonen und prüft je IP, ob eine passende Reverse-Zone (`in-addr.arpa` / `ip6.arpa`) existiert; fehlende Reverse-Zonen werden mit betroffenen IPs und Hosts gemeldet. Geprüft wird nur die Zone, nicht ob ein PTR-Record existiert
+  - Row-Kinds `Summary`, `MissingReverseZone`, `Fehler`
+- **Check 63: AD-Subnetze vs. Reverse-Lookup-Zonen** – listet alle AD-Subnetze mit zugeordneter Site und prüft die passende Reverse-Zone; zusätzlich werden DNS-Netze mit A-Records aus allen Primary-Forward-Zonen gemeldet, die kein AD-Subnetz haben, sowie Reverse-Zonen ohne Subnetz (INFO)
+  - WARN bei Subnetzen ohne Reverse-Zone oder Site, bei DNS-Netzen ohne AD-Subnetz und wenn gar keine Subnetze definiert sind
+  - Row-Kinds `Subnet`, `ZoneOhneSubnet`, `DNSNetzOhneSubnet`, `Fehler`, `Summary`
+  - Registriert in der GUI-Gruppe „AD-Topologie & Objekte“, im Forest-Bereich des Shell-Menüs und in den Auswahl-Listen
+
+#### Behoben
+- **Versionsvariable**: `$Global:ScriptVersion` stand noch auf 2.7 und wurde im Report-Kopf, im Update-Check und im Fenstertitel falsch angezeigt; Skript-Header (54 → 63 Checks) ebenfalls angeglichen
+
+#### Geändert
+- Version auf 2.10 erhöht (63 Checks)
+- README und Wiki auf 63 Checks und Version 2.10 aktualisiert
+
 ### [2.9] - 2026-10-15
 
 #### Hinzugefügt
@@ -231,6 +248,23 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [2.10] - 2026-10-16
+
+#### Added
+- **Check 62: DNS reverse lookup completeness** – collects all A and AAAA records of all primary forward zones and checks per IP whether a matching reverse zone (`in-addr.arpa` / `ip6.arpa`) exists; missing reverse zones are reported with the affected IPs and hosts. Only the zone is checked, not whether a PTR record exists
+  - Row kinds `Summary`, `MissingReverseZone`, `Fehler`
+- **Check 63: AD subnets vs. reverse lookup zones** – lists all AD subnets with their assigned site and checks the matching reverse zone; additionally reports DNS networks with A records from all primary forward zones that have no AD subnet, as well as reverse zones without a subnet (INFO)
+  - WARN for subnets without a reverse zone or site, for DNS networks without an AD subnet and when no subnets are defined at all
+  - Row kinds `Subnet`, `ZoneOhneSubnet`, `DNSNetzOhneSubnet`, `Fehler`, `Summary`
+  - Registered in the GUI group "AD topology & objects", in the forest section of the shell menu and in the selection lists
+
+#### Fixed
+- **Version variable**: `$Global:ScriptVersion` was still 2.7 and was shown incorrectly in the report header, the update check and the window title; script header (54 → 63 checks) aligned as well
+
+#### Changed
+- Version bumped to 2.10 (63 checks)
+- README and wiki updated to 63 checks and version 2.10
 
 ### [2.9] - 2026-10-15
 
