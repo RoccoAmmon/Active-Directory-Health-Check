@@ -988,12 +988,21 @@ function Start-UpdateCheckAsync {
         try {
             [Net.ServicePointManager]::SecurityProtocol =
                 [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-            $latest = Invoke-RestMethod -Uri $url -TimeoutSec 3 -ErrorAction Stop | Select-Object -First 1
+            # Bis zu 3 Versuche mit kurzer Pause: GitLab liefert gelegentlich 503/Timeout
+            # zurueck - das Resultat landet im eigenen Runspace, der Benutzer wartet nicht
+            $latest = $null
+            for ($attempt = 1; $attempt -le 3 -and -not $latest; $attempt++) {
+                if ($attempt -gt 1) { Start-Sleep -Milliseconds 750 }
+                try { $latest = Invoke-RestMethod -Uri $url -TimeoutSec 3 -ErrorAction Stop | Select-Object -First 1 } catch { }
+            }
             if ($latest) {
                 $out.LatestTag = [string]$latest.tag_name
                 if ($latest._links -and $latest._links.self) { $out.Url = [string]$latest._links.self }
-                if ($out.LatestTag -match 'v?(?<ver>\d+(?:\.\d+)*)' -and
-                    ([version]$matches['ver']) -gt ([version]$currentTag)) { $out.UpdateAvailable = $true }
+                # Nur die Ziffern vergleichen: [version]'v2.10' wirft eine Ausnahme, die im
+                # catch landet - sonst bliebe UpdateAvailable immer $false und das Badge nie sichtbar
+                $newVer = if ($out.LatestTag -match '(?<ver>\d+(?:\.\d+)*)') { [version]$matches['ver'] } else { $null }
+                $curVer = if ($currentTag -match '(?<ver>\d+(?:\.\d+)*)') { [version]$matches['ver'] } else { $null }
+                if ($newVer -and $curVer -and $newVer -gt $curVer) { $out.UpdateAvailable = $true }
             }
         } catch { }
         return $out
