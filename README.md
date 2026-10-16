@@ -11,6 +11,12 @@
 
 > Ein umfassendes PowerShell-Skript zur automatisierten Überprüfung der Gesundheit und Sicherheit einer Active Directory-Umgebung. Mit Best-Practice-Bewertung, farbcodiertem HTML-Report und CSV-Export.
 
+![Auswahlfenster des AD Health Check mit Update-Badge](docs/gui-screenshot.png)
+
+> **DE:** Auswahlfenster der GUI: thematische Check-Gruppen, Suite-Buttons und frei wählbarer Ausgabepfad – hier bewusst als **Testversion v2.9** (eine Version unter dem neuesten Release), damit das klickbare Badge „Update verfügbar: v2.10" neben der Versionsnummer sichtbar wird. Beim Start wird die GitLab-Releases-API geprüft (Timeout 3 s), ein Klick auf das Badge öffnet die Release-Seite; abschaltbar mit `-NoUpdateCheck`. Das Versions-Badge im Kopf dieser README zeigt weiterhin die echte Release-Version 2.10.
+>
+> **EN:** GUI selection window: thematic check groups, suite buttons and freely selectable output path – deliberately shown as **test version v2.9** (one version below the latest release) so that the clickable badge “Update verfügbar: v2.10” (German UI) next to the version number becomes visible. On startup the GitLab releases API is queried (3 s timeout), clicking the badge opens the release page; can be disabled with `-NoUpdateCheck`. The version badge at the top of this README still shows the actual release version 2.10.
+
 ---
 
 ## 🇩🇪 Deutsch
@@ -42,7 +48,7 @@
 - 📊 **CSV-Export** aller Check-Ergebnisse
 - 🖥️ **Interaktives Startmenü** als Fallback für Konsolen-Betrieb
 - ⚡ **Parameter-basierte Ausführung** für Scheduled Tasks / Automatisierung
-- 🆕 **Update-Anzeige gegen GitLab-Releases** – beim Start wird das neueste Release geprüft (Timeout 3 s): klickbares Badge neben der Versionsnummer („🔄 Update verfügbar: v2.8"), in der Konsole/Skript eine Infozeile; unterdrückbar per `-NoUpdateCheck`
+- 🆕 **Update-Anzeige gegen GitLab-Releases** – beim Start wird das neueste Release geprüft (Timeout 3 s): klickbares Badge neben der Versionsnummer („Update verfügbar: v2.10"), in der Konsole/Skript eine Infozeile; unterdrückbar per `-NoUpdateCheck`
 - 📁 **Frei wählbarer Ausgabepfad** per GUI oder `-OutputPath` Parameter
 - 🔍 **DCDiag mit Einzeltest-Parsing** (DE/EN sprachunabhängig)
 - 🔄 **Loopback-Erkennung** für lokale DCs (nutzt `localhost` statt FQDN)
@@ -385,7 +391,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 - 📊 **CSV export** of all check results
 - 🖥️ **Interactive start menu** as a fallback for console operation
 - ⚡ **Parameter-based execution** for scheduled tasks / automation
-- 🆕 **Update check against GitLab releases** – the latest release is queried at startup (3 s timeout): clickable badge next to the version number (“🔄 Update available: v2.8”), an info line in console/script mode; can be suppressed with `-NoUpdateCheck`
+- 🆕 **Update check against GitLab releases** – the latest release is queried at startup (3 s timeout): clickable badge next to the version number (“Update available: v2.10”), an info line in console/script mode; can be suppressed with `-NoUpdateCheck`
 - 📁 **Freely selectable output path** via the GUI or the `-OutputPath` parameter
 - 🔍 **DCDiag with per-test parsing** (language-independent, DE/EN)
 - 🔄 **Loopback detection** for local DCs (uses `localhost` instead of the FQDN)

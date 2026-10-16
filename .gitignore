@@ -10,6 +10,9 @@ NOTES.md
 *.tmp
 *.ba
 
+# Testversion fuer GUI-Screenshots (Skill gui-screenshot)
+*_Test.ps1
+
 
 # VS Code (optional)
 .vscode/
