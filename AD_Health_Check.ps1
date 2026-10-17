@@ -150,7 +150,7 @@ $Global:CheckGroups = [ordered]@{
     'Identity & Kerberos' = @(
         '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
         '20_KerberoastingRisk','38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','43_LAPS','44_AccountsWithoutAES',
-        '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA','54_ProtectedUsers','57_RCAudit','58_SPNInventory','59_EncryptionTypes'
+        '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA','54_ProtectedUsers','57_RCAudit','58_SPNInventory','65_ComputerSPNs','66_UserSPNs','59_EncryptionTypes'
     )
     'AD-Topologie & Objekte' = @(
         '25_Sites','26_Subnets','63_SubnetReverse','27_Trusts','28_ADRecycleBin','29_TombstoneLifetime',
@@ -232,6 +232,8 @@ $Global:ReportTitles = [ordered]@{
     '57_RCAudit'                 = 'RC4 / LM Belege je DC'
     '58_SPNInventory'            = 'SPN-Inventar & Verwaiste SPNs'
     '59_EncryptionTypes'         = 'Encryption-Types: Verteilung & AES-Abdeckung'
+    '65_ComputerSPNs'            = 'Computer-SPNs (ein SPN je Zeile)'
+    '66_UserSPNs'                = 'Benutzer-, MSA- und gMSA-SPNs (ein SPN je Zeile)'
 }
 
 #endregion
@@ -814,6 +816,23 @@ keine IPv6-Adresse aktiv=>no active IPv6 address
 Unterschiedliche IPv6-Konfigurationen zwischen DCs: =>Different IPv6 configurations between DCs: 
 IPv6-Konfiguration lesbar und im Forest konsistent=>IPv6 configuration readable and consistent across the forest
 Auffaelligkeit(en) - Details siehe unten=>finding(s) - see details below
+# ---- SPN-Export je Zeile (Checks 65/66) ----
+Computer-SPNs (ein SPN je Zeile)=>Computer SPNs (one SPN per row)
+Benutzer-, MSA- und gMSA-SPNs (ein SPN je Zeile)=>User, MSA and gMSA SPNs (one SPN per row)
+ObjektName=>Object name
+DNSHostname=>DNS hostname
+DistinguishedName=>Distinguished name
+Betriebssystem=>Operating system
+KennwortLaeuftNieAb=>Password never expires
+Dienstklasse=>Service class
+Dublette=>Duplicate
+Benutzerkonto=>User account
+(ohne Dienstklasse)=>(no service class)
+eine Zeile je SPN=>one row per SPN
+SPN(s) auf deaktivierten Konten=>SPN(s) on disabled accounts
+(Bewertung siehe Check 58)=>(assessment see check 58)
+(Bewertung siehe Check 38)=>(assessment see check 38)
+als Dublette gekennzeichnet=>marked as a duplicate
 '@
 
 # --- Tabelle + Regex aufbauen -------------------------------------------------
@@ -1677,7 +1696,7 @@ function Show-ScriptMenu {
                 '32b_InactiveComputers','32c_PasswordNeverExpires','35_Backup','38_SPNDuplicates',
                 '39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                 '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6')
+                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs')
     $sec = @('09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
              '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
              '20_KerberoastingRisk','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
@@ -3856,7 +3875,7 @@ function Get-ReverseLookupCompleteness {
             foreach ($m in $missing) {
                 $result += [pscustomobject]@{
                     Kind='MissingReverseZone'; Target=$m.MissingReverseZone; Status='WARN'
-                    Detail="Forward-Zone: {0}, IP: {1}, Host: {2}" -f $m.ZoneName, $m.IP, $m.HostName
+                    Detail="Fehlende Reverse-Zone: {0} -> Forward-Zone: {1}, IP: {2}, Host: {3}" -f $m.MissingReverseZone, $m.ZoneName, $m.IP, $m.HostName
                     Risk='WARN'
                 }
             }
@@ -3878,7 +3897,14 @@ function Test-Check-ReverseLookupComplete {
     param($data)
     if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
     $summary = @($data | Where-Object { $_.Kind -eq 'Summary' })
-    if ($summary.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Zusammenfassung' }
+    if ($summary.Count -eq 0) {
+        # Kein Summary, aber eine Fehlerzeile (z.B. kein erreichbarer DC) -> WARN statt NODATA
+        $errors = @($data | Where-Object { $_.Kind -eq 'Fehler' -and $_.Detail })
+        if ($errors.Count -gt 0) {
+            return New-Assessment -OverallStatus 'WARN' -Summary $errors[0].Detail -Findings @($errors | ForEach-Object { $_.Detail })
+        }
+        return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Zusammenfassung'
+    }
     $s = $summary[0]
     if ($s.Status -eq 'OK') {
         return New-Assessment -OverallStatus 'OK' -Summary $s.Detail -Findings @()
@@ -4675,6 +4701,147 @@ function Test-Check-SPNInventory {
     $status = if ($warn.Count) { 'WARN' } else { 'OK' }
     $summary = "$($rows.Count) SPN-Positionen: OK $($rows.Count - $warn.Count), WARN $($warn.Count)"
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
+}
+
+function Get-SPNRawObjects {
+    <#
+    .SYNOPSIS
+        Liefert alle AD-Objekte mit gesetztem servicePrincipalName (einmalige Abfrage je Lauf).
+    .NOTES
+        Ergebnis wird in $Global:SPNRawCache gehalten, damit Computer- und
+        Benutzer-SPN-Export dieselbe LDAP-Abfrage nutzen.
+    #>
+    if ($Global:SPNRawCache) { return $Global:SPNRawCache }
+    $props = @('servicePrincipalName','sAMAccountName','userAccountControl','objectClass',
+               'distinguishedName','operatingSystem','dNSHostName','userPrincipalName')
+    $Global:SPNRawCache = @(Get-ADObject -LDAPFilter '(servicePrincipalName=*)' -Properties $props -ErrorAction Stop)
+    return $Global:SPNRawCache
+}
+
+function Get-SPNObjectKind {
+    <#
+    .SYNOPSIS
+        Klassifiziert ein Objekt fuer die SPN-Ausgabe: Computer, gMSA, MSA oder Benutzerkonto.
+    .NOTES
+        Reihenfolge ist entscheidend: gMSA und MSA tragen zusaetzlich die objectClass
+        'user'. Ohne diese Vorpruefung wuerden sie stillschweigend als klassische
+        Benutzerkonten erscheinen.
+    #>
+    param($ObjectClass)
+    $oc = @($ObjectClass)
+    if ($oc -contains 'msDS-GroupManagedServiceAccount') { return 'gMSA' }
+    if ($oc -contains 'msDS-ManagedServiceAccount')      { return 'MSA' }
+    if ($oc -contains 'computer')                        { return 'Computer' }
+    return 'Benutzerkonto'
+}
+
+function Get-SPNEntriesByObjectType {
+    <#
+    .SYNOPSIS
+        SPN-Inventar mit einer Ausgabezeile je SPN, filterbar nach Objekttyp.
+    .NOTES
+        - Ergaenzt Check 58 (Inventar nach Klasse/Host/Objekt) um die Rohsicht
+          "ein SPN je Zeile" und ist unabhaengig von den anderen SPN-Ausgaben erzeugbar.
+        - ObjectType: Computer | User | MSA | gMSA | All
+          'User' umfasst klassische Benutzerkonten, MSA und gMSA; die Klassifizierung
+          steht in der Spalte ObjektTyp und ist im CSV damit separat filterbar.
+        - Keine Mehrfachwerte in einer Zelle: jeder SPN bekommt eine eigene Zeile.
+        - Spalte 'Dublette' nutzt dieselbe Regel wie Check 38 (gleicher SPN auf mehr
+          als einem Objekt). Der Sicherheitsbefund bleibt dort, hier nur Kennzeichnung.
+        - Rein lesende AD-Abfrage.
+    #>
+    param([ValidateSet('Computer','User','MSA','gMSA','All')][string]$ObjectType = 'All')
+
+    $rows = @()
+    try {
+        $all = @(Get-SPNRawObjects)
+        $disabledFlag = 2
+
+        # Dublettenregel wie Check 38: gleicher SPN (case-insensitiv) auf mehr als einem Objekt
+        $spnUse = @{}
+        foreach ($o in $all) {
+            foreach ($spn in @($o.servicePrincipalName)) {
+                if (-not $spn) { continue }
+                $k = "$spn".ToLowerInvariant()
+                if (-not $spnUse.ContainsKey($k)) { $spnUse[$k] = 0 }
+                $spnUse[$k]++
+            }
+        }
+
+        foreach ($o in $all) {
+            $spns = @(@($o.servicePrincipalName) | Where-Object { $_ })
+            if ($spns.Count -eq 0) { continue }
+
+            $kind = Get-SPNObjectKind -ObjectClass $o.objectClass
+            if ($ObjectType -eq 'Computer' -and $kind -ne 'Computer') { continue }
+            if ($ObjectType -eq 'User'     -and $kind -eq 'Computer') { continue }
+            if ($ObjectType -eq 'MSA'      -and $kind -ne 'MSA')      { continue }
+            if ($ObjectType -eq 'gMSA'     -and $kind -ne 'gMSA')     { continue }
+
+            $uac = 0
+            if ($null -ne $o.userAccountControl) { try { $uac = [int]$o.userAccountControl } catch { $uac = 0 } }
+            $aktiviert = if (($uac -band $disabledFlag) -ne 0) { 'Nein' } else { 'Ja' }
+            $os   = if ($o.operatingSystem)   { [string]$o.operatingSystem }   else { '-' }
+            $upn  = if ($o.userPrincipalName) { [string]$o.userPrincipalName } else { '-' }
+            $dnsH = if ($o.dNSHostName)       { [string]$o.dNSHostName }       else { '-' }
+            # Kennwort laeuft nie ab: nur bei Konten (Computer tragen kein Kennwort dieser Art)
+            $pwdNever = '-'
+            if ($kind -ne 'Computer') { $pwdNever = if (($uac -band 0x10000) -ne 0) { 'Ja' } else { 'Nein' } }
+
+            foreach ($spn in ($spns | Sort-Object)) {
+                $cls = if ("$spn" -match '/') { "$spn".Split('/')[0] } else { '(ohne Dienstklasse)' }
+                $dup = if ($spnUse["$spn".ToLowerInvariant()] -gt 1) { 'Ja' } else { 'Nein' }
+                $rows += [pscustomobject]@{
+                    ObjektTyp          = $kind
+                    ObjektName         = [string]$o.sAMAccountName
+                    DNSHostname        = $dnsH
+                    UPN                = $upn
+                    DistinguishedName  = [string]$o.distinguishedName
+                    Aktiviert          = $aktiviert
+                    Betriebssystem     = $os
+                    KennwortLaeuftNieAb = $pwdNever
+                    SPN                = "$spn"
+                    Dienstklasse       = $cls
+                    Dublette           = $dup
+                    RowKey             = "$kind|$($o.sAMAccountName)|$spn"
+                }
+            }
+        }
+    }
+    catch {
+        Write-Log "SPN-Export ($ObjectType): $_" -Level WARN -NoConsole
+    }
+    return @($rows | Sort-Object ObjektTyp, ObjektName, Dienstklasse, SPN)
+}
+
+function Test-Check-SPNEntries {
+    <#
+    .SYNOPSIS
+        Bewertet den SPN-Export (eine Zeile je SPN). Inventar, keine Sicherheitsbewertung.
+    .NOTES
+        Bewusst ohne Sicherheitsurteil: SPNs auf deaktivierten Konten, unerwartete
+        Klassen und DNS-Fehler werden weiterhin in Check 58 bewertet, Dubletten in
+        Check 38. Diese Bewertung zaehlt und klassifiziert nur.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine SPNs gefunden' }
+    $rows = @($data)
+    $byType = @{}; $byClass = @{}
+    $disabled = 0; $dupes = 0
+    foreach ($r in $rows) {
+        if (-not $byType.ContainsKey($r.ObjektTyp)) { $byType[$r.ObjektTyp] = 0 }
+        $byType[$r.ObjektTyp]++
+        if (-not $byClass.ContainsKey($r.Dienstklasse)) { $byClass[$r.Dienstklasse] = 0 }
+        $byClass[$r.Dienstklasse]++
+        if ($r.Aktiviert -eq 'Nein') { $disabled++ }
+        if ($r.Dublette -eq 'Ja') { $dupes++ }
+    }
+    $typeTxt  = @($byType.Keys  | Sort-Object | ForEach-Object { "$_=$($byType[$_])" })  -join ', '
+    $classTxt = @($byClass.Keys | Sort-Object | ForEach-Object { "$_=$($byClass[$_])" }) -join ', '
+    $findings = @()
+    if ($disabled -gt 0) { $findings += "$disabled SPN(s) auf deaktivierten Konten (Bewertung siehe Check 58)" }
+    if ($dupes -gt 0)    { $findings += "$dupes SPN(s) als Dublette gekennzeichnet (Bewertung siehe Check 38)" }
+    New-Assessment -OverallStatus 'INFO' -Summary "$($rows.Count) SPN(s), eine Zeile je SPN - Typen: $typeTxt | Dienstklassen: $classTxt" -Findings $findings
 }
 
 function Get-EncryptionTypeDistribution {
@@ -7228,6 +7395,8 @@ function Invoke-AllAssessments {
         '62_ReverseLookup'           = { Test-Check-ReverseLookupComplete  $Global:Results['62_ReverseLookup'] }
         '63_SubnetReverse'           = { Test-Check-SubnetReverse          $Global:Results['63_SubnetReverse'] }
         '64_IPv6'                    = { Test-Check-IPv6                    $Global:Results['64_IPv6'] }
+        '65_ComputerSPNs'            = { Test-Check-SPNEntries              $Global:Results['65_ComputerSPNs'] }
+        '66_UserSPNs'                = { Test-Check-SPNEntries              $Global:Results['66_UserSPNs'] }
     }
     $toAssess = @()
     foreach ($k in $Global:ReportTitles.Keys) {
@@ -7747,7 +7916,7 @@ function Start-ADHealthCheck {
                                              '28_ADRecycleBin','29_TombstoneLifetime','30_Levels','31_GPO','35_Backup',
                                              '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                                              '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6') |
+                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs') |
                      Where-Object { $Global:SelectedChecks -contains $_ }
         $selInact = if ((Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')) { 1 } else { 0 }
         $Global:ProgressStats.TotalChecks = ($selPerDC.Count * $dcCountReachable) + $selForest.Count + $selInact + $dcCount
@@ -7832,6 +8001,8 @@ function Start-ADHealthCheck {
         if (Test-IsCheckSelected '62_ReverseLookup')           { $r = Invoke-TimedCheck -CheckKey '62_ReverseLookup'           -ScriptBlock { Get-ReverseLookupCompleteness };    $Global:Results['62_ReverseLookup']           = @($r) }
         if (Test-IsCheckSelected '63_SubnetReverse') { $r = Invoke-TimedCheck -CheckKey '63_SubnetReverse' -ScriptBlock { Get-SubnetReverseMatch }; $Global:Results['63_SubnetReverse'] = @($r) }
         if (Test-IsCheckSelected '64_IPv6')                     { $r = Invoke-TimedCheck -CheckKey '64_IPv6'                     -ScriptBlock { Get-IPv6ConfigurationStatus };    $Global:Results['64_IPv6']                    = @($r) }
+        if (Test-IsCheckSelected '65_ComputerSPNs')            { $r = Invoke-TimedCheck -CheckKey '65_ComputerSPNs'            -ScriptBlock { Get-SPNEntriesByObjectType -ObjectType 'Computer' }; $Global:Results['65_ComputerSPNs'] = @($r) }
+        if (Test-IsCheckSelected '66_UserSPNs')                { $r = Invoke-TimedCheck -CheckKey '66_UserSPNs'                -ScriptBlock { Get-SPNEntriesByObjectType -ObjectType 'User' };     $Global:Results['66_UserSPNs']     = @($r) }
 
         # Inaktive Accounts - einmaliger Aufruf fuer 3 Check-Keys
         $wantInact = (Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')
