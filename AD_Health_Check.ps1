@@ -101,6 +101,9 @@ $Global:SPNMaxObjSpns        = 20
 $Global:SPNMaxDnsProbe       = 200
 $Global:SPNInventoryMaxRows  = 200
 $Global:SPNUserAccountClassWarn = @('User','InetOrgPerson')
+# PKI / Zertifikatsinfrastruktur (Checks 67-71)
+$Global:PkiCertWarnDays      = 90
+$Global:PkiEndpointTimeoutSec = 10
 # Reverse-Lookup-Zonen, die der DNS-Dienst automatisch anlegt (Default).
 $Global:DNSDefaultReverseZones = @('0.in-addr.arpa','127.in-addr.arpa','255.in-addr.arpa')
 # Systemzonen, die der DNS-Dienst selbst verwaltet.
@@ -146,6 +149,9 @@ $Global:CheckGroups = [ordered]@{
         '09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity',
         '15_WindowsFirewall','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
         '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords'
+    )
+    'PKI & Zertifikate' = @(
+        '67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints'
     )
     'Identity & Kerberos' = @(
         '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
@@ -234,6 +240,11 @@ $Global:ReportTitles = [ordered]@{
     '59_EncryptionTypes'         = 'Encryption-Types: Verteilung & AES-Abdeckung'
     '65_ComputerSPNs'            = 'Computer-SPNs (ein SPN je Zeile)'
     '66_UserSPNs'                = 'Benutzer-, MSA- und gMSA-SPNs (ein SPN je Zeile)'
+    '67_PKICA'                   = 'PKI: Enterprise-CA-Inventar'
+    '68_PKIRoots'                = 'PKI: Vertrauenswuerdige Stamm- und Zwischenzertifikate'
+    '69_PKITemplates'            = 'PKI: Zertifikatvorlagen & Veroeffentlichung'
+    '70_PKIWlanMail'             = 'PKI: Bezuege zu WLAN und Mailverschluesselung'
+    '71_PKIEndpoints'            = 'PKI: Sperrlisten- & Veroeffentlichungsendpunkte'
 }
 
 #endregion
@@ -833,6 +844,123 @@ SPN(s) auf deaktivierten Konten=>SPN(s) on disabled accounts
 (Bewertung siehe Check 58)=>(assessment see check 58)
 (Bewertung siehe Check 38)=>(assessment see check 38)
 als Dublette gekennzeichnet=>marked as a duplicate
+# ---- PKI / Zertifikatsinfrastruktur (Checks 67-71) ----
+PKI & Zertifikate=>PKI & certificates
+PKI: Enterprise-CA-Inventar=>PKI: enterprise CA inventory
+PKI: Vertrauenswuerdige Stamm- und Zwischenzertifikate=>PKI: trusted root and intermediate certificates
+PKI: Zertifikatvorlagen & Veroeffentlichung=>PKI: certificate templates & publication
+PKI: Bezuege zu WLAN und Mailverschluesselung=>PKI: references to wireless and mail encryption
+PKI: Sperrlisten- & Veroeffentlichungsendpunkte=>PKI: revocation & publication endpoints
+Objekt=>Object
+ZertifikatSubject=>Certificate subject
+Aussteller=>Issuer
+GueltigBis=>Valid until
+RestTage=>Days left
+VorlagenAnzahl=>Template count
+AusstellerImAd=>Issuer published in AD
+Erreichbarkeit=>Reachability
+Quelle=>Source
+GpoName=>GPO name
+Fingerabdruck=>Thumbprint
+Duplikat=>Duplicate
+Auffaellig=>Conspicuous
+VeroeffentlichteCAs=>Published on CAs
+GueltigkeitTage=>Validity in days
+Bereich=>Area
+Bezug=>Reference
+Endpunkt=>Endpoint
+nicht pruefbar=>not verifiable
+nicht erreichbar=>not reachable
+Datei vorhanden=>File present
+Datei fehlt=>File missing
+LDAP (nicht pruefbar)=>LDAP (not verifiable)
+Ja (heuristisch)=>Yes (heuristic)
+Freigabe CertEnroll erreichbar=>CertEnroll share reachable
+Freigabe CertEnroll nicht erreichbar=>CertEnroll share not reachable
+Nicht pruefbar (kein DNSHostname am CA-Objekt)=>Not verifiable (no DNSHostname on the CA object)
+Tag(en)=>day(s)
+laeuft in=>expires in
+abgelaufen=>expired
+veroeffentlicht=>published
+CA-Zertifikat=>CA certificate
+Zertifikatvorlage=>certificate template
+Zertifikatvorlage(n)=>certificate template(s)
+Sperrliste=>revocation list
+Sperrlisten=>revocation lists
+Heuristik=>heuristic
+Plausibilitaet=>plausibility
+Genehmigungssignatur=>approval signature
+Vorlage kann nicht beantragt werden=>template cannot be requested
+Zuordnung=>assignment
+nicht automatisiert pruefbar=>not verifiable automatically
+Zeile(n)=>row(s)
+CA-Zertifikat(e)=>CA certificate(s)
+Stamm-/Zwischenzertifikat(e)=>root/intermediate certificate(s)
+Zuordnungszeile(n)=>assignment row(s)
+Endpunkt-/Sperrlisten-Zeile(n)=>endpoint/revocation row(s)
+nur diese Ebene bewertet=>only this level was assessed
+nur CA-Ebene, Stammzertifikate/Vorlagen/WLAN/Mail/Sperrlisten siehe Checks 68-71=>CA level only, see checks 68-71 for root certificates/templates/wireless/mail/revocation lists
+Quelle AD: =>Source AD: 
+Zeile(n), Quelle GPO: =>row(s), source GPO: 
+davon an keiner CA veroeffentlicht: =>of which published on no CA: 
+nur die Vorlagenebene bewertet=>only the template level was assessed
+Zuordnung Vorlage<->WLAN/Mail ist heuristisch, keine abschliessende Bewertung=>the template-to-wireless/mail assignment is heuristic, not a definitive assessment
+nicht pruefbare Endpunkte bleiben als INFO/WARN sichtbar und werden nicht als OK gefuehrt=>non-verifiable endpoints stay visible as INFO/WARN and are never reported as OK
+AD-Abfrage=>AD query
+GPO-Reports=>GPO reports
+Zertifikatsbezug=>certificate reference
+Richtlinien=>policies
+Vorlagen=>templates
+Enterprise-CA=>Enterprise CA
+Configuration-Naming-Context nicht lesbar=>configuration naming context not readable
+CA-Inventar nicht lesbar: =>CA inventory not readable: 
+Vorlagen nicht lesbar: =>templates not readable: 
+Vorlagen nicht lesbar, Zuordnung daher nicht geprueft: =>templates not readable, assignment therefore not checked: 
+CA-Zertifikate nicht lesbar: =>CA certificates not readable: 
+GPO-Reports nicht lesbar: =>GPO reports not readable: 
+Weder AD-Zertifikate noch GPO-Reports lesbar (GroupPolicy-Modul/Rechte pruefen)=>neither AD certificates nor GPO reports are readable (check the GroupPolicy module and permissions)
+CA-Zertifikat nicht als X509-Zertifikat lesbar=>CA certificate not readable as an X509 certificate
+CA-Zertifikat nicht lesbar - Endpunkte koennen nicht ermittelt werden=>CA certificate not readable - endpoints cannot be determined
+kein cACertificate am CA-Objekt vorhanden=>no cACertificate present on the CA object
+kein cACertificate am Objekt=>no cACertificate on the object
+kein Objekt im Container=>no object in the container
+Veroeffentlichungsfreigabe CertEnroll ist nicht erreichbar=>CertEnroll publication share is not reachable
+ausstellendes Zertifikat ist nicht unter CN=Certification Authorities veroeffentlicht=>issuing certificate is not published under CN=Certification Authorities
+keine Enterprise-Zertifizierungsstelle im AD eingetragen (CN=Enrollment Services leer)=>no enterprise certification authority registered in AD (CN=Enrollment Services is empty)
+enthielt keine Sperrlisten-Adresse=>contained no revocation list address
+enthaelt keine Sperrlisten-Adresse (CDP-Extension fehlt)=>contains no revocation list address (CDP extension missing)
+keine im AD veroeffentlichte Sperrliste gefunden (CN=<CA>,CN=CDP)=>no revocation list published in AD found (CN=<CA>,CN=CDP)
+keine Basis-Sperrliste veroeffentlicht=>no base revocation list published
+im AD veroeffentlichte Sperrlisten: Basis-CRL =>revocation lists published in AD: base CRL 
+, Delta-CRL =>, delta CRL 
+das Ablaufdatum (NextUpdate) ist ohne zusaetzliche Werkzeuge nicht lesbar und daher nicht geprueft=>the expiration date (NextUpdate) cannot be read without additional tools and was therefore not checked
+gleicher Fingerabdruck liegt mehrfach vor (mehrere Quellen)=>identical thumbprint occurs more than once (multiple sources)
+GPO-Reports nicht lesbar - per Richtlinie verteilte Zertifikate sind NICHT geprueft=>GPO reports not readable - certificates distributed by policy were NOT checked
+GPO-Reports nicht lesbar - Richtlinienbezug fuer WLAN/EFS wurde NICHT geprueft=>GPO reports not readable - the policy reference for wireless/EFS was NOT checked
+Zertifikatsinhalt im GPO-Report nicht lesbar=>certificate content in the GPO report not readable
+Public-Key-Richtlinie vorhanden, aber ohne auswertbares Stammzertifikat=>public key policy present, but without an evaluable root certificate
+an keiner CA veroeffentlicht (Vorlage kann nicht beantragt werden)=>published on no CA (the template cannot be requested)
+Name-Flag EnrolleeSuppliesSubject mit Client-/Smartcard-EKU und ohne Genehmigungssignatur=>name flag EnrolleeSuppliesSubject with client/smartcard EKU and without an approval signature
+Gueltigkeitsdauer der Vorlage nicht lesbar (pKIExpirationPeriod)=>template validity period not readable (pKIExpirationPeriod)
+CA-Objekt referenziert diese Vorlage, es existiert aber kein Vorlagenobjekt im AD=>the CA object references this template, but no template object exists in AD
+keine WLAN-Richtlinie in den GPO-Reports gefunden=>no wireless policy found in the GPO reports
+WLAN-Richtlinie vorhanden; Profilinhalte und Servervalidierung wurden in diesem Check nicht inhaltlich ausgewertet=>wireless policy present; profile content and server validation were not evaluated in this check
+keine Public-Key-Richtlinie in den GPO-Reports gefunden=>no public key policy found in the GPO reports
+keine Vorlage mit EKU Client Authentication gefunden - ein zertifikatsbasierter WLAN-Zugang (802.1X/EAP-TLS) ist damit nicht zuordenbar=>no template with the Client Authentication EKU found - a certificate-based wireless access (802.1X/EAP-TLS) cannot be assigned
+keine Vorlage mit EKU Secure Email gefunden - S/MIME ist damit nicht zuordenbar=>no template with the Secure Email EKU found - S/MIME cannot be assigned
+Vorlage mit EKU Client Authentication - der WLAN-Client-Bezug wird ueber diese EKU hergestellt (Plausibilitaet, keine Gewissheit)=>template with the Client Authentication EKU - the wireless client reference is established via this EKU (plausibility, not certainty)
+Vorlage mit EKU Secure Email - Grundlage fuer S/MIME; eine tatsaechliche Mailverschluesselung ist nicht pruefbar=>template with the Secure Email EKU - basis for S/MIME; actual mail encryption is not verifiable
+Vorlage mit EKU Encrypting File System=>template with the Encrypting File System EKU
+Public-Key-Richtlinie mit EFS-Einstellungen, aber ohne Wiederherstellungsagent=>public key policy with EFS settings, but without a recovery agent
+EFS-Wiederherstellungsagent per Richtlinie hinterlegt; der Zertifikatsinhalt des Agenten ist kein einfaches DER-Zertifikat und wird nicht als Zertifikat ausgewertet=>EFS recovery agent stored by policy; the agent certificate content is not a plain DER certificate and is not evaluated as a certificate
+Wiederherstellungsagent ist abgelaufen (Ablauf: =>recovery agent has expired (expires: 
+Wiederherstellungsagent laeuft in =>recovery agent expires in 
+Ausgestellt von: =>Issued by: 
+Ausstelleradresse aus dem CA-Zertifikat =>issuer address from the CA certificate 
+Sperrlisten-Adresse aus dem CA-Zertifikat =>revocation list address from the CA certificate 
+keine der =>none of the 
+HTTP-Sperrlistenadressen ist erreichbar - Sperrlistenpruefung ist damit nicht moeglich=>HTTP revocation list addresses is reachable - revocation checking is therefore not possible
+Sperrlistenadresse=>revocation list address
 '@
 
 # --- Tabelle + Regex aufbauen -------------------------------------------------
@@ -1696,7 +1824,7 @@ function Show-ScriptMenu {
                 '32b_InactiveComputers','32c_PasswordNeverExpires','35_Backup','38_SPNDuplicates',
                 '39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                 '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs')
+                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints')
     $sec = @('09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
              '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
              '20_KerberoastingRisk','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
@@ -4844,6 +4972,1078 @@ function Test-Check-SPNEntries {
     New-Assessment -OverallStatus 'INFO' -Summary "$($rows.Count) SPN(s), eine Zeile je SPN - Typen: $typeTxt | Dienstklassen: $classTxt" -Findings $findings
 }
 
+# =====================================================================
+# PKI / Zertifikatsinfrastruktur (Checks 67-71) - ausschliesslich lesende Pruefungen
+# =====================================================================
+
+function Get-PkiPaths {
+    <#
+    .SYNOPSIS
+        Ermittelt die AD-Pfade der Public-Key-Services-Container aus dem RootDSE.
+    .NOTES
+        - Die CA-Objekte liegen unter CN=Enrollment Services (Klasse pKIEnrollmentService),
+          die CA- und Stammzertifikate dagegen unter CN=Certification Authorities.
+        - Rueckgabe $null, wenn der Configuration-Naming-Context nicht lesbar ist.
+    #>
+    try {
+        $rootDse = Get-ADRootDSE -ErrorAction Stop
+        $cfg = [string]$rootDse.configurationNamingContext
+        if ([string]::IsNullOrWhiteSpace($cfg)) { return $null }
+        $pk = "CN=Public Key Services,CN=Services,$cfg"
+        return [pscustomobject]@{
+            ConfigNC             = $cfg
+            PkSvc                = $pk
+            EnrollmentServices   = "CN=Enrollment Services,$pk"
+            CertAuthorities      = "CN=Certification Authorities,$pk"
+            CertificateTemplates = "CN=Certificate Templates,$pk"
+            NtAuthCertificates   = "CN=NTAuthCertificates,$pk"
+            Aia                  = "CN=AIA,$pk"
+            Cdp                  = "CN=CDP,$pk"
+        }
+    } catch { return $null }
+}
+
+function Get-PkiBinaryValues {
+    <#
+    .SYNOPSIS
+        Normalisiert einen mehrwertigen Binaerwert (z. B. cACertificate) zu einer Liste von Bytearrays.
+    .NOTES
+        cACertificate, certificateRevocationList und deltaRevocationList sind binaer und
+        mehrwertig. PowerShell behandelt ein einzelnes Bytearray als Sammlung von Bytes:
+        @($wert) liefert dann einzelne Bytes statt eines Zertifikats. Deshalb wird hier
+        ausdruecklich zwischen 'ein Bytearray' und 'Liste von Bytearrays' unterschieden.
+    #>
+    param($Value)
+    if ($null -eq $Value) { return @() }
+    if ($Value -is [byte[]]) { return ,$Value }
+    $items = @($Value)
+    if ($items.Count -eq 0) { return @() }
+    $first = $items[0]
+    if (-not ($first -is [byte[]]) -and -not ($first -is [string])) {
+        # flaches Bytearray (z.B. Object[] einzelner Bytes) -> genau ein Zertifikat
+        return ,([byte[]]$items)
+    }
+    $out = @()
+    foreach ($v in $items) {
+        if ($null -eq $v) { continue }
+        if ($v -is [byte[]]) { $out += ,$v }
+        else { $out += ,([byte[]]$v) }
+    }
+    return @($out)
+}
+
+function ConvertFrom-PkiCertificateBlob {
+    <#
+    .SYNOPSIS
+        Wandelt rohe Zertifikatsbytes in ein X509Certificate2-Objekt um.
+    .NOTES
+        cACertificate und certificateRevocationList sind binaer und mehrwertig.
+        Ohne @(,$bytes) verflacht PowerShell das Bytearray; X509Certificate2 kann
+        es dann nicht parsen. Zu kurze Werte werden als nicht lesbar gemeldet.
+    #>
+    param($Raw)
+    if ($null -eq $Raw) { return $null }
+    try {
+        $bytes = [byte[]]$Raw
+        if ($bytes.Length -lt 100) { return $null }
+        return (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$bytes))
+    } catch { return $null }
+}
+
+function Get-PkiCertificateSummary {
+    <#
+    .SYNOPSIS
+        Fasst ein X509Certificate2-Objekt fuer die PKI-Berichte zusammen.
+    #>
+    param($Certificate)
+    if (-not $Certificate) { return $null }
+    $restTage = 0
+    try { $restTage = [int][math]::Floor(($Certificate.NotAfter - (Get-Date)).TotalDays) } catch { $restTage = 0 }
+    return [pscustomobject]@{
+        Subject    = [string]$Certificate.Subject
+        Issuer     = [string]$Certificate.Issuer
+        Thumbprint = [string]$Certificate.Thumbprint
+        GueltigBis = $Certificate.NotAfter.ToString('yyyy-MM-dd')
+        RestTage   = $restTage
+    }
+}
+
+function Get-PkiNormalizedName {
+    <#
+    .SYNOPSIS
+        Normalisiert einen Distinguished Name fuer den Vergleich (Leerraum, Gross-/Kleinschreibung).
+    #>
+    param([string]$Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return '' }
+    return (($Name -replace '\s+', '').ToLowerInvariant())
+}
+
+function Format-PkiEkuList {
+    <#
+    .SYNOPSIS
+        Uebersetzt Extended-Key-Usage-OIDs in Klartext (RFC 5280 / Microsoft-OIDs).
+    .NOTES
+        Unbekannte OIDs werden als 'unbekannt (<OID>)' ausgegeben, nicht verschwiegen.
+    #>
+    param($Oid)
+    $map = @{
+        '1.3.6.1.5.5.7.3.1'        = 'Server Authentication'
+        '1.3.6.1.5.5.7.3.2'        = 'Client Authentication'
+        '1.3.6.1.5.5.7.3.3'        = 'Code Signing'
+        '1.3.6.1.5.5.7.3.4'        = 'Secure Email (S/MIME)'
+        '1.3.6.1.5.5.7.3.8'        = 'Time Stamping'
+        '1.3.6.1.5.5.7.3.9'        = 'OCSP Signing'
+        '1.3.6.1.4.1.311.20.2.2'   = 'Smart Card Logon'
+        '1.3.6.1.4.1.311.10.3.4'   = 'Encrypting File System'
+        '1.3.6.1.4.1.311.10.3.4.1' = 'File Recovery (EFS DRA)'
+        '1.3.6.1.4.1.311.20.2.1'   = 'Certificate Request Agent'
+        '2.5.29.37.0'              = 'Any Extended Key Usage'
+    }
+    $names = @()
+    foreach ($o in @($Oid)) {
+        $k = ([string]$o).Trim()
+        if ([string]::IsNullOrWhiteSpace($k)) { continue }
+        if ($map.ContainsKey($k)) { $names += $map[$k] } else { $names += "unbekannt ($k)" }
+    }
+    if ($names.Count -eq 0) { return '-' }
+    return ($names -join '; ')
+}
+
+function Test-PkiEkuPresent {
+    <#
+    .SYNOPSIS
+        Prueft, ob eine OID in der EKU-Liste einer Vorlage enthalten ist.
+    #>
+    param($Oid, [string]$Wanted)
+    foreach ($o in @($Oid)) { if (([string]$o).Trim() -eq $Wanted) { return $true } }
+    return $false
+}
+
+function ConvertFrom-PkiFileTimePeriod {
+    <#
+    .SYNOPSIS
+        Wandelt einen ADCS-Periodenwert (8-Byte-FILETIME mit negativem Vorzeichen) in Tage um.
+    .NOTES
+        pKIExpirationPeriod/pKIOverlapPeriod liegen als 8 Byte vor; die Zahl ist negativ,
+        die Einheit 100 Nanosekunden. Nicht lesbare Werte ergeben $null.
+    #>
+    param($Value)
+    if ($null -eq $Value) { return $null }
+    try {
+        $bytes = [byte[]]$Value
+        if ($bytes.Length -ne 8) { return $null }
+        $ticks = [BitConverter]::ToInt64($bytes, 0)
+        $span = [TimeSpan]::FromTicks([math]::Abs($ticks))
+        return [int][math]::Round($span.TotalDays)
+    } catch { return $null }
+}
+
+function Get-PkiExtensionUrls {
+    <#
+    .SYNOPSIS
+        Liest Adressen (URIs) aus einer Zertifikatsextension.
+    .NOTES
+        Das .NET Framework decodiert CRL-Verteilungs- und AIA-Extensions in
+        Format() nicht, sondern gibt den Rohinhalt aus. Deshalb werden die
+        Adressen zusaetzlich direkt aus den Rohbytes gelesen (die URIs stehen
+        dort als IA5String). Es wird nichts geschrieben oder abgerufen.
+    #>
+    param($Extension)
+    $out = @()
+    if (-not $Extension) { return @() }
+    try {
+        $text = [string]$Extension.Format($true)
+        if (-not [string]::IsNullOrWhiteSpace($text)) {
+            foreach ($m in [regex]::Matches($text, '(?i)\b(?:https?|ldaps?|file|ftp)://[^\s"<>]+')) { $out += $m.Value }
+        }
+    } catch { }
+    if ($out.Count -eq 0) {
+        try {
+            $raw = [byte[]]$Extension.RawData
+            $latin = [System.Text.Encoding]::GetEncoding(28591).GetString($raw)
+            foreach ($m in [regex]::Matches($latin, '(?i)(?:https?|ldaps?|file|ftp)://[^\x00-\x20"<>\\]+')) { $out += $m.Value }
+        } catch { }
+    }
+    return @($out | Sort-Object -Unique)
+}
+
+function Get-PkiCertificateUrls {
+    <#
+    .SYNOPSIS
+        Liest die CRL- (CDP) und AIA-URLs aus einem Zertifikat.
+    .NOTES
+        Extension-OIDs nach RFC 5280: CDP 2.5.29.31, AIA 1.3.6.1.5.5.7.1.1.
+        Die Adressen werden ueber Get-PkiExtensionUrls aus der Extension gelesen.
+        Fehlt die Extension, sind beide Listen leer - das ist kein OK, sondern
+        'nicht ermittelbar' und wird im Check so gemeldet.
+    #>
+    param($Certificate)
+    $cdp = @(); $aia = @()
+    if (-not $Certificate) { return [pscustomobject]@{ Cdp = @(); Aia = @() } }
+    foreach ($ext in @($Certificate.Extensions)) {
+        if (-not $ext) { continue }
+        $oid = [string]$ext.Oid.Value
+        if ($oid -ne '2.5.29.31' -and $oid -ne '1.3.6.1.5.5.7.1.1') { continue }
+        $uris = @(Get-PkiExtensionUrls -Extension $ext)
+        if ($uris.Count -eq 0) { continue }
+        if ($oid -eq '2.5.29.31') { $cdp += $uris } else { $aia += $uris }
+    }
+    return [pscustomobject]@{ Cdp = @($cdp | Sort-Object -Unique); Aia = @($aia | Sort-Object -Unique) }
+}
+
+function Test-PkiEndpointReachable {
+    <#
+    .SYNOPSIS
+        Prueft einen CRL-/AIA-Endpunkt ausschliesslich lesend auf Erreichbarkeit.
+    .NOTES
+        - HTTP/HTTPS: zuerst HEAD, bei Fehlschlag GET (jeweils mit Timeout).
+        - file:// wird lokal geprueft.
+        - LDAP-Endpunkte werden als 'nicht pruefbar' ausgewiesen, statt einen Erfolg
+          zu behaupten; ein Abruf waere eine eigene Verzeichnisoperation.
+        - Es wird nichts veroeffentlicht oder geschrieben.
+    #>
+    param([string]$Url)
+    if ([string]::IsNullOrWhiteSpace($Url)) { return 'nicht pruefbar' }
+    $timeout = [int]$Global:PkiEndpointTimeoutSec
+    if ($timeout -le 0) { $timeout = 10 }
+    if ($Url -match '^(?i)https?://') {
+        try {
+            $r = Invoke-WebRequest -Uri $Url -Method Head -TimeoutSec $timeout -UseBasicParsing -ErrorAction Stop
+            return "HTTP $([int]$r.StatusCode)"
+        } catch {
+            try {
+                $r2 = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec $timeout -UseBasicParsing -ErrorAction Stop
+                return "HTTP $([int]$r2.StatusCode)"
+            } catch { return 'nicht erreichbar' }
+        }
+    }
+    if ($Url -match '^(?i)file://') {
+        $local = ''
+        try { $local = ([uri]$Url).LocalPath } catch { return 'nicht pruefbar' }
+        if (Test-Path -LiteralPath $local) { return 'Datei vorhanden' }
+        return 'Datei fehlt'
+    }
+    if ($Url -match '^(?i)ldap://') { return 'LDAP (nicht pruefbar)' }
+    return 'nicht pruefbar'
+}
+
+function Get-PkiGpoReportXml {
+    <#
+    .SYNOPSIS
+        Liefert die XML-Reports aller Gruppenrichtlinien (einmal je Lauf, gecacht).
+    .NOTES
+        Get-GPOReport -All verlangt eine Zieldatei; der Report wird daher kurzzeitig
+        in %TEMP% abgelegt und sofort wieder geloescht. Es findet keine Aenderung an
+        den Richtlinien statt. Fehlt das GroupPolicy-Modul, ist das Ergebnis $null.
+    #>
+    if ($Global:PkiGpoReportLoaded) { return $Global:PkiGpoReportXml }
+    $Global:PkiGpoReportLoaded = $true
+    $Global:PkiGpoReportXml = $null
+    $tmp = Join-Path $env:TEMP ("adhealth-gpo-{0}.xml" -f ([guid]::NewGuid().ToString('N')))
+    try {
+        Get-GPOReport -All -ReportType Xml -Path $tmp -ErrorAction Stop
+        $Global:PkiGpoReportXml = [xml](Get-Content -LiteralPath $tmp -Raw -ErrorAction Stop)
+    } catch {
+        Write-Log "PKI-GPO-Reports nicht lesbar: $_" -Level WARN -NoConsole
+    } finally {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
+    return $Global:PkiGpoReportXml
+}
+
+function Get-PkiXmlChildText {
+    <#
+    .SYNOPSIS
+        Liest den Textinhalt eines Unterelements eines XML-Knotens (namensraumtolerant).
+    #>
+    param($Node, [string]$Name)
+    if (-not $Node) { return '' }
+    try {
+        $child = $Node.SelectSingleNode("*[local-name()='$Name']")
+        if ($child) { return [string]$child.InnerText }
+    } catch { return '' }
+    return ''
+}
+
+function ConvertFrom-PkiHexString {
+    <#
+    .SYNOPSIS
+        Wandelt eine Hexadezimalzeichenkette (z.B. Zertifikatsinhalt im GPO-Report) in Bytes.
+    .NOTES
+        Der Zertifikatsinhalt in GPO-Reports ist hexadezimal kodiert, nicht Base64.
+    #>
+    param([string]$Hex)
+    if ([string]::IsNullOrWhiteSpace($Hex)) { return $null }
+    try {
+        $clean = $Hex -replace '\s', ''
+        if ($clean.Length -lt 100 -or ($clean.Length % 2) -ne 0) { return $null }
+        $bytes = New-Object byte[] ([int]($clean.Length / 2))
+        for ($i = 0; $i -lt $bytes.Length; $i++) {
+            $bytes[$i] = [Convert]::ToByte($clean.Substring($i * 2, 2), 16)
+        }
+        return ,$bytes
+    } catch { return $null }
+}
+
+function Get-PkiStatusCounts {
+    <#
+    .SYNOPSIS
+        Zaehlt die Statuswerte aller Ergebniszeilen eines PKI-Teilchecks.
+    #>
+    param($Rows)
+    $c = @{ 'OK' = 0; 'INFO' = 0; 'WARN' = 0; 'CRITICAL' = 0 }
+    foreach ($r in @($Rows)) {
+        $s = [string]$r.Status
+        if ($c.ContainsKey($s)) { $c[$s] = $c[$s] + 1 }
+    }
+    return $c
+}
+
+function Get-PkiRowFlags {
+    <#
+    .SYNOPSIS
+        Erzeugt die Zeilen-Hervorhebungen (RowFlags) aus dem Status der Ergebniszeilen.
+    #>
+    param($Rows)
+    $rf = @{}
+    foreach ($r in @($Rows)) {
+        if (-not $r.RowKey) { continue }
+        if ($r.Status -eq 'CRITICAL') { $rf[$r.RowKey] = 'CRITICAL' }
+        elseif ($r.Status -eq 'WARN') { $rf[$r.RowKey] = 'WARN' }
+    }
+    return $rf
+}
+
+function Get-PkiFindings {
+    <#
+    .SYNOPSIS
+        Sammelt Befunde aus den PKI-Zeilen - ausschliesslich WARN/CRITICAL, nie Erfolge.
+    #>
+    param($Rows)
+    $out = @()
+    foreach ($r in @($Rows)) {
+        if ($r.Status -ne 'WARN' -and $r.Status -ne 'CRITICAL') { continue }
+        $h = [string]$r.Hinweis
+        if ([string]::IsNullOrWhiteSpace($h) -or $h -eq '-') { $h = [string]$r.Status }
+        $out += ("{0}: {1}" -f $r.Objekt, $h)
+    }
+    return @($out)
+}
+
+function Format-PkiStatusSummary {
+    <#
+    .SYNOPSIS
+        Baut die Zusammenfassung eines PKI-Teilchecks - ohne Gesamturteil zur PKI.
+    #>
+    param($Rows, [string]$Scope)
+    $c = Get-PkiStatusCounts -Rows $Rows
+    return "$(@($Rows).Count) Zeile(n) ${Scope}: $($c['OK']) OK | $($c['INFO']) INFO | $($c['WARN']) WARN | $($c['CRITICAL']) KRITISCH"
+}
+
+function Get-PkiAssessmentStatus {
+    <#
+    .SYNOPSIS
+        Leitet den Gesamtstatus eines PKI-Teilchecks aus dem Status seiner Zeilen ab.
+    #>
+    param($Rows)
+    $c = Get-PkiStatusCounts -Rows $Rows
+    if ($c['CRITICAL'] -gt 0) { return 'CRITICAL' }
+    if ($c['WARN'] -gt 0) { return 'WARN' }
+    if ($c['OK'] -gt 0) { return 'OK' }
+    if ($c['INFO'] -gt 0) { return 'INFO' }
+    return 'NODATA'
+}
+
+function Test-PkiUnavailableRow {
+    <#
+    .SYNOPSIS
+        Erzeugt eine einzelne Zeile fuer den Fall, dass eine PKI-Datenquelle nicht lesbar ist.
+    .NOTES
+        Wird bewusst als WARN und nicht als OK gefuehrt: eine nicht lesbare Quelle
+        darf nie als Erfolg erscheinen.
+    #>
+    param([string]$Objekt, [string]$Hinweis, [string]$RowKey)
+    return [pscustomobject]@{
+        Objekt = $Objekt; Status = 'WARN'; Hinweis = $Hinweis; RowKey = $RowKey
+    }
+}
+
+function Get-PkiCaData {
+    <#
+    .SYNOPSIS
+        Liest die Enterprise-CAs samt Zertifikaten und veroeffentlichten Vorlagen (einmal je Lauf).
+    .NOTES
+        Cache in $Global:PkiCaCache: CA-Inventar (Check 67) und Endpunktpruefung
+        (Check 71) nutzen dieselbe Abfrage. Rein lesend.
+    #>
+    if ($Global:PkiCaCache) { return $Global:PkiCaCache }
+    $out = [pscustomobject]@{ Ok = $false; Cas = @(); RootNames = @(); Paths = $null; Error = '' }
+    try {
+        $paths = Get-PkiPaths
+        if (-not $paths) { throw 'Configuration-Naming-Context nicht lesbar' }
+        $out.Paths = $paths
+        $out.Cas = @(Get-ADObject -SearchBase $paths.EnrollmentServices `
+                        -LDAPFilter '(objectClass=pKIEnrollmentService)' `
+                        -Properties displayName,cn,dNSHostName,cACertificate,certificateTemplates -ErrorAction Stop)
+        $rootNames = @()
+        try {
+            foreach ($r in @(Get-ADObject -SearchBase $paths.CertAuthorities `
+                                -LDAPFilter '(objectClass=certificationAuthority)' `
+                                -Properties cACertificate -ErrorAction Stop)) {
+                foreach ($raw in @(Get-PkiBinaryValues -Value $r.cACertificate)) {
+                    $c = ConvertFrom-PkiCertificateBlob -Raw $raw
+                    if ($c) { $rootNames += (Get-PkiNormalizedName -Name $c.Subject) }
+                }
+            }
+        } catch { $rootNames = @() }
+        $out.RootNames = @($rootNames)
+        $out.Ok = $true
+    } catch {
+        $out.Error = "$_"
+        Write-Log "PKI-CA-Daten nicht lesbar: $_" -Level WARN -NoConsole
+    }
+    $Global:PkiCaCache = $out
+    return $out
+}
+
+function Get-PkiTemplateData {
+    <#
+    .SYNOPSIS
+        Liest alle Zertifikatvorlagen und ihre Veroeffentlichung an den CAs (einmal je Lauf).
+    .NOTES
+        Cache in $Global:PkiTemplateCache: Vorlagenpruefung (Check 69) und
+        WLAN-/Mail-Zuordnung (Check 70) nutzen dieselbe Abfrage. Rein lesend.
+    #>
+    if ($Global:PkiTemplateCache) { return $Global:PkiTemplateCache }
+    $out = [pscustomobject]@{ Ok = $false; Templates = @(); PublishedBy = @{}; Missing = @(); Error = '' }
+    try {
+        $paths = Get-PkiPaths
+        if (-not $paths) { throw 'Configuration-Naming-Context nicht lesbar' }
+        $props = @('displayName','cn','pKIExtendedKeyUsage','pKIExpirationPeriod','pKIOverlapPeriod',
+                   'msPKI-Certificate-Name-Flag','msPKI-Enrollment-Flag','msPKI-Template-Schema-Version','msPKI-RA-Signature')
+        $out.Templates = @(Get-ADObject -SearchBase $paths.CertificateTemplates `
+                            -LDAPFilter '(objectClass=pKICertificateTemplate)' `
+                            -Properties $props -ErrorAction Stop)
+        $pub = @{}
+        $cas = @(Get-ADObject -SearchBase $paths.EnrollmentServices `
+                    -LDAPFilter '(objectClass=pKIEnrollmentService)' `
+                    -Properties displayName,cn,certificateTemplates -ErrorAction Stop)
+        foreach ($ca in $cas) {
+            $caName = [string]$ca.displayName
+            if ([string]::IsNullOrWhiteSpace($caName)) { $caName = [string]$ca.cn }
+            foreach ($t in @($ca.certificateTemplates)) {
+                $key = [string]$t
+                if ([string]::IsNullOrWhiteSpace($key)) { continue }
+                if (-not $pub.ContainsKey($key)) { $pub[$key] = @() }
+                $pub[$key] = @($pub[$key]) + $caName
+            }
+        }
+        $out.PublishedBy = $pub
+        $knownCn = @($out.Templates | ForEach-Object { [string]$_.cn })
+        $out.Missing = @($pub.Keys | Where-Object { $knownCn -notcontains $_ } | Sort-Object)
+        $out.Ok = $true
+    } catch {
+        $out.Error = "$_"
+        Write-Log "PKI-Vorlagen nicht lesbar: $_" -Level WARN -NoConsole
+    }
+    $Global:PkiTemplateCache = $out
+    return $out
+}
+
+function Get-PkiCAInventory {
+    <#
+    .SYNOPSIS
+        Inventar der Enterprise-Zertifizierungsstellen aus dem AD (Check 67).
+    .NOTES
+        - Eine Zeile je CA-Zertifikat: nach einer CA-Erneuerung liegen Alt- und
+          Neuzertifikat gleichzeitig vor und werden getrennt bewertet.
+        - certificateTemplates am CA-Objekt = tatsaechlich veroeffentlichte Vorlagen.
+        - Erreichbarkeit wird rein lesend ueber die SMB-Freigabe \\<CA>\CertEnroll
+          ermittelt; certutil wird bewusst nicht aufgerufen, weil dessen Ausgabe
+          sprachabhaengig ist und ein CRL-Schreibbefehl nicht in Frage kommt.
+        - Nicht lesbare Angaben werden als Warnung ausgewiesen, nicht als OK.
+    #>
+    $result = @()
+    $caData = Get-PkiCaData
+    if (-not $caData.Ok) {
+        return @(Test-PkiUnavailableRow -Objekt 'AD-Abfrage' -Hinweis "CA-Inventar nicht lesbar: $($caData.Error)" -RowKey 'Fehler|PkiCa')
+    }
+    if (@($caData.Cas).Count -eq 0) {
+        return @([pscustomobject]@{
+            Objekt = 'Enterprise-CA'; Status = 'INFO'; RowKey = 'Info|KeineCA'
+            Hinweis = 'Keine Enterprise-Zertifizierungsstelle im AD eingetragen (CN=Enrollment Services leer)'
+        })
+    }
+    foreach ($ca in $caData.Cas) {
+        $caName = [string]$ca.displayName
+        if ([string]::IsNullOrWhiteSpace($caName)) { $caName = [string]$ca.cn }
+        $caHost = [string]$ca.dNSHostName
+        $tplCount = @($ca.certificateTemplates).Count
+        $reach = 'Nicht pruefbar (kein DNSHostname am CA-Objekt)'
+        if (-not [string]::IsNullOrWhiteSpace($caHost)) {
+            if (Test-Path -LiteralPath "\\$caHost\CertEnroll") { $reach = 'Freigabe CertEnroll erreichbar' }
+            else { $reach = 'Freigabe CertEnroll nicht erreichbar' }
+        }
+        $certs = @(Get-PkiBinaryValues -Value $ca.cACertificate)
+        if ($certs.Count -eq 0) {
+            $result += [pscustomobject]@{
+                Objekt = $caName; DNSHostname = $(if ($caHost) { $caHost } else { '-' })
+                ZertifikatSubject = 'nicht lesbar'; Aussteller = '-'; GueltigBis = '-'; RestTage = '-'
+                VorlagenAnzahl = $tplCount; AusstellerImAd = 'Nicht ermittelbar'; Erreichbarkeit = $reach
+                Status = 'WARN'; Hinweis = 'kein cACertificate am CA-Objekt vorhanden'
+                RowKey = "CA|$caName|OhneZertifikat"
+            }
+            continue
+        }
+        foreach ($raw in $certs) {
+            $cert = ConvertFrom-PkiCertificateBlob -Raw $raw
+            if (-not $cert) {
+                $result += [pscustomobject]@{
+                    Objekt = $caName; DNSHostname = $(if ($caHost) { $caHost } else { '-' })
+                    ZertifikatSubject = 'nicht lesbar'; Aussteller = '-'; GueltigBis = '-'; RestTage = '-'
+                    VorlagenAnzahl = $tplCount; AusstellerImAd = 'Nicht ermittelbar'; Erreichbarkeit = $reach
+                    Status = 'WARN'; Hinweis = 'CA-Zertifikat nicht als X509-Zertifikat lesbar'
+                    RowKey = "CA|$caName|Unlesbar"
+                }
+                continue
+            }
+            $sum = Get-PkiCertificateSummary -Certificate $cert
+            $selfSigned = ((Get-PkiNormalizedName -Name $cert.Subject) -eq (Get-PkiNormalizedName -Name $cert.Issuer))
+            $issuerInAd = 'Nein'
+            if (@($caData.RootNames).Count -eq 0) {
+                $issuerInAd = 'Nicht ermittelbar'
+            }
+            elseif (@($caData.RootNames) -contains (Get-PkiNormalizedName -Name $cert.Issuer)) {
+                $issuerInAd = 'Ja'
+            }
+            elseif ($selfSigned -and (@($caData.RootNames) -contains (Get-PkiNormalizedName -Name $cert.Subject))) {
+                $issuerInAd = 'Ja'
+            }
+            $status = 'OK'
+            $hints = @()
+            if ($sum.RestTage -lt 0) {
+                $status = 'CRITICAL'
+                $hints += "CA-Zertifikat ist seit $([math]::Abs($sum.RestTage)) Tag(en) abgelaufen"
+            } elseif ($sum.RestTage -lt [int]$Global:PkiCertWarnDays) {
+                $status = 'WARN'
+                $hints += "CA-Zertifikat laeuft in $($sum.RestTage) Tag(en) ab (Schwelle $($Global:PkiCertWarnDays))"
+            }
+            if ($reach -eq 'Freigabe CertEnroll nicht erreichbar') {
+                if ($status -eq 'OK') { $status = 'WARN' }
+                $hints += 'Veroeffentlichungsfreigabe CertEnroll ist nicht erreichbar'
+            }
+            if ($issuerInAd -eq 'Nein') {
+                if ($status -eq 'OK') { $status = 'WARN' }
+                $hints += 'ausstellendes Zertifikat ist nicht unter CN=Certification Authorities veroeffentlicht'
+            }
+            $result += [pscustomobject]@{
+                Objekt = $caName; DNSHostname = $(if ($caHost) { $caHost } else { '-' })
+                ZertifikatSubject = $sum.Subject; Aussteller = $sum.Issuer; GueltigBis = $sum.GueltigBis
+                RestTage = $sum.RestTage; VorlagenAnzahl = $tplCount; AusstellerImAd = $issuerInAd
+                Erreichbarkeit = $reach; Status = $status
+                Hinweis = $(if ($hints.Count -gt 0) { ($hints -join '; ') } else { '-' })
+                RowKey = "CA|$caName|$($sum.Thumbprint)"
+            }
+        }
+    }
+    return @($result)
+}
+
+function Test-Check-PkiCAInventory {
+    <#
+    .SYNOPSIS
+        Bewertet das CA-Inventar (Check 67) - nur die CA-Ebene, keine PKI-Gesamtbewertung.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten zum CA-Inventar' }
+    $rows = @($data)
+    if ($rows.Count -eq 1 -and $rows[0].RowKey -eq 'Info|KeineCA') {
+        return New-Assessment -OverallStatus 'INFO' -Summary $rows[0].Hinweis -Findings @()
+    }
+    $status = Get-PkiAssessmentStatus -Rows $rows
+    $summary = Format-PkiStatusSummary -Rows $rows -Scope 'CA-Zertifikat(e)'
+    $summary = "$summary - nur CA-Ebene, Stammzertifikate/Vorlagen/WLAN/Mail/Sperrlisten siehe Checks 68-71"
+    return New-Assessment -OverallStatus $status -Summary $summary -Findings (Get-PkiFindings -Rows $rows) -RowFlags (Get-PkiRowFlags -Rows $rows)
+}
+
+function Get-PkiTrustedRoots {
+    <#
+    .SYNOPSIS
+        Inventar der vertrauenswuerdigen Stamm- und Zwischenzertifikate (Check 68).
+    .NOTES
+        Quellen getrennt ausgewiesen:
+        1. AD-Container CN=Certification Authorities (veroeffentlichte Stammzertifikate)
+        2. AD-Container CN=NTAuthCertificates (Smartcard-/NTAuth-Vertrauen)
+        3. GPO-Reports der Kategorie oeffentlicher Schluessel (RootCertificate,
+           IntermediateCACertificate) - der Zertifikatsinhalt ist dort hexadezimal kodiert.
+        Duplikate werden ueber den Fingerabdruck ueber alle Quellen hinweg gezaehlt.
+        Ein fehlender GPO-Knoten bedeutet 'nicht per Richtlinie gesetzt', nicht
+        'nicht vorhanden' - deshalb wird getrennt ausgewiesen, nicht zusammengefasst.
+    #>
+    $items = @()
+    $paths = Get-PkiPaths
+    if (-not $paths) {
+        return @(Test-PkiUnavailableRow -Objekt 'AD-Abfrage' -Hinweis 'Configuration-Naming-Context nicht lesbar' -RowKey 'Fehler|ConfigNC')
+    }
+
+    foreach ($src in @(
+        @{ Quelle = 'AD'; Container = $paths.CertAuthorities;    Label = 'CN=Certification Authorities' }
+        @{ Quelle = 'AD'; Container = $paths.NtAuthCertificates; Label = 'CN=NTAuthCertificates' }
+    )) {
+        try {
+            $objs = @(Get-ADObject -SearchBase $src.Container -LDAPFilter '(objectClass=certificationAuthority)' -Properties cACertificate -ErrorAction Stop)
+        } catch { $objs = @() }
+        if ($objs.Count -eq 0) {
+            $items += [pscustomobject]@{ Quelle = $src.Quelle; GpoName = '-'; Label = $src.Label; Cert = $null; Hinweis = 'kein Objekt im Container' }
+            continue
+        }
+        foreach ($o in $objs) {
+            $certs = @(Get-PkiBinaryValues -Value $o.cACertificate)
+            if ($certs.Count -eq 0) {
+                $items += [pscustomobject]@{ Quelle = $src.Quelle; GpoName = '-'; Label = $src.Label; Cert = $null; Hinweis = 'kein cACertificate am Objekt' }
+                continue
+            }
+            foreach ($raw in $certs) {
+                $items += [pscustomobject]@{ Quelle = $src.Quelle; GpoName = '-'; Label = $src.Label; Cert = (ConvertFrom-PkiCertificateBlob -Raw $raw); Hinweis = '' }
+            }
+        }
+    }
+
+    $gpoXml = Get-PkiGpoReportXml
+    $gpoReadable = $false
+    if ($gpoXml) {
+        $gpoReadable = $true
+        $ns = @{ pk = 'http://www.microsoft.com/GroupPolicy/Settings/PublicKey' }
+        foreach ($gpo in @($gpoXml.report.GPO)) {
+            $gpoName = [string]$gpo.Name
+            $pkNodes = @()
+            try { $pkNodes = @(Select-Xml -Xml $gpo -Namespace $ns -XPath ".//pk:RootCertificate | .//pk:IntermediateCACertificate") } catch { $pkNodes = @() }
+            if ($pkNodes.Count -eq 0) { continue }
+            $usable = $false
+            foreach ($n in $pkNodes) {
+                $hex = Get-PkiXmlChildText -Node $n.Node -Name 'Data'
+                $bytes = ConvertFrom-PkiHexString -Hex $hex
+                $cert = ConvertFrom-PkiCertificateBlob -Raw $bytes
+                if ($cert) {
+                    $usable = $true
+                    $items += [pscustomobject]@{ Quelle = 'GPO'; GpoName = $gpoName; Label = "$($n.Node.LocalName)"; Cert = $cert; Hinweis = '' }
+                } else {
+                    $items += [pscustomobject]@{ Quelle = 'GPO'; GpoName = $gpoName; Label = "$($n.Node.LocalName)"; Cert = $null; Hinweis = 'Zertifikatsinhalt im GPO-Report nicht lesbar' }
+                }
+            }
+            if (-not $usable) {
+                $items += [pscustomobject]@{ Quelle = 'GPO'; GpoName = $gpoName; Label = 'Public-Key-Richtlinie'; Cert = $null; Hinweis = 'Public-Key-Richtlinie vorhanden, aber ohne auswertbares Stammzertifikat' }
+            }
+        }
+    }
+
+    if ($items.Count -eq 0 -and -not $gpoReadable) {
+        return @(Test-PkiUnavailableRow -Objekt 'GPO-Reports' -Hinweis 'Weder AD-Zertifikate noch GPO-Reports lesbar (GroupPolicy-Modul/Rechte pruefen)' -RowKey 'Fehler|PkiRoots')
+    }
+
+    # Duplikate ueber den Fingerabdruck zaehlen
+    $thumbCount = @{}
+    foreach ($it in $items) {
+        if (-not $it.Cert) { continue }
+        $th = [string]$it.Cert.Thumbprint
+        if (-not $thumbCount.ContainsKey($th)) { $thumbCount[$th] = 0 }
+        $thumbCount[$th] = $thumbCount[$th] + 1
+    }
+
+    $result = @()
+    foreach ($it in $items) {
+        if (-not $it.Cert) {
+            $result += [pscustomobject]@{
+                Objekt = "$($it.Label) $(if ($it.GpoName -ne '-') { "($($it.GpoName))" })"
+                Quelle = $it.Quelle; GpoName = $it.GpoName; Aussteller = '-'; Fingerabdruck = '-'
+                GueltigBis = '-'; RestTage = '-'; Duplikat = '-'; Status = 'WARN'
+                Hinweis = $it.Hinweis; RowKey = "Root|KeinZert|$($it.Quelle)|$($it.GpoName)|$($it.Label)"
+            }
+            continue
+        }
+        $sum = Get-PkiCertificateSummary -Certificate $it.Cert
+        $dup = 'Nein'
+        if ($thumbCount[[string]$it.Cert.Thumbprint] -gt 1) { $dup = 'Ja' }
+        $status = 'OK'
+        $hints = @()
+        if ($sum.RestTage -lt 0) {
+            $status = 'CRITICAL'
+            $hints += "Zertifikat ist seit $([math]::Abs($sum.RestTage)) Tag(en) abgelaufen"
+        } elseif ($sum.RestTage -lt [int]$Global:PkiCertWarnDays) {
+            $status = 'WARN'
+            $hints += "Zertifikat laeuft in $($sum.RestTage) Tag(en) ab (Schwelle $($Global:PkiCertWarnDays))"
+        }
+        if ($dup -eq 'Ja') {
+            if ($status -eq 'OK') { $status = 'INFO' }
+            $hints += 'gleicher Fingerabdruck liegt mehrfach vor (mehrere Quellen)'
+        }
+        $result += [pscustomobject]@{
+            Objekt = $sum.Subject; Quelle = $it.Quelle; GpoName = $it.GpoName
+            Aussteller = $sum.Issuer; Fingerabdruck = $sum.Thumbprint; GueltigBis = $sum.GueltigBis
+            RestTage = $sum.RestTage; Duplikat = $dup; Status = $status
+            Hinweis = $(if ($hints.Count -gt 0) { ($hints -join '; ') } else { '-' })
+            RowKey = "Root|$($it.Quelle)|$($it.GpoName)|$($sum.Thumbprint)"
+        }
+    }
+    if (-not $gpoReadable) {
+        $result += [pscustomobject]@{
+            Objekt = 'GPO-Reports'; Quelle = 'GPO'; GpoName = '-'; Aussteller = '-'; Fingerabdruck = '-'
+            GueltigBis = '-'; RestTage = '-'; Duplikat = '-'; Status = 'WARN'
+            Hinweis = 'GPO-Reports nicht lesbar - per Richtlinie verteilte Zertifikate sind NICHT geprueft'
+            RowKey = 'Fehler|GpoReports'
+        }
+    }
+    return @($result)
+}
+
+function Test-Check-PkiTrustedRoots {
+    <#
+    .SYNOPSIS
+        Bewertet die vertrauenswuerdigen Stamm-/Zwischenzertifikate (Check 68) - nur diese Ebene.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Stammzertifikate ermittelt' }
+    $rows = @($data)
+    $status = Get-PkiAssessmentStatus -Rows $rows
+    $adCount  = @($rows | Where-Object { $_.Quelle -eq 'AD' }).Count
+    $gpoCount = @($rows | Where-Object { $_.Quelle -eq 'GPO' }).Count
+    $summary = Format-PkiStatusSummary -Rows $rows -Scope 'Stamm-/Zwischenzertifikat(e)'
+    $summary = "$summary - Quelle AD: $adCount Zeile(n), Quelle GPO: $gpoCount Zeile(n); nur diese Ebene bewertet"
+    return New-Assessment -OverallStatus $status -Summary $summary -Findings (Get-PkiFindings -Rows $rows) -RowFlags (Get-PkiRowFlags -Rows $rows)
+}
+
+function Get-PkiCertificateTemplates {
+    <#
+    .SYNOPSIS
+        Inventar der Zertifikatvorlagen inklusive Veroeffentlichung an den CAs (Check 69).
+    .NOTES
+        - Vorlagen: CN=Certificate Templates,CN=Public Key Services,CN=Services,<ConfigNC>,
+          Klasse pKICertificateTemplate.
+        - Veroeffentlichte Vorlagen stehen als CN-Namen im Attribut certificateTemplates
+          des CA-Objekts (pKIEnrollmentService).
+        - Auffaellig heisst hier ausschliesslich heuristisch: Name-Flag
+          'EnrolleeSuppliesSubject' (0x1) zusammen mit Client- oder Smartcard-EKU
+          ohne Genehmigungssignatur. Das ist eine Plausibilitaetspruefung, keine Gewissheit.
+        - Nicht ermittelbare Werte werden als Warnung ausgewiesen, nicht als OK.
+    #>
+    $tplData = Get-PkiTemplateData
+    if (-not $tplData.Ok) {
+        return @(Test-PkiUnavailableRow -Objekt 'AD-Abfrage' -Hinweis "Vorlagen nicht lesbar: $($tplData.Error)" -RowKey 'Fehler|PkiTemplates')
+    }
+    $result = @()
+    foreach ($t in $tplData.Templates) {
+        $name = [string]$t.displayName
+        if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$t.cn }
+        $cn = [string]$t.cn
+        $published = @()
+        if ($tplData.PublishedBy.ContainsKey($cn)) { $published = @($tplData.PublishedBy[$cn]) }
+        $ekus = Format-PkiEkuList -Oid $t.pKIExtendedKeyUsage
+        $validDays = ConvertFrom-PkiFileTimePeriod -Value $t.pKIExpirationPeriod
+        $autoenroll = 'Nein'
+        $enrollFlag = 0
+        try { if ($null -ne $t.'msPKI-Enrollment-Flag') { $enrollFlag = [int]$t.'msPKI-Enrollment-Flag' } } catch { $enrollFlag = 0 }
+        if (($enrollFlag -band 0x20) -ne 0) { $autoenroll = 'Ja' }
+        $nameFlag = 0
+        try { if ($null -ne $t.'msPKI-Certificate-Name-Flag') { $nameFlag = [int]$t.'msPKI-Certificate-Name-Flag' } } catch { $nameFlag = 0 }
+        $raSig = 0
+        try { if ($null -ne $t.'msPKI-RA-Signature') { $raSig = [int]$t.'msPKI-RA-Signature' } } catch { $raSig = 0 }
+        $clientEku = ((Format-PkiEkuList -Oid $t.pKIExtendedKeyUsage) -match 'Client Authentication|Smart Card Logon')
+        $subjSupplied = (($nameFlag -band 0x1) -ne 0)
+        $status = 'OK'
+        $hints = @()
+        $auffaellig = 'Nein'
+        if ($published.Count -eq 0) {
+            $status = 'INFO'
+            $hints += 'an keiner CA veroeffentlicht (Vorlage kann nicht beantragt werden)'
+        }
+        if ($subjSupplied -and $clientEku -and $raSig -le 0) {
+            $auffaellig = 'Ja (heuristisch)'
+            $status = 'WARN'
+            $hints += 'Name-Flag EnrolleeSuppliesSubject mit Client-/Smartcard-EKU und ohne Genehmigungssignatur - Plausibilitaet fuer eine zu offene Vorlage (Heuristik, keine Gewissheit)'
+        }
+        if ($null -eq $validDays) {
+            if ($status -eq 'OK') { $status = 'WARN' }
+            $hints += 'Gueltigkeitsdauer der Vorlage nicht lesbar (pKIExpirationPeriod)'
+        }
+        $result += [pscustomobject]@{
+            Objekt = $name
+            VeroeffentlichteCAs = $(if ($published.Count -gt 0) { (@($published | Sort-Object -Unique) -join ', ') } else { '-' })
+            Schema = $(if ($null -ne $t.'msPKI-Template-Schema-Version') { "$($t.'msPKI-Template-Schema-Version')" } else { 'nicht lesbar' })
+            EKUs = $ekus
+            GueltigkeitTage = $(if ($null -ne $validDays) { $validDays } else { 'nicht lesbar' })
+            Autoenrollment = $autoenroll
+            Auffaellig = $auffaellig
+            Status = $status
+            Hinweis = $(if ($hints.Count -gt 0) { ($hints -join '; ') } else { '-' })
+            RowKey = "Vorlage|$cn"
+        }
+    }
+    foreach ($missing in @($tplData.Missing)) {
+        $result += [pscustomobject]@{
+            Objekt = "$missing"; VeroeffentlichteCAs = '-'; Schema = '-'; EKUs = '-'
+            GueltigkeitTage = '-'; Autoenrollment = '-'; Auffaellig = 'Nein'; Status = 'WARN'
+            Hinweis = 'CA-Objekt referenziert diese Vorlage, es existiert aber kein Vorlagenobjekt im AD'
+            RowKey = "VorlageFehlt|$missing"
+        }
+    }
+    return @($result)
+}
+
+function Test-Check-PkiCertificateTemplates {
+    <#
+    .SYNOPSIS
+        Bewertet die Zertifikatvorlagen (Check 69) - nur diese Ebene.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Zertifikatvorlagen ermittelt' }
+    $rows = @($data)
+    $status = Get-PkiAssessmentStatus -Rows $rows
+    $unpub = @($rows | Where-Object { $_.VeroeffentlichteCAs -eq '-' }).Count
+    $summary = Format-PkiStatusSummary -Rows $rows -Scope 'Zertifikatvorlage(n)'
+    $summary = "$summary - davon an keiner CA veroeffentlicht: $unpub; nur die Vorlagenebene bewertet"
+    return New-Assessment -OverallStatus $status -Summary $summary -Findings (Get-PkiFindings -Rows $rows) -RowFlags (Get-PkiRowFlags -Rows $rows)
+}
+
+function Get-PkiWlanMailMapping {
+    <#
+    .SYNOPSIS
+        Prueft die Zuordnung von Zertifikatvorlagen zu WLAN und Mailverschluesselung (Check 70).
+    .NOTES
+        - WLAN-Profile in Gruppenrichtlinien nennen NICHT den Namen der Client-Vorlage;
+          Clients waehlen ihr Zertifikat ueber die EKU Client Authentication. Die
+          Zuordnung Vorlage <-> WLAN ist deshalb nur eine Plausibilitaetspruefung und
+          wird ausdruecklich als solche ausgewiesen.
+        - S/MIME kennt keine zentrale Richtlinieneinstellung; pruefbar ist nur, ob eine
+          veroeffentlichte Vorlage mit der EKU Secure Email existiert.
+        - EFS-Einstellungen und Wiederherstellungsagenten stehen in der Public-Key-Richtlinie;
+          der Inhalt des Agenten wird nicht als Zertifikat interpretiert.
+        - Ob tatsaechlich verschluesselt wird, ist nicht automatisiert pruefbar.
+    #>
+    $result = @()
+    $tplData = Get-PkiTemplateData
+    if (-not $tplData.Ok) {
+        $result += [pscustomobject]@{ Bereich = 'Vorlagen'; Objekt = 'AD-Abfrage'; Bezug = 'Nicht ermittelbar'; Quelle = 'AD'
+            Status = 'WARN'; Hinweis = "Vorlagen nicht lesbar, Zuordnung daher nicht geprueft: $($tplData.Error)"; RowKey = 'WLANMail|Vorlagen' }
+    }
+
+    $wlanTpl = @(); $mailTpl = @(); $efsTpl = @()
+    if ($tplData.Ok) {
+        foreach ($t in $tplData.Templates) {
+            $name = [string]$t.displayName
+            if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$t.cn }
+            if (Test-PkiEkuPresent -Oid $t.pKIExtendedKeyUsage -Wanted '1.3.6.1.5.5.7.3.2') { $wlanTpl += $name }
+            if (Test-PkiEkuPresent -Oid $t.pKIExtendedKeyUsage -Wanted '1.3.6.1.5.5.7.3.4') { $mailTpl += $name }
+            if (Test-PkiEkuPresent -Oid $t.pKIExtendedKeyUsage -Wanted '1.3.6.1.4.1.311.10.3.4') { $efsTpl += $name }
+        }
+        foreach ($n in @($wlanTpl | Sort-Object -Unique)) {
+            $result += [pscustomobject]@{ Bereich = 'WLAN'; Objekt = $n; Bezug = 'Ja (heuristisch)'; Quelle = 'AD-Vorlage'
+                Status = 'INFO'; Hinweis = 'Vorlage mit EKU Client Authentication - der WLAN-Client-Bezug wird ueber diese EKU hergestellt (Plausibilitaet, keine Gewissheit)'; RowKey = "WLAN|$n" }
+        }
+        foreach ($n in @($mailTpl | Sort-Object -Unique)) {
+            $result += [pscustomobject]@{ Bereich = 'Mail-S/MIME'; Objekt = $n; Bezug = 'Ja (heuristisch)'; Quelle = 'AD-Vorlage'
+                Status = 'INFO'; Hinweis = 'Vorlage mit EKU Secure Email - Grundlage fuer S/MIME; eine tatsaechliche Mailverschluesselung ist nicht pruefbar'; RowKey = "Mail|$n" }
+        }
+        foreach ($n in @($efsTpl | Sort-Object -Unique)) {
+            $result += [pscustomobject]@{ Bereich = 'EFS'; Objekt = $n; Bezug = 'Ja (heuristisch)'; Quelle = 'AD-Vorlage'
+                Status = 'INFO'; Hinweis = 'Vorlage mit EKU Encrypting File System'; RowKey = "EFS|$n" }
+        }
+    }
+
+    $gpoXml = Get-PkiGpoReportXml
+    if (-not $gpoXml) {
+        $result += [pscustomobject]@{ Bereich = 'Richtlinien'; Objekt = 'GPO-Reports'; Bezug = 'Nicht ermittelbar'; Quelle = 'GPO'
+            Status = 'WARN'; Hinweis = 'GPO-Reports nicht lesbar - Richtlinienbezug fuer WLAN/EFS wurde NICHT geprueft'; RowKey = 'WLANMail|GpoReports' }
+    } else {
+        $pkNs = 'http://www.microsoft.com/GroupPolicy/Settings/PublicKey'
+        $wlanGpos = @()
+        $pkGpos = @()
+        foreach ($gpo in @($gpoXml.report.GPO)) {
+            $gpoName = [string]$gpo.Name
+            $raw = ''
+            try { $raw = [string]$gpo.OuterXml } catch { $raw = '' }
+            if ($raw -match '(?i)wireless|802\.11|wlan|drahtlos') { $wlanGpos += $gpoName }
+            if ($raw -notmatch [regex]::Escape($pkNs)) { continue }
+            if ($raw -notmatch '(?i)EFSRecoveryAgent|EFSettings') { continue }
+            $pkGpos += $gpoName
+            $efsNodes = @()
+            $ns = @{ pk = $pkNs }
+            try { $efsNodes = @(Select-Xml -Xml $gpo -Namespace $ns -XPath './/pk:EFSRecoveryAgent') } catch { $efsNodes = @() }
+            if ($efsNodes.Count -eq 0) {
+                $result += [pscustomobject]@{ Bereich = 'EFS'; Objekt = $gpoName; Bezug = 'Ja'; Quelle = 'GPO'
+                    Status = 'INFO'; Hinweis = 'Public-Key-Richtlinie mit EFS-Einstellungen, aber ohne Wiederherstellungsagent'; RowKey = "EFSgpo|$gpoName" }
+                continue
+            }
+            foreach ($n in $efsNodes) {
+                $issuedTo = Get-PkiXmlChildText -Node $n.Node -Name 'IssuedTo'
+                $issuedBy = Get-PkiXmlChildText -Node $n.Node -Name 'IssuedBy'
+                $expires = Get-PkiXmlChildText -Node $n.Node -Name 'ExpirationDate'
+                $status = 'INFO'
+                $hints = @('EFS-Wiederherstellungsagent per Richtlinie hinterlegt; der Zertifikatsinhalt des Agenten ist kein einfaches DER-Zertifikat und wird nicht als Zertifikat ausgewertet')
+                $expiry = $null
+                if ($expires) {
+                    try { $expiry = [datetime]::Parse($expires) } catch { $expiry = $null }
+                }
+                if ($expiry) {
+                    $days = [int][math]::Floor(($expiry - (Get-Date)).TotalDays)
+                    if ($days -lt 0) { $status = 'WARN'; $hints += "Wiederherstellungsagent ist abgelaufen (Ablauf: $expires)" }
+                    elseif ($days -lt [int]$Global:PkiCertWarnDays) { $status = 'WARN'; $hints += "Wiederherstellungsagent laeuft in $days Tag(en) ab (Ablauf: $expires)" }
+                }
+                $result += [pscustomobject]@{ Bereich = 'EFS'; Objekt = "$issuedTo ($gpoName)"; Bezug = $(if ($issuedTo) { 'Ja' } else { 'Nicht ermittelbar' }); Quelle = 'GPO'
+                    Status = $status; Hinweis = ("$($hints -join '; ')" + $(if ($issuedBy) { " | Ausgestellt von: $issuedBy" } else { '' })); RowKey = "EFSgpo|$gpoName|$issuedTo" }
+            }
+        }
+        if ($wlanGpos.Count -eq 0) {
+            $result += [pscustomobject]@{ Bereich = 'WLAN'; Objekt = 'Richtlinien'; Bezug = 'Nein'; Quelle = 'GPO'
+                Status = 'INFO'; Hinweis = 'keine WLAN-Richtlinie in den GPO-Reports gefunden'; RowKey = 'WLAN|KeineGpo' }
+        } else {
+            foreach ($g in @($wlanGpos | Sort-Object -Unique)) {
+                $result += [pscustomobject]@{ Bereich = 'WLAN'; Objekt = $g; Bezug = 'Ja'; Quelle = 'GPO'
+                    Status = 'INFO'; Hinweis = 'WLAN-Richtlinie vorhanden; Profilinhalte und Servervalidierung wurden in diesem Check nicht inhaltlich ausgewertet'; RowKey = "WLANgpo|$g" }
+            }
+        }
+        if ($pkGpos.Count -eq 0) {
+            $result += [pscustomobject]@{ Bereich = 'Richtlinien'; Objekt = 'Public Key'; Bezug = 'Nein'; Quelle = 'GPO'
+                Status = 'INFO'; Hinweis = 'keine Public-Key-Richtlinie in den GPO-Reports gefunden'; RowKey = 'PublicKey|KeineGpo' }
+        }
+    }
+
+    if ($wlanTpl.Count -eq 0) {
+        $result += [pscustomobject]@{ Bereich = 'WLAN'; Objekt = 'Zertifikatsbezug'; Bezug = 'Nein'; Quelle = 'AD-Vorlage'
+            Status = 'WARN'; Hinweis = 'keine Vorlage mit EKU Client Authentication gefunden - ein zertifikatsbasierter WLAN-Zugang (802.1X/EAP-TLS) ist damit nicht zuordenbar'; RowKey = 'WLAN|KeinBezug' }
+    }
+    if ($mailTpl.Count -eq 0) {
+        $result += [pscustomobject]@{ Bereich = 'Mail-S/MIME'; Objekt = 'Zertifikatsbezug'; Bezug = 'Nein'; Quelle = 'AD-Vorlage'
+            Status = 'WARN'; Hinweis = 'keine Vorlage mit EKU Secure Email gefunden - S/MIME ist damit nicht zuordenbar'; RowKey = 'Mail|KeinBezug' }
+    }
+    return @($result)
+}
+
+function Test-Check-PkiWlanMailMapping {
+    <#
+    .SYNOPSIS
+        Bewertet die WLAN-/Mail-Zuordnung (Check 70) - nur diese Ebene.
+    .NOTES
+        Die Zuordnung bleibt eine Plausibilitaetspruefung; der Check behauptet nie,
+        dass WLAN oder Mail tatsaechlich zertifikatsbasiert betrieben wird.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Angaben zu WLAN-/Mail-Bezuegen' }
+    $rows = @($data)
+    $status = Get-PkiAssessmentStatus -Rows $rows
+    $summary = Format-PkiStatusSummary -Rows $rows -Scope 'Zuordnungszeile(n)'
+    $summary = "$summary - Zuordnung Vorlage<->WLAN/Mail ist heuristisch, keine abschliessende Bewertung"
+    return New-Assessment -OverallStatus $status -Summary $summary -Findings (Get-PkiFindings -Rows $rows) -RowFlags (Get-PkiRowFlags -Rows $rows)
+}
+
+function Get-PkiCertificateEndpoints {
+    <#
+    .SYNOPSIS
+        Prueft Sperrlisten- (CRL/CDP) und Veroeffentlichungsendpunkte (AIA) (Check 71).
+    .NOTES
+        - CDP-Adressen stammen aus der Zertifikatsextension 2.5.29.31, AIA-Adressen
+          aus 1.3.6.1.5.5.7.1.1 (RFC 5280). Fehlt eine Extension, wird das als
+          'nicht ermittelbar' gemeldet und NICHT als OK.
+        - Erreichbarkeit wird rein lesend geprueft (HTTP HEAD/GET, lokale Datei);
+          LDAP-Endpunkte gelten als nicht pruefbar.
+        - Zusaetzlich wird geprueft, ob im AD unter CN=<CA>,CN=CDP eine Sperrliste
+          veroeffentlicht ist. Das Ablaufdatum (NextUpdate) einer CRL ist ohne zusaetzliche
+          Werkzeuge nicht lesbar und wird deshalb als nicht pruefbar ausgewiesen.
+    #>
+    $result = @()
+    $caData = Get-PkiCaData
+    if (-not $caData.Ok) {
+        return @(Test-PkiUnavailableRow -Objekt 'AD-Abfrage' -Hinweis "CA-Zertifikate nicht lesbar: $($caData.Error)" -RowKey 'Fehler|PkiEndpoints')
+    }
+    if (@($caData.Cas).Count -eq 0) {
+        return @([pscustomobject]@{ Objekt = 'Enterprise-CA'; Bereich = 'CA'; Endpunkt = '-'; Erreichbarkeit = 'nicht pruefbar'; Quelle = 'AD'
+            Status = 'INFO'; Hinweis = 'keine Enterprise-CA im AD eingetragen - Sperrlistenendpunkte nicht pruefbar'; RowKey = 'Info|KeineCA' })
+    }
+    $httpCdpTotal = 0
+    $httpCdpReachable = 0
+    foreach ($ca in $caData.Cas) {
+        $caName = [string]$ca.displayName
+        if ([string]::IsNullOrWhiteSpace($caName)) { $caName = [string]$ca.cn }
+        foreach ($raw in @(Get-PkiBinaryValues -Value $ca.cACertificate)) {
+            $cert = ConvertFrom-PkiCertificateBlob -Raw $raw
+            $sum = Get-PkiCertificateSummary -Certificate $cert
+            $label = $(if ($sum) { $sum.Subject } else { 'Zertifikat nicht lesbar' })
+            if (-not $sum) {
+                $result += [pscustomobject]@{ Objekt = $caName; Bereich = 'CA'; Endpunkt = '-'; Erreichbarkeit = 'nicht pruefbar'; Quelle = 'AD'
+                    Status = 'WARN'; Hinweis = 'CA-Zertifikat nicht lesbar - Endpunkte koennen nicht ermittelt werden'; RowKey = "Endp|$caName|Unlesbar" }
+                continue
+            }
+            $urls = Get-PkiCertificateUrls -Certificate $cert
+            if (@($urls.Cdp).Count -eq 0) {
+                $result += [pscustomobject]@{ Objekt = $caName; Bereich = 'CDP'; Endpunkt = '-'; Erreichbarkeit = 'nicht ermittelbar'; Quelle = 'Zertifikat'
+                    Status = 'WARN'; Hinweis = "Zertifikat $label enthaelt keine Sperrlisten-Adresse (CDP-Extension fehlt)"; RowKey = "Endp|$caName|CdpFehlt" }
+            }
+            foreach ($u in @($urls.Cdp)) {
+                $reach = Test-PkiEndpointReachable -Url $u
+                if ($u -match '^(?i)https?://') {
+                    $httpCdpTotal++
+                    if ($reach -match '^HTTP 2|^HTTP 3') { $httpCdpReachable++ }
+                }
+                $status = 'OK'
+                if ($reach -eq 'nicht erreichbar' -or $reach -eq 'Datei fehlt') { $status = 'WARN' }
+                elseif ($reach -eq 'nicht pruefbar' -or $reach -match '^LDAP') { $status = 'INFO' }
+                $result += [pscustomobject]@{ Objekt = $caName; Bereich = 'CDP'; Endpunkt = $u; Erreichbarkeit = $reach; Quelle = 'Zertifikat'
+                    Status = $status; Hinweis = "Sperrlisten-Adresse aus dem CA-Zertifikat $label"; RowKey = "Endp|$caName|CDP|$u" }
+            }
+            foreach ($u in @($urls.Aia)) {
+                $reach = Test-PkiEndpointReachable -Url $u
+                $status = 'OK'
+                if ($reach -eq 'nicht erreichbar' -or $reach -eq 'Datei fehlt') { $status = 'WARN' }
+                elseif ($reach -eq 'nicht pruefbar' -or $reach -match '^LDAP') { $status = 'INFO' }
+                $result += [pscustomobject]@{ Objekt = $caName; Bereich = 'AIA'; Endpunkt = $u; Erreichbarkeit = $reach; Quelle = 'Zertifikat'
+                    Status = $status; Hinweis = "Ausstelleradresse aus dem CA-Zertifikat $label"; RowKey = "Endp|$caName|AIA|$u" }
+            }
+        }
+        # Im AD veroeffentlichte Sperrlisten (CN=<CA>,CN=CDP)
+        $cdpPath = "CN=$caName,$($caData.Paths.Cdp)"
+        $cdpObjects = @()
+        try {
+            $cdpObjects = @(Get-ADObject -SearchBase $cdpPath -LDAPFilter '(objectClass=cRLDistributionPoint)' -Properties certificateRevocationList,deltaRevocationList -ErrorAction Stop)
+        } catch { $cdpObjects = @() }
+        if ($cdpObjects.Count -eq 0) {
+            $result += [pscustomobject]@{ Objekt = $caName; Bereich = 'AD-CRL'; Endpunkt = $cdpPath; Erreichbarkeit = 'nicht ermittelbar'; Quelle = 'AD'
+                Status = 'WARN'; Hinweis = 'keine im AD veroeffentlichte Sperrliste gefunden (CN=<CA>,CN=CDP)'; RowKey = "Endp|$caName|AdCrlFehlt" }
+        } else {
+            foreach ($o in $cdpObjects) {
+                $base = @(Get-PkiBinaryValues -Value $o.certificateRevocationList).Count
+                $delta = @(Get-PkiBinaryValues -Value $o.deltaRevocationList).Count
+                $status = 'INFO'
+                $hints = @("im AD veroeffentlichte Sperrlisten: Basis-CRL $base, Delta-CRL $delta")
+                if ($base -eq 0) { $status = 'WARN'; $hints += 'keine Basis-Sperrliste veroeffentlicht' }
+                $hints += 'das Ablaufdatum (NextUpdate) ist ohne zusaetzliche Werkzeuge nicht lesbar und daher nicht geprueft'
+                $result += [pscustomobject]@{ Objekt = $caName; Bereich = 'AD-CRL'; Endpunkt = [string]$o.DistinguishedName; Erreichbarkeit = 'nicht pruefbar'; Quelle = 'AD'
+                    Status = $status; Hinweis = ($hints -join '; '); RowKey = "Endp|$caName|AdCrl|$($o.DistinguishedName)" }
+            }
+        }
+    }
+    if ($httpCdpTotal -gt 0 -and $httpCdpReachable -eq 0) {
+        $result += [pscustomobject]@{ Objekt = 'Sperrlisten'; Bereich = 'CDP'; Endpunkt = '-'; Erreichbarkeit = 'nicht erreichbar'; Quelle = 'Zertifikat'
+            Status = 'CRITICAL'; Hinweis = "keine der $httpCdpTotal HTTP-Sperrlistenadressen ist erreichbar - Sperrlistenpruefung ist damit nicht moeglich"; RowKey = 'Endp|CdpAlleUnereichbar' }
+    }
+    return @($result)
+}
+
+function Test-Check-PkiCertificateEndpoints {
+    <#
+    .SYNOPSIS
+        Bewertet die Sperrlisten- und Veroeffentlichungsendpunkte (Check 71) - nur diese Ebene.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Endpunkte ermittelt' }
+    $rows = @($data)
+    if ($rows.Count -eq 1 -and $rows[0].RowKey -eq 'Info|KeineCA') {
+        return New-Assessment -OverallStatus 'INFO' -Summary $rows[0].Hinweis -Findings @()
+    }
+    $status = Get-PkiAssessmentStatus -Rows $rows
+    $summary = Format-PkiStatusSummary -Rows $rows -Scope 'Endpunkt-/Sperrlisten-Zeile(n)'
+    $summary = "$summary - nicht pruefbare Endpunkte bleiben als INFO/WARN sichtbar und werden nicht als OK gefuehrt"
+    return New-Assessment -OverallStatus $status -Summary $summary -Findings (Get-PkiFindings -Rows $rows) -RowFlags (Get-PkiRowFlags -Rows $rows)
+}
+
 function Get-EncryptionTypeDistribution {
     <#
     .SYNOPSIS
@@ -7397,6 +8597,11 @@ function Invoke-AllAssessments {
         '64_IPv6'                    = { Test-Check-IPv6                    $Global:Results['64_IPv6'] }
         '65_ComputerSPNs'            = { Test-Check-SPNEntries              $Global:Results['65_ComputerSPNs'] }
         '66_UserSPNs'                = { Test-Check-SPNEntries              $Global:Results['66_UserSPNs'] }
+        '67_PKICA'                   = { Test-Check-PkiCAInventory          $Global:Results['67_PKICA'] }
+        '68_PKIRoots'                = { Test-Check-PkiTrustedRoots         $Global:Results['68_PKIRoots'] }
+        '69_PKITemplates'            = { Test-Check-PkiCertificateTemplates $Global:Results['69_PKITemplates'] }
+        '70_PKIWlanMail'             = { Test-Check-PkiWlanMailMapping      $Global:Results['70_PKIWlanMail'] }
+        '71_PKIEndpoints'            = { Test-Check-PkiCertificateEndpoints $Global:Results['71_PKIEndpoints'] }
     }
     $toAssess = @()
     foreach ($k in $Global:ReportTitles.Keys) {
@@ -7634,6 +8839,11 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                             '53_GPPPasswords'            { $row.Datei }
                             '54_ProtectedUsers'          { $row.Account }
                             '64_IPv6'                    { $row.DCName }
+                            '67_PKICA'                   { $row.RowKey }
+                            '68_PKIRoots'                { $row.RowKey }
+                            '69_PKITemplates'            { $row.RowKey }
+                            '70_PKIWlanMail'             { $row.RowKey }
+                            '71_PKIEndpoints'            { $row.RowKey }
                             default                      { '' }
                         }
                         $cls = ''
@@ -7916,7 +9126,7 @@ function Start-ADHealthCheck {
                                              '28_ADRecycleBin','29_TombstoneLifetime','30_Levels','31_GPO','35_Backup',
                                              '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                                              '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs') |
+                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints') |
                      Where-Object { $Global:SelectedChecks -contains $_ }
         $selInact = if ((Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')) { 1 } else { 0 }
         $Global:ProgressStats.TotalChecks = ($selPerDC.Count * $dcCountReachable) + $selForest.Count + $selInact + $dcCount
@@ -8003,6 +9213,11 @@ function Start-ADHealthCheck {
         if (Test-IsCheckSelected '64_IPv6')                     { $r = Invoke-TimedCheck -CheckKey '64_IPv6'                     -ScriptBlock { Get-IPv6ConfigurationStatus };    $Global:Results['64_IPv6']                    = @($r) }
         if (Test-IsCheckSelected '65_ComputerSPNs')            { $r = Invoke-TimedCheck -CheckKey '65_ComputerSPNs'            -ScriptBlock { Get-SPNEntriesByObjectType -ObjectType 'Computer' }; $Global:Results['65_ComputerSPNs'] = @($r) }
         if (Test-IsCheckSelected '66_UserSPNs')                { $r = Invoke-TimedCheck -CheckKey '66_UserSPNs'                -ScriptBlock { Get-SPNEntriesByObjectType -ObjectType 'User' };     $Global:Results['66_UserSPNs']     = @($r) }
+        if (Test-IsCheckSelected '67_PKICA')                   { $r = Invoke-TimedCheck -CheckKey '67_PKICA'                   -ScriptBlock { Get-PkiCAInventory };            $Global:Results['67_PKICA']            = @($r) }
+        if (Test-IsCheckSelected '68_PKIRoots')                { $r = Invoke-TimedCheck -CheckKey '68_PKIRoots'                -ScriptBlock { Get-PkiTrustedRoots };           $Global:Results['68_PKIRoots']         = @($r) }
+        if (Test-IsCheckSelected '69_PKITemplates')            { $r = Invoke-TimedCheck -CheckKey '69_PKITemplates'            -ScriptBlock { Get-PkiCertificateTemplates };   $Global:Results['69_PKITemplates']     = @($r) }
+        if (Test-IsCheckSelected '70_PKIWlanMail')             { $r = Invoke-TimedCheck -CheckKey '70_PKIWlanMail'             -ScriptBlock { Get-PkiWlanMailMapping };        $Global:Results['70_PKIWlanMail']      = @($r) }
+        if (Test-IsCheckSelected '71_PKIEndpoints')            { $r = Invoke-TimedCheck -CheckKey '71_PKIEndpoints'            -ScriptBlock { Get-PkiCertificateEndpoints };   $Global:Results['71_PKIEndpoints']     = @($r) }
 
         # Inaktive Accounts - einmaliger Aufruf fuer 3 Check-Keys
         $wantInact = (Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')
