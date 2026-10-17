@@ -1,8 +1,8 @@
 ﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.10 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.11 mit Best-Practice-Bewertung.
 .DESCRIPTION
-    63 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
+    71 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
     interaktivem Startmenue.
     Zweisprachig (Deutsch/Englisch): Die Ausgabesprache wird automatisch aus der
@@ -29,7 +29,7 @@
     (fuer Luftschacht-/Airgap-Umgebungen oder streng firewalled Server).
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.10 (63 Checks, Internationalisierung DE/EN, Update-Anzeige GitLab)
+    Version : 2.11 (71 Checks, Internationalisierung DE/EN, Update-Anzeige GitLab)
     Sprache : automatisch aus dem Betriebssystem, sonst -Language <de|en>
     LogPfad : C:\ScriptLog
 .EXAMPLE
@@ -59,7 +59,7 @@ param(
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.10"
+$Global:ScriptVersion   = "2.11"
 $Global:NoUpdateCheck   = [bool]$NoUpdateCheck
 $Global:Timestamp       = Get-Date -Format "yyyyMMdd_HHmmss"
 $Global:LogDirectory    = if ($OutputPath) { $OutputPath } else { "C:\AD_Health_Check_Log" }

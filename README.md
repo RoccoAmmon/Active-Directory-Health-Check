@@ -1,10 +1,10 @@
-﻿# 🛡️ Active Directory Health Check v2.10
+﻿# 🛡️ Active Directory Health Check v2.11
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.10-brightgreen.svg)]()
-[![Checks](https://img.shields.io/badge/Checks-63-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.11-brightgreen.svg)]()
+[![Checks](https://img.shields.io/badge/Checks-71-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
 > 🇩🇪 [Deutsch](#-deutsch) | 🇬🇧 [English](#-english)
@@ -13,9 +13,9 @@
 
 ![Auswahlfenster des AD Health Check mit Update-Badge](docs/gui-screenshot.png)
 
-> **DE:** Auswahlfenster der GUI: thematische Check-Gruppen, Suite-Buttons und frei wählbarer Ausgabepfad – hier bewusst als **Testversion v2.9** (eine Version unter dem neuesten Release), damit das klickbare Badge „Update verfügbar: v2.10" neben der Versionsnummer sichtbar wird. Beim Start wird die GitLab-Releases-API geprüft (Timeout 3 s), ein Klick auf das Badge öffnet die Release-Seite; abschaltbar mit `-NoUpdateCheck`. Das Versions-Badge im Kopf dieser README zeigt weiterhin die echte Release-Version 2.10.
+> **DE:** Auswahlfenster der GUI: thematische Check-Gruppen, Suite-Buttons und frei wählbarer Ausgabepfad – hier bewusst mit einer **Testversion** (eine Version unter dem damals neuesten Release), damit das klickbare Badge „Update verfügbar: v2.10" neben der Versionsnummer sichtbar wird. Beim Start wird die GitLab-Releases-API geprüft (Timeout 3 s), ein Klick auf das Badge öffnet die Release-Seite; abschaltbar mit `-NoUpdateCheck`. Das Versions-Badge im Kopf dieser README zeigt weiterhin die echte Release-Version 2.11.
 >
-> **EN:** GUI selection window: thematic check groups, suite buttons and freely selectable output path – deliberately shown as **test version v2.9** (one version below the latest release) so that the clickable badge “Update verfügbar: v2.10” (German UI) next to the version number becomes visible. On startup the GitLab releases API is queried (3 s timeout), clicking the badge opens the release page; can be disabled with `-NoUpdateCheck`. The version badge at the top of this README still shows the actual release version 2.10.
+> **EN:** GUI selection window: thematic check groups, suite buttons and freely selectable output path – deliberately shown as a **test version** (one version below the then-latest release) so that the clickable badge “Update verfügbar: v2.10” (German UI) next to the version number becomes visible. On startup the GitLab releases API is queried (3 s timeout), clicking the badge opens the release page; can be disabled with `-NoUpdateCheck`. The version badge at the top of this README still shows the actual release version 2.11.
 
 ---
 
@@ -24,7 +24,7 @@
 ### 📑 Inhaltsverzeichnis
 
 - [Features](#-features)
-- [Die 63 Checks](#-die-63-checks)
+- [Die 71 Checks](#-die-71-checks)
 - [Systemanforderungen](#-systemanforderungen)
 - [Installation](#-installation)
 - [Verwendung](#-verwendung)
@@ -41,7 +41,7 @@
 
 ### ✨ Features
 
-- 🎯 **63 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring)
+- 🎯 **71 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring)
 - 🖼️ **Moderne WPF-GUI** (Light Theme) mit Gruppen-Auswahl, Suite-Buttons und Ausgabepfad-Wahl
 - 🎨 **Farbcodierter HTML-Report** mit Executive Dashboard (OK / WARN / KRITISCH / INFO)
 - 📋 **Gesamtübersicht der Auffälligkeiten** – alle auffälligen Checks in einer Tabelle, nach Schwere sortiert, Befunde je Check gekürzt
@@ -58,7 +58,7 @@
 - 📝 **Ausführliches Logging** (`C:\ScriptLog`)
 - 🔧 **Modular aufgebaut** - einzelne Checks können gezielt ausgeführt werden
 
-### 📋 Die 63 Checks
+### 📋 Die 71 Checks
 
 ### 🏗️ DC-Basis-Infrastruktur
 | # | Check | Beschreibung |
@@ -75,6 +75,7 @@
 | 60 | **DNS-Zonen: SOA & Replikation** | SOA-Refresh/-Expire gegen die Schwellwerte, `ReplicationScope`, `DynamicUpdate=None`, Zonenkonsistenz zwischen den DCs |
 | 61 | **DNS-Forwarder & Conditional Forwarder** | Globale Forwarder inkl. Root-Hints, CF-Ziel-IPs, nur teilweise verteilte (registry-basierte) CF und Weiterleitungsschleifen |
 | 62 | **DNS-Reverse-Lookup-Vollständigkeit** | Fehlende Reverse-Zonen zu allen A/AAAA-Records der Forward-Zonen |
+| 64 | **IPv6-Status je DC** | IPv6-Bindung aller Adapter, `DisabledComponents` (Rohwert + Interpretation) und Abweichung zwischen Adapter und Registry |
 
 ### 🔒 Security: Netzwerk-Protokolle
 | # | Check | Beschreibung |
@@ -103,6 +104,15 @@
 | 22 | **Print Spooler auf DCs** | CVE-2021-34527 (PrintNightmare) |
 | 23 | **Secure Boot Zertifikats-Update** | Windows UEFI CA 2023 Deployment-Status |
 | 24 | **Zertifikate** | Ablauf-Überwachung, EKU-Check |
+
+### 🔐 PKI & Zertifikate
+| # | Check | Beschreibung |
+|---|---|---|
+| 67 | **PKI: Enterprise-CA-Inventar** | CA-Objekte aus `CN=Enrollment Services` mit CA-Zertifikaten (eine Zeile je Zertifikat), Restlaufzeit, veröffentlichte Vorlagen, Veröffentlichung des Ausstellers im AD und Erreichbarkeit der `CertEnroll`-Freigabe |
+| 68 | **PKI: Stamm- & Zwischenzertifikate** | Vertrauenswürdige Zertifikate aus `CN=Certification Authorities`, `CN=NTAuthCertificates` und den Public-Key-Richtlinien der GPOs, inkl. Duplikaterkennung |
+| 69 | **PKI: Zertifikatvorlagen** | Vorlagen mit EKU-Klartext, Gültigkeit, Autoenrollment und tatsächlicher CA-Veröffentlichung; fehlende Vorlagenobjekte und zu offene Vorlagen (Heuristik) |
+| 70 | **PKI: WLAN & Mail** | Zuordnung über EKUs (Client Authentication, Secure Email, EFS) und Richtlinien – ausdrücklich als Plausibilitätsprüfung gekennzeichnet |
+| 71 | **PKI: Sperrlisten-Endpunkte** | CDP-/AIA-Adressen der CA-Zertifikate inkl. Erreichbarkeit und die im AD veröffentlichten Sperrlisten |
 
 ### 🌐 AD-Struktur
 | # | Check | Beschreibung |
@@ -146,6 +156,8 @@
 | 43 | **LAPS-Konfiguration** | Local Admin Password Solution - Aktivierungsstatus, Computer-Abdeckung (ab Server 2019) |
 | 44 | **Konten ohne AES** | Findet Accounts mit RC4-only oder ohne AES-Verschluesselung (Sicherheitsrisiko) |
 | 58 | **SPN-Inventar & Verwaiste SPNs** | SPNs nach Dienstklasse, SPNs auf deaktivierten Konten, unerwartete SPN-Klassen auf User-Konten, SPN-Hosts ohne DNS-Auflösung |
+| 65 | **Computer-SPNs (Export)** | Ein SPN je Zeile: Computername, DNS-Hostname, DN, aktiviert/deaktiviert, OS, SPN, Serviceklasse, Dublette |
+| 66 | **Benutzer-, MSA- und gMSA-SPNs (Export)** | Wie Check 65, zusätzlich sAMAccountName, UPN und „Kennwort läuft nie ab"; Objektarten getrennt in der Spalte `ObjektTyp` |
 
 ### 🎯 Security: Angriffsvektoren 2025/2026
 | # | Check | Beschreibung |
@@ -184,7 +196,7 @@ cd Active-Directory-Health-Check
 # Skript ausführen (interaktiv)
 .\AD_Health_Check.ps1
 
-# Oder automatisiert (alle 63 Checks)
+# Oder automatisiert (alle 71 Checks)
 .\AD_Health_Check.ps1 -FullRun
 ```
 
@@ -278,7 +290,14 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.10 (aktuell)
+### v2.11 (aktuell)
+- **8 neue Checks** (64–71): IPv6-Status je DC, SPN-Exporte (Computer sowie Benutzer/MSA/gMSA – ein SPN je Zeile) und die PKI in fünf getrennten Teilprüfungen (CA-Inventar, vertrauenswürdige Stamm-/Zwischenzertifikate, Zertifikatvorlagen & Veröffentlichung, WLAN-/Mail-Bezüge, Sperrlisten- und Veröffentlichungsendpunkte)
+- **Neue GUI-Gruppe "PKI & Zertifikate"** – bewusst ohne zusammenfassende "PKI OK"-Aussage; nicht ermittelbare Angaben erscheinen als WARN, nie als OK
+- Neue Schwellwerte `PkiCertWarnDays` (90 Tage) und `PkiEndpointTimeoutSec` (10 s)
+- **Behoben:** Check 62 benennt jetzt die fehlende Reverse-Zone; mehrwertige Binärattribute (CA-Zertifikate, Sperrlisten) werden nicht mehr in einzelne Bytes zerlegt; die GPO-Zertifikatssuche liefert keine report-übergreifenden Doppelungen
+- Version 2.11 (71 Checks)
+
+### v2.10
 - **Check 62: DNS-Reverse-Lookup-Vollständigkeit** – prüft zu allen A/AAAA-Records der Primary-Forward-Zonen, ob eine passende Reverse-Zone existiert; fehlende Zonen werden mit IPs und Hosts gemeldet
 - **Check 63: AD-Subnetze vs. Reverse-Lookup-Zonen** – listet alle AD-Subnetze mit Site und Reverse-Zone; meldet DNS-Netze ohne AD-Subnetz (A-Records aller Forward-Zonen) und Reverse-Zonen ohne Subnetz
 - **Behoben:** `$Global:ScriptVersion` stand noch auf 2.7 (Report-Kopf, Update-Check, Fenstertitel)
@@ -367,7 +386,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 ### 📑 Table of Contents
 
 - [Features](#-features)
-- [The 63 Checks](#-the-63-checks)
+- [The 71 Checks](#-the-71-checks)
 - [System Requirements](#-system-requirements)
 - [Installation](#-installation)
 - [Usage](#-usage)
@@ -384,7 +403,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 
 ### ✨ Features
 
-- 🎯 **63 best-practice checks**, sorted thematically (DC fundamentals, security, structure, monitoring)
+- 🎯 **71 best-practice checks**, sorted thematically (DC fundamentals, security, structure, monitoring)
 - 🖼️ **Modern WPF GUI** (light theme) with group selection, suite buttons and output path selection
 - 🎨 **Color-coded HTML report** with executive dashboard (OK / WARN / CRITICAL / INFO)
 - 📋 **Overall summary of findings** – all flagged checks in a single table, sorted by severity, findings per check capped
@@ -401,7 +420,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 - 📝 **Verbose logging** (`C:\ScriptLog`)
 - 🔧 **Modular design** – individual checks can be run selectively
 
-### 📋 The 63 Checks
+### 📋 The 71 Checks
 
 ### 🏗️ DC Core Infrastructure
 | # | Check | Description |
@@ -418,6 +437,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 60 | **DNS zones: SOA & replication** | SOA refresh/expire against the thresholds, `ReplicationScope`, `DynamicUpdate=None`, zone consistency across the DCs |
 | 61 | **DNS forwarders & conditional forwarders** | Global forwarders incl. root hints, CF target IPs, partially distributed (registry-based) CF and forwarding loops |
 | 62 | **DNS reverse lookup completeness** | Missing reverse zones for all A/AAAA records of the forward zones |
+| 64 | **IPv6 status per DC** | IPv6 binding of all adapters, `DisabledComponents` (raw value + interpretation) and deviation between adapter and registry |
 
 ### 🔒 Security: Network Protocols
 | # | Check | Description |
@@ -446,6 +466,15 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 22 | **Print Spooler on DCs** | CVE-2021-34527 (PrintNightmare) |
 | 23 | **Secure Boot Certificate Update** | Windows UEFI CA 2023 deployment status |
 | 24 | **Certificates** | Expiry monitoring, EKU check |
+
+### 🔐 PKI & Certificates
+| # | Check | Description |
+|---|---|---|
+| 67 | **PKI: Enterprise CA inventory** | CA objects from `CN=Enrollment Services` with CA certificates (one row per certificate), remaining lifetime, published templates, publication of the issuer in AD and reachability of the `CertEnroll` share |
+| 68 | **PKI: Root & intermediate certificates** | Trusted certificates from `CN=Certification Authorities`, `CN=NTAuthCertificates` and the GPO public key policies, incl. duplicate detection |
+| 69 | **PKI: Certificate templates** | Templates with EKU plain text, validity, autoenrollment and actual CA publication; missing template objects and overly open templates (heuristic) |
+| 70 | **PKI: WLAN & mail** | Mapping via EKUs (client authentication, secure email, EFS) and policies – explicitly marked as a plausibility check |
+| 71 | **PKI: Revocation endpoints** | CDP/AIA addresses of the CA certificates incl. reachability and the revocation lists published in AD |
 
 ### 🌐 AD Structure
 | # | Check | Description |
@@ -489,6 +518,8 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 43 | **LAPS Configuration** | Local Admin Password Solution – activation status, computer coverage (Server 2019 and later) |
 | 44 | **Accounts without AES** | Finds accounts with RC4-only or without AES encryption (security risk) |
 | 58 | **SPN inventory & stale SPNs** | SPNs by service class, SPNs on disabled accounts, unexpected SPN classes on user accounts, SPN hosts without DNS resolution |
+| 65 | **Computer SPNs (export)** | One SPN per row: computer name, DNS host name, DN, enabled/disabled, OS, SPN, service class, duplicate flag |
+| 66 | **User, MSA and gMSA SPNs (export)** | Same as check 65 plus sAMAccountName, UPN and "password never expires"; object kinds kept separate in the `ObjektTyp` column |
 
 ### 🎯 Security: Attack Vectors 2025/2026
 | # | Check | Description |
@@ -527,7 +558,7 @@ cd Active-Directory-Health-Check
 # Run the script (interactive)
 .\AD_Health_Check.ps1
 
-# Or automated (all 63 checks)
+# Or automated (all 71 checks)
 .\AD_Health_Check.ps1 -FullRun
 ```
 
@@ -621,7 +652,14 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.10 (current)
+### v2.11 (current)
+- **8 new checks** (64–71): IPv6 status per DC, SPN exports (computers and users/MSA/gMSA – one SPN per row) and PKI in five separate sub-checks (CA inventory, trusted root/intermediate certificates, certificate templates & publication, WLAN/mail references, revocation and publication endpoints)
+- **New GUI group "PKI & Zertifikate"** – deliberately without a summarizing "PKI OK" statement; data that cannot be determined appears as WARN, never as OK
+- New thresholds `PkiCertWarnDays` (90 days) and `PkiEndpointTimeoutSec` (10 s)
+- **Fixed:** check 62 now names the missing reverse zone; multi-valued binary attributes (CA certificates, revocation lists) are no longer split into single bytes; the GPO certificate lookup no longer reports duplicates across the whole report
+- Version 2.11 (71 checks)
+
+### v2.10
 - **Check 62: DNS reverse lookup completeness** – checks for all A/AAAA records of the primary forward zones whether a matching reverse zone exists; missing zones are reported with IPs and hosts
 - **Check 63: AD subnets vs. reverse lookup zones** – lists all AD subnets with site and reverse zone; reports DNS networks without an AD subnet (A records of all forward zones) and reverse zones without a subnet
 - **Fixed:** `$Global:ScriptVersion` was still 2.7 (report header, update check, window title)

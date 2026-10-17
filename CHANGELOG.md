@@ -9,6 +9,29 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [2.11] - 2026-10-18
+
+#### Hinzugefügt
+- **Check 64: IPv6-Status je DC** – Computername, IPv6-Bindungsstatus aller Adapter und der Registry-Wert `DisabledComponents` (`HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters`) als Rohwert plus Klartext-Interpretation (MS KB929852); eine Ergebniszeile je DC, Abweichungen zwischen Adapterbindung und Registry als WARN
+- **Check 65: Computer-SPNs** – SPN-Export mit **einer Zeile je SPN** für Computerkonten: Computername, DNS-Hostname, DN, aktiviert/deaktiviert, Betriebssystem, vollständiger SPN, extrahierte Serviceklasse und Dublettenkennzeichnung (gleiche Regel wie Check 38)
+- **Check 66: Benutzer-, MSA- und gMSA-SPNs** – gleiche Datenstruktur wie Check 65, zusätzlich sAMAccountName, UPN und "Kennwort läuft nie ab"; klassische Benutzerkonten, MSA und gMSA werden nicht stillschweigend vermischt, sondern in der Spalte `ObjektTyp` getrennt ausgewiesen (per `-ObjectType` filterbar)
+- **Check 67: PKI – Enterprise-CA-Inventar** – CA-Objekte aus `CN=Enrollment Services` (`pKIEnrollmentService`) mit ihren CA-Zertifikaten (eine Zeile je Zertifikat), Restlaufzeit, Anzahl veröffentlichter Vorlagen, Veröffentlichung des Ausstellers in `CN=Certification Authorities` und lesende Erreichbarkeitsprüfung der `CertEnroll`-Freigabe
+- **Check 68: PKI – Vertrauenswürdige Stamm- und Zwischenzertifikate** – Zertifikate aus `CN=Certification Authorities`, `CN=NTAuthCertificates` und den Public-Key-Richtlinien der GPOs (hex-kodierter Inhalt), Quellen getrennt ausgewiesen, Duplikaterkennung über den Fingerabdruck
+- **Check 69: PKI – Zertifikatvorlagen & Veröffentlichung** – Vorlageninventar (`pKICertificateTemplate`) mit EKU-Klartext, Gültigkeitsdauer, Autoenrollment, tatsächlicher CA-Veröffentlichung und Schema-Version; CA-Referenzen ohne Vorlagenobjekt und eine Heuristik für zu offene Vorlagen
+- **Check 70: PKI – Bezüge zu WLAN und Mailverschlüsselung** – Zuordnung über EKUs (Client Authentication, Secure Email, EFS) sowie die Public-Key- und WLAN-Richtlinien; ausdrücklich als Plausibilitätsprüfung gekennzeichnet, fehlende Zuordnung als WARN
+- **Check 71: PKI – Sperrlisten- und Veröffentlichungsendpunkte** – CDP-/AIA-Adressen aus den CA-Zertifikaten inklusive lesender Erreichbarkeitsprüfung sowie die im AD veröffentlichten Sperrlisten (`CN=<CA>,CN=CDP`); nicht prüfbare Endpunkte bleiben sichtbar und werden nie als OK geführt
+- **Neue GUI-Gruppe "PKI & Zertifikate"** – die fünf Teilprüfungen bewerten jeweils nur ihre eigene Ebene; eine zusammenfassende "PKI OK"-Aussage gibt es bewusst nicht
+- Neue Schwellwerte `$Global:PkiCertWarnDays` (90 Tage Restlaufzeit) und `$Global:PkiEndpointTimeoutSec` (10 s Endpunkttest)
+
+#### Behoben
+- **Check 62** meldete als Befund nur "Summary", auch wenn die Ursache eine fehlende Reverse-Zone war; der Befund benennt jetzt die fehlende Reverse-Zone, und Fehlerzeilen ohne Zusammenfassung werden als WARN statt NODATA geführt
+- **Mehrwertige Binärattribute** (`cACertificate`, `certificateRevocationList`) wurden durch `@()` in einzelne Bytes zerlegt; der neue Helfer `Get-PkiBinaryValues` behandelt sowohl ein Bytearray als auch eine Liste von Bytearrays korrekt
+- **CDP-/AIA-Adressen** werden direkt aus den Erweiterungs-Rohbytes gelesen, da das .NET Framework diese Erweiterungen in `Format()` nicht dekodiert
+- **GPO-Zertifikatssuche** nutzt jetzt relative XPath-Ausdrücke (`.//`), sonst hätte jede Richtlinie die Zertifikate des gesamten Reports gemeldet
+
+#### Geändert
+- Version auf 2.11 erhöht (71 Checks); Skript-Header, README und Wiki angeglichen
+- Neues Testskript `test-67-71-pki.ps1` (60 Assertions) in die Test-Suite aufgenommen
 ### [2.10] - 2026-10-16
 
 #### Hinzugefügt
@@ -249,6 +272,29 @@ All notable changes to this project are documented here.
 
 ## 🇬🇧 English
 
+### [2.11] - 2026-10-18
+
+#### Added
+- **Check 64: IPv6 status per DC** – computer name, IPv6 binding state of all adapters and the registry value `DisabledComponents` (`HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters`) as raw value plus plain-text interpretation (MS KB929852); one result row per DC, deviations between adapter binding and registry reported as WARN
+- **Check 65: Computer SPNs** – SPN export with **one row per SPN** for computer accounts: computer name, DNS host name, DN, enabled/disabled, operating system, full SPN, extracted service class and duplicate flag (same rule as check 38)
+- **Check 66: User, MSA and gMSA SPNs** – same data structure as check 65 plus sAMAccountName, UPN and "password never expires"; classic user accounts, MSA and gMSA are not silently mixed but shown separately in the `ObjektTyp` column (filterable via `-ObjectType`)
+- **Check 67: PKI – Enterprise CA inventory** – CA objects from `CN=Enrollment Services` (`pKIEnrollmentService`) with their CA certificates (one row per certificate), remaining lifetime, number of published templates, publication of the issuer in `CN=Certification Authorities` and a read-only reachability check of the `CertEnroll` share
+- **Check 68: PKI – Trusted root and intermediate certificates** – certificates from `CN=Certification Authorities`, `CN=NTAuthCertificates` and the public key policies of the GPOs (hex-encoded content), sources reported separately, duplicate detection by thumbprint
+- **Check 69: PKI – Certificate templates & publication** – template inventory (`pKICertificateTemplate`) with EKU plain text, validity, autoenrollment, actual CA publication and schema version; CA references without a template object and a heuristic for overly open templates
+- **Check 70: PKI – References to WLAN and mail encryption** – mapping via EKUs (client authentication, secure email, EFS) as well as the public key and WLAN policies; explicitly marked as a plausibility check, missing mapping reported as WARN
+- **Check 71: PKI – Revocation and publication endpoints** – CDP/AIA addresses from the CA certificates including a read-only reachability check as well as the revocation lists published in AD (`CN=<CA>,CN=CDP`); endpoints that cannot be tested remain visible and are never reported as OK
+- **New GUI group "PKI & Zertifikate"** – the five sub-checks each assess only their own layer; a summarizing "PKI OK" statement is deliberately omitted
+- New thresholds `$Global:PkiCertWarnDays` (90 days remaining lifetime) and `$Global:PkiEndpointTimeoutSec` (10 s endpoint test)
+
+#### Fixed
+- **Check 62** reported only "Summary" as its finding even when the cause was a missing reverse zone; the finding now names the missing reverse zone, and error rows without a summary are reported as WARN instead of NODATA
+- **Multi-valued binary attributes** (`cACertificate`, `certificateRevocationList`) were split into single bytes by `@()`; the new helper `Get-PkiBinaryValues` handles both a byte array and a list of byte arrays correctly
+- **CDP/AIA addresses** are now read directly from the raw extension bytes, because the .NET Framework does not decode these extensions in `Format()`
+- **GPO certificate lookup** now uses relative XPath expressions (`.//`), otherwise every policy would have reported the certificates of the entire report
+
+#### Changed
+- Version bumped to 2.11 (71 checks); script header, README and wiki aligned
+- New test script `test-67-71-pki.ps1` (60 assertions) added to the test suite
 ### [2.10] - 2026-10-16
 
 #### Added
