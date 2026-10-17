@@ -140,7 +140,7 @@ $Global:ServiceMap = [ordered]@{
 $Global:CheckGroups = [ordered]@{
     'DC-Infrastruktur' = @(
         '01_DCSystemInfo','02_Services','03_DCDiag','04_Replication','04b_ReplicationFailures',
-        '05_FSMO','06_DNS','60_ZonenSOA','61_Forwarder','62_ReverseLookup','07_SYSVOL','08_Database','34_TimeSync','35_Backup','55_KMS','56_StaleDCs'
+        '05_FSMO','06_DNS','60_ZonenSOA','61_Forwarder','62_ReverseLookup','07_SYSVOL','08_Database','34_TimeSync','35_Backup','55_KMS','56_StaleDCs','64_IPv6'
     )
     'Security & Hardening' = @(
         '09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity',
@@ -228,6 +228,7 @@ $Global:ReportTitles = [ordered]@{
     '54_ProtectedUsers'          = 'Protected Users Audit'
     '55_KMS'                     = 'KMS-Server & Konfiguration'
     '56_StaleDCs'                = 'Tote DCs & DC-Verfuegbarkeit'
+    '64_IPv6'                    = 'IPv6-Status & Registry-Abschaltung'
     '57_RCAudit'                 = 'RC4 / LM Belege je DC'
     '58_SPNInventory'            = 'SPN-Inventar & Verwaiste SPNs'
     '59_EncryptionTypes'         = 'Encryption-Types: Verteilung & AES-Abdeckung'
@@ -777,6 +778,42 @@ inaktiven=>inactive
 Eintrag=>entry
 Zertifikat=>certificate
 Replikations-Fehler=>replication failures
+# ---- IPv6-Status (Check 64) ----
+IPv6-Status & Registry-Abschaltung=>IPv6 status & registry deactivation
+RegistryStatus=>Registry status
+RegistryRohwert=>Registry raw value
+AdapterStatus=>Adapter status
+AdapterDetail=>Adapter details
+IPv6Adressen=>IPv6 addresses
+Abweichung=>Deviation
+Bewertung=>Assessment
+Gesetzt=>Set
+Nicht lesbar=>Not readable
+Nicht ermittelbar=>Not determinable
+Gebunden=>Bound
+Nicht gebunden=>Not bound
+Teilweise gebunden=>Partially bound
+Registry-Wert nicht lesbar: =>Registry value not readable: 
+Abfrage nicht moeglich: =>Query not possible: 
+Abfrage nicht moeglich=>Query not possible
+Nicht gesetzt (Standard: IPv6 vollstaendig aktiviert)=>Not set (default: IPv6 fully enabled)
+IPv6 vollstaendig aktiviert (Standard)=>IPv6 fully enabled (default)
+IPv6 deaktiviert - alle Komponenten ausser Loopback (0xFF)=>IPv6 disabled - all components except the loopback (0xFF)
+IPv6 deaktiviert - Legacy-Wert 0xFFFFFFFF (falscher Wert, korrekt ist 0xFF)=>IPv6 disabled - legacy value 0xFFFFFFFF (incorrect value, correct is 0xFF)
+Prefer IPv4 over IPv6 (Prefix-Policy) - IPv6 bleibt aktiv=>Prefer IPv4 over IPv6 (prefix policy) - IPv6 stays active
+IPv6 auf Nicht-Tunnel-Interfaces deaktiviert=>IPv6 disabled on non-tunnel interfaces
+IPv6-Tunnel-Interfaces deaktiviert=>IPv6 tunnel interfaces disabled
+IPv6 auf Nicht-Tunnel- und Tunnel-Interfaces deaktiviert=>IPv6 disabled on non-tunnel and tunnel interfaces
+Teilweise deaktiviert: =>Partially disabled: 
+Wert nicht interpretierbar=>value not interpretable
+Keine Domain Controller gefunden=>No domain controllers found
+Konfiguration nicht auslesbar (WinRM/Registry)=>Configuration not readable (WinRM/registry)
+Registry deaktiviert IPv6, Adapter aber weiterhin gebunden=>Registry disables IPv6 but the adapter is still bound
+IPv6 an allen Adaptern ausgebunden, Registry-Wert sagt das aber nicht=>IPv6 unbound on all adapters, but the registry value does not state this
+keine IPv6-Adresse aktiv=>no active IPv6 address
+Unterschiedliche IPv6-Konfigurationen zwischen DCs: =>Different IPv6 configurations between DCs: 
+IPv6-Konfiguration lesbar und im Forest konsistent=>IPv6 configuration readable and consistent across the forest
+Auffaelligkeit(en) - Details siehe unten=>finding(s) - see details below
 '@
 
 # --- Tabelle + Regex aufbauen -------------------------------------------------
@@ -1640,7 +1677,7 @@ function Show-ScriptMenu {
                 '32b_InactiveComputers','32c_PasswordNeverExpires','35_Backup','38_SPNDuplicates',
                 '39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                 '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse')
+                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6')
     $sec = @('09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
              '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
              '20_KerberoastingRisk','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
@@ -5127,6 +5164,301 @@ function Test-Check-ZonenSOA {
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
 }
 
+function Resolve-IPv6DisabledComponents {
+    <#
+    .SYNOPSIS
+        Interpretiert den Registry-Wert 'DisabledComponents' unter Tcpip6\Parameters.
+    .NOTES
+        Bitbelegung (niedrigstes Bit zuerst):
+          0x01 Tunnel, 0x02 6to4, 0x04 ISATAP, 0x08 Teredo,
+          0x10 Native/Nicht-Tunnel (auch PPP), 0x20 Prefer IPv4 (Prefix-Policy),
+          0x40 CP, 0x80 IP-TLS
+        Dokumentierte Gesamtwerte: 0x00, 0x01, 0x10, 0x11, 0x20, 0xFF (Quelle: MS KB929852).
+        Wichtig: Ein einzelner Mechanismus (z.B. nur Tunnel oder nur Prefer IPv4) wird
+        NIE als "IPv6 vollstaendig deaktiviert" dargestellt.
+        Rein lesende Auswertung - es wird nichts gesetzt.
+    #>
+    param([AllowNull()][object]$Value)
+    $o = [ordered]@{
+        Present          = ($null -ne $Value)
+        Raw              = $null
+        Hex              = '-'
+        Tunnel           = $false
+        Tunnel6to4       = $false
+        TunnelIsatap     = $false
+        TunnelTeredo     = $false
+        Native           = $false
+        PreferIPv4       = $false
+        TunnelCp         = $false
+        TunnelIpTls      = $false
+        TunnelOnly       = $false
+        PreferOnly       = $false
+        FullyDisabled    = $false
+        LegacyIncorrect  = $false
+        Uninterpretable  = $false
+        Bits             = ''
+        Label            = ''
+    }
+    if ($null -eq $Value) {
+        $o.Label = 'Nicht gesetzt (Standard: IPv6 vollstaendig aktiviert)'
+        return [pscustomobject]$o
+    }
+
+    [int64]$n = 0
+    $okParse = $true
+    if ($Value -is [string]) { $okParse = [int64]::TryParse([string]$Value, [ref]$n) }
+    else { try { $n = [int64]$Value } catch { $okParse = $false } }
+    if (-not $okParse) {
+        $o.Uninterpretable = $true
+        $o.Hex = [string]$Value
+        $o.Label = "Wert nicht interpretierbar ($Value)"
+        return [pscustomobject]$o
+    }
+
+    $o.Raw = $n
+    $o.Hex = '0x{0:X}' -f $n
+    $o.Tunnel       = (($n -band 0x01) -ne 0)
+    $o.Tunnel6to4   = (($n -band 0x02) -ne 0)
+    $o.TunnelIsatap = (($n -band 0x04) -ne 0)
+    $o.TunnelTeredo = (($n -band 0x08) -ne 0)
+    $o.Native       = (($n -band 0x10) -ne 0)
+    $o.PreferIPv4   = (($n -band 0x20) -ne 0)
+    $o.TunnelCp     = (($n -band 0x40) -ne 0)
+    $o.TunnelIpTls  = (($n -band 0x80) -ne 0)
+    $o.TunnelOnly   = ($n -eq 0x01)
+    $o.PreferOnly   = ($n -eq 0x20)
+
+    $bits = @()
+    if ($o.Tunnel)       { $bits += 'Tunnel' }
+    if ($o.Tunnel6to4)   { $bits += '6to4' }
+    if ($o.TunnelIsatap) { $bits += 'ISATAP' }
+    if ($o.TunnelTeredo) { $bits += 'Teredo' }
+    if ($o.Native)       { $bits += 'Native/Nicht-Tunnel' }
+    if ($o.PreferIPv4)   { $bits += 'Prefer IPv4' }
+    if ($o.TunnelCp)     { $bits += 'CP' }
+    if ($o.TunnelIpTls)  { $bits += 'IP-TLS' }
+    $o.Bits = ($bits -join ', ')
+
+    # Nicht auf die 8 dokumentierten Bits abbildbar => nicht interpretierbar.
+    # 0xFFFFFFFF ist ein bekannter Fehlwert (verursacht 5-Sekunden-Startverzoegerung).
+    if ($n -eq 4294967295) { $o.LegacyIncorrect = $true }
+    elseif ($n -lt 0 -or (($n -band 0xFF) -ne $n)) { $o.Uninterpretable = $true }
+
+    $o.FullyDisabled = (($n -eq 0xFF) -or $o.LegacyIncorrect)
+
+    if ($o.Uninterpretable) {
+        $o.Label = "Wert nicht interpretierbar ($($o.Hex))"
+    }
+    elseif ($o.LegacyIncorrect) {
+        $o.Label = 'IPv6 deaktiviert - Legacy-Wert 0xFFFFFFFF (falscher Wert, korrekt ist 0xFF)'
+    }
+    elseif ($o.FullyDisabled) {
+        $o.Label = 'IPv6 deaktiviert - alle Komponenten ausser Loopback (0xFF)'
+    }
+    elseif ($n -eq 0) {
+        $o.Label = 'IPv6 vollstaendig aktiviert (Standard)'
+    }
+    elseif ($o.PreferOnly) {
+        $o.Label = 'Prefer IPv4 over IPv6 (Prefix-Policy) - IPv6 bleibt aktiv'
+    }
+    elseif ($n -eq 0x10) {
+        $o.Label = 'IPv6 auf Nicht-Tunnel-Interfaces deaktiviert'
+    }
+    elseif ($o.TunnelOnly) {
+        $o.Label = 'IPv6-Tunnel-Interfaces deaktiviert'
+    }
+    elseif ($n -eq 0x11) {
+        $o.Label = 'IPv6 auf Nicht-Tunnel- und Tunnel-Interfaces deaktiviert'
+    }
+    else {
+        $o.Label = "Teilweise deaktiviert: $($o.Bits)"
+    }
+    return [pscustomobject]$o
+}
+
+function Get-IPv6ConfigurationStatus {
+    <#
+    .SYNOPSIS
+        Liest je Domain Controller den IPv6-Zustand: Registry (DisabledComponents) + Adapter-Bindung.
+    .NOTES
+        - Forest-weiter Check: eine Ergebniszeile je Domain Controller
+        - Rein lesend! Es werden keine Registry-Werte gesetzt und keine Adapter geaendert.
+        - Registry: HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\DisabledComponents
+        - Adapter : Bindung des Protokolls ms_tcpip6 (Get-NetAdapterBinding) + aktive IPv6-Adressen
+        - Abweichungen Registry <-> Adapter werden gemeldet. Der Registry-Wert aendert die
+          Adapter-Bindung technisch nicht (MS KB929852), deshalb wird nur gewarnt und nicht
+          als Fehlkonfiguration behauptet.
+        - Ein einzelner gesetzter Mechanismus wird nicht als "IPv6 vollstaendig deaktiviert" gewertet.
+    #>
+    $result = @()
+    $sb = {
+        $base = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters'
+        $regExists = $false
+        $regRaw = $null
+        $regErr = ''
+        try {
+            if (Test-Path -Path $base) {
+                $names = @((Get-Item -Path $base -ErrorAction Stop).GetValueNames())
+                if ($names -contains 'DisabledComponents') {
+                    $regRaw = (Get-ItemProperty -Path $base -Name 'DisabledComponents' -ErrorAction Stop).DisabledComponents
+                    $regExists = $true
+                }
+            }
+            else { $regErr = "Pfad nicht vorhanden: $base" }
+        }
+        catch { $regErr = "$_" }
+
+        $bind = @()
+        try { $bind = @(Get-NetAdapterBinding -ComponentID 'ms_tcpip6' -ErrorAction Stop | Select-Object Name, DisplayName, Enabled) }
+        catch { }
+
+        $v6 = @()
+        try {
+            $v6 = @(Get-NetIPAddress -AddressFamily IPv6 -ErrorAction Stop |
+                    Where-Object { $_.IPAddress -and $_.IPAddress -ne '::1' } |
+                    Select-Object IPAddress, InterfaceAlias)
+        }
+        catch {
+            try {
+                foreach ($cfg in @(Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter 'IPEnabled=true' -ErrorAction SilentlyContinue)) {
+                    foreach ($a in @($cfg.IPAddress)) {
+                        if ("$a" -match ':') { $v6 += [pscustomobject]@{ IPAddress = "$a"; InterfaceAlias = "$($cfg.Description)" } }
+                    }
+                }
+            } catch { }
+        }
+
+        [pscustomobject]@{
+            RegExists = $regExists
+            RegRaw    = $regRaw
+            RegErr    = $regErr
+            Bind      = @($bind)
+            V6        = @($v6)
+        }
+    }
+
+    try {
+        $dcs = @(Get-ADDomainController -Filter * -ErrorAction Stop | Sort-Object HostName)
+        if ($dcs.Count -eq 0) {
+            return @([pscustomobject]@{
+                DCName='-'; RegistryStatus='-'; RegistryRohwert='-'
+                Interpretation='Keine Domain Controller gefunden'; AdapterStatus='-'; AdapterDetail='-'
+                IPv6Adressen='0'; Abweichung='-'; Bewertung='WARN'; Detail='Keine Domain Controller gefunden'
+            })
+        }
+
+        foreach ($dc in $dcs) {
+            $dcName = $dc.HostName
+            $raw = Invoke-RemoteCommand -ComputerName $dcName -ScriptBlock $sb
+            if (-not $raw) {
+                $result += [pscustomobject]@{
+                    DCName=$dcName; RegistryStatus='Abfrage nicht moeglich'; RegistryRohwert='-'
+                    Interpretation='Konfiguration nicht auslesbar (WinRM/Registry)'; AdapterStatus='Nicht ermittelbar'
+                    AdapterDetail='-'; IPv6Adressen='-'; Abweichung='-'; Bewertung='WARN'
+                    Detail='Konfiguration nicht auslesbar (WinRM/Registry)'
+                }
+                continue
+            }
+
+            $interp = Resolve-IPv6DisabledComponents -Value $raw.RegRaw
+            $regUnreadable = ((-not $interp.Present) -and ("$($raw.RegErr)" -ne ''))
+            if ($regUnreadable) {
+                $interp.Uninterpretable = $true
+                $interp.Label = "Registry-Wert nicht lesbar: $($raw.RegErr)"
+            }
+
+            $regStatus = if ($regUnreadable) { 'Nicht lesbar' }
+                         elseif ($interp.Present) { 'Gesetzt' }
+                         else { 'Nicht gesetzt' }
+            $regRohwert = if ($regUnreadable) { '-' }
+                          elseif ($interp.Present) { "$($interp.Hex) ($($interp.Raw))" }
+                          else { 'Nicht gesetzt' }
+
+            $bindings  = @($raw.Bind)
+            $bindTotal = @($bindings).Count
+            $bindOnList = @($bindings | Where-Object { "$($_.Enabled)" -eq 'True' -or "$($_.Enabled)" -eq '1' })
+            $bindOn     = @($bindOnList).Count
+            $adapterStatus = if ($bindTotal -eq 0) { 'Nicht ermittelbar' }
+                             elseif ($bindOn -eq 0) { "Nicht gebunden (0/$bindTotal)" }
+                             elseif ($bindOn -eq $bindTotal) { "Gebunden ($bindOn/$bindTotal)" }
+                             else { "Teilweise gebunden ($bindOn/$bindTotal)" }
+            $adapterDetail = if ($bindOn -gt 0) { (@($bindOnList | Select-Object -ExpandProperty Name) -join '; ') } else { '-' }
+
+            $v6Count = @($raw.V6).Count
+            $regOff  = ($interp.Native -or $interp.FullyDisabled)
+
+            $deviation = 'Nein'
+            if ($interp.Uninterpretable) { $deviation = 'Registry-Wert nicht interpretierbar' }
+            elseif ($regOff -and $bindOn -gt 0) { $deviation = 'Registry deaktiviert IPv6, Adapter aber weiterhin gebunden' }
+            elseif ((-not $regOff) -and $bindTotal -gt 0 -and $bindOn -eq 0) { $deviation = 'IPv6 an allen Adaptern ausgebunden, Registry-Wert sagt das aber nicht' }
+
+            $bewertung = if ($interp.Uninterpretable -or $interp.LegacyIncorrect -or $deviation -ne 'Nein') { 'WARN' } else { 'OK' }
+
+            $detail = "$($interp.Label)"
+            if ($deviation -ne 'Nein') { $detail = "$detail | Abweichung: $deviation" }
+            if ($v6Count -eq 0) { $detail = "$detail | keine IPv6-Adresse aktiv" }
+
+            $result += [pscustomobject]@{
+                DCName=$dcName; RegistryStatus=$regStatus; RegistryRohwert=$regRohwert
+                Interpretation=$interp.Label; AdapterStatus=$adapterStatus; AdapterDetail=$adapterDetail
+                IPv6Adressen="$v6Count"; Abweichung=$deviation; Bewertung=$bewertung; Detail=$detail
+            }
+        }
+    }
+    catch {
+        $result += [pscustomobject]@{
+            DCName='-'; RegistryStatus='-'; RegistryRohwert='-'
+            Interpretation="Abfrage nicht moeglich: $_"; AdapterStatus='-'; AdapterDetail='-'
+            IPv6Adressen='-'; Abweichung='-'; Bewertung='WARN'; Detail="Abfrage nicht moeglich: $_"
+        }
+    }
+    return $result
+}
+
+function Test-Check-IPv6 {
+    <#
+    .SYNOPSIS
+        Bewertet die IPv6-Konfiguration je DC (Registry/Adapter) und die Konsistenz im Forest.
+    #>
+    param($data)
+    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $rows = @($data)
+    $findings = @()
+    $rowFlags = @{}
+    $warn = $false
+
+    foreach ($r in $rows) {
+        if ($r.Bewertung -eq 'WARN') {
+            $warn = $true
+            $rowFlags[$r.DCName] = 'WARN'
+            $findings += "$($r.DCName): $($r.Detail)"
+        }
+        else { $rowFlags[$r.DCName] = 'OK' }
+    }
+
+    # Konsistenz: unterscheiden sich die DCs in Registry-Rohwert oder Adapter-Bindung?
+    $variants = @{}
+    foreach ($r in $rows) {
+        if (-not $r.RegistryRohwert -or $r.RegistryRohwert -eq '-') { continue }
+        $sig = "$($r.RegistryRohwert) / $($r.AdapterStatus)"
+        if (-not $variants.ContainsKey($sig)) { $variants[$sig] = @() }
+        $variants[$sig] += $r.DCName
+    }
+    if (@($variants.Keys).Count -gt 1) {
+        $warn = $true
+        $txt = @($variants.Keys | ForEach-Object { "$_ [$($variants[$_] -join ', ')]" }) -join ' | '
+        $findings += "Unterschiedliche IPv6-Konfigurationen zwischen DCs: $txt"
+        foreach ($k in $variants.Keys) {
+            foreach ($d in $variants[$k]) { $rowFlags[$d] = 'WARN' }
+        }
+    }
+
+    $status = if ($warn) { 'WARN' } else { 'OK' }
+    $summary = if ($status -eq 'OK') { "$($rows.Count) DC(s): IPv6-Konfiguration lesbar und im Forest konsistent" }
+               else { "$($rows.Count) DC(s), $($findings.Count) Auffaelligkeit(en) - Details siehe unten" }
+    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings -RowFlags $rowFlags
+}
+
 function Get-LAPSConfiguration {
     <#
     .SYNOPSIS
@@ -6895,6 +7227,7 @@ function Invoke-AllAssessments {
         '61_Forwarder'               = { Test-Check-ConditionalForwarders  $Global:Results['61_Forwarder'] }
         '62_ReverseLookup'           = { Test-Check-ReverseLookupComplete  $Global:Results['62_ReverseLookup'] }
         '63_SubnetReverse'           = { Test-Check-SubnetReverse          $Global:Results['63_SubnetReverse'] }
+        '64_IPv6'                    = { Test-Check-IPv6                    $Global:Results['64_IPv6'] }
     }
     $toAssess = @()
     foreach ($k in $Global:ReportTitles.Keys) {
@@ -7131,6 +7464,7 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                             '52_AnonymousLDAP'           { $row.Test }
                             '53_GPPPasswords'            { $row.Datei }
                             '54_ProtectedUsers'          { $row.Account }
+                            '64_IPv6'                    { $row.DCName }
                             default                      { '' }
                         }
                         $cls = ''
@@ -7413,7 +7747,7 @@ function Start-ADHealthCheck {
                                              '28_ADRecycleBin','29_TombstoneLifetime','30_Levels','31_GPO','35_Backup',
                                              '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                                              '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse') |
+                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6') |
                      Where-Object { $Global:SelectedChecks -contains $_ }
         $selInact = if ((Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')) { 1 } else { 0 }
         $Global:ProgressStats.TotalChecks = ($selPerDC.Count * $dcCountReachable) + $selForest.Count + $selInact + $dcCount
@@ -7497,6 +7831,7 @@ function Start-ADHealthCheck {
         if (Test-IsCheckSelected '61_Forwarder')               { $r = Invoke-TimedCheck -CheckKey '61_Forwarder'               -ScriptBlock { Get-ConditionalForwarding };      $Global:Results['61_Forwarder']               = @($r) }
         if (Test-IsCheckSelected '62_ReverseLookup')           { $r = Invoke-TimedCheck -CheckKey '62_ReverseLookup'           -ScriptBlock { Get-ReverseLookupCompleteness };    $Global:Results['62_ReverseLookup']           = @($r) }
         if (Test-IsCheckSelected '63_SubnetReverse') { $r = Invoke-TimedCheck -CheckKey '63_SubnetReverse' -ScriptBlock { Get-SubnetReverseMatch }; $Global:Results['63_SubnetReverse'] = @($r) }
+        if (Test-IsCheckSelected '64_IPv6')                     { $r = Invoke-TimedCheck -CheckKey '64_IPv6'                     -ScriptBlock { Get-IPv6ConfigurationStatus };    $Global:Results['64_IPv6']                    = @($r) }
 
         # Inaktive Accounts - einmaliger Aufruf fuer 3 Check-Keys
         $wantInact = (Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')
