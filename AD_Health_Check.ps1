@@ -1,8 +1,8 @@
 ﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.11 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.12 mit Best-Practice-Bewertung.
 .DESCRIPTION
-    71 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
+    74 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
     interaktivem Startmenue.
     Zweisprachig (Deutsch/Englisch): Die Ausgabesprache wird automatisch aus der
@@ -29,7 +29,7 @@
     (fuer Luftschacht-/Airgap-Umgebungen oder streng firewalled Server).
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.11 (71 Checks, Internationalisierung DE/EN, Update-Anzeige GitLab)
+    Version : 2.12 (74 Checks, Internationalisierung DE/EN, Update-Anzeige GitLab)
     Sprache : automatisch aus dem Betriebssystem, sonst -Language <de|en>
     LogPfad : C:\ScriptLog
 .EXAMPLE
@@ -59,7 +59,7 @@ param(
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.11"
+$Global:ScriptVersion   = "2.12"
 $Global:NoUpdateCheck   = [bool]$NoUpdateCheck
 $Global:Timestamp       = Get-Date -Format "yyyyMMdd_HHmmss"
 $Global:LogDirectory    = if ($OutputPath) { $OutputPath } else { "C:\AD_Health_Check_Log" }
@@ -104,6 +104,9 @@ $Global:SPNUserAccountClassWarn = @('User','InetOrgPerson')
 # PKI / Zertifikatsinfrastruktur (Checks 67-71)
 $Global:PkiCertWarnDays      = 90
 $Global:PkiEndpointTimeoutSec = 10
+# Hybrid-Identitaet / Microsoft Entra (Checks 72-74)
+$Global:EntraSyncAccountPwdWarnDays = 365
+$Global:SeamlessSSOKeyWarnDays      = 30
 # Reverse-Lookup-Zonen, die der DNS-Dienst automatisch anlegt (Default).
 $Global:DNSDefaultReverseZones = @('0.in-addr.arpa','127.in-addr.arpa','255.in-addr.arpa')
 # Systemzonen, die der DNS-Dienst selbst verwaltet.
@@ -152,6 +155,9 @@ $Global:CheckGroups = [ordered]@{
     )
     'PKI & Zertifikate' = @(
         '67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints'
+    )
+    'Hybrid & Cloud (Entra)' = @(
+        '72_EntraSyncAccounts','73_SeamlessSSO','74_CloudInventory'
     )
     'Identity & Kerberos' = @(
         '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
@@ -245,6 +251,9 @@ $Global:ReportTitles = [ordered]@{
     '69_PKITemplates'            = 'PKI: Zertifikatvorlagen & Veroeffentlichung'
     '70_PKIWlanMail'             = 'PKI: Bezuege zu WLAN und Mailverschluesselung'
     '71_PKIEndpoints'            = 'PKI: Sperrlisten- & Veroeffentlichungsendpunkte'
+    '72_EntraSyncAccounts'       = 'Entra: Sync-Dienstkonten (MSOL_/AAD_)'
+    '73_SeamlessSSO'             = 'Entra: Seamless SSO (AZUREADSSOACC)'
+    '74_CloudInventory'          = 'Entra: Cloud-Anbindung (Inventar)'
 }
 
 #endregion
@@ -961,6 +970,67 @@ Sperrlisten-Adresse aus dem CA-Zertifikat =>revocation list address from the CA 
 keine der =>none of the 
 HTTP-Sperrlistenadressen ist erreichbar - Sperrlistenpruefung ist damit nicht moeglich=>HTTP revocation list addresses is reachable - revocation checking is therefore not possible
 Sperrlistenadresse=>revocation list address
+# ---- Hybrid / Cloud (Microsoft Entra), Checks 72-74 ----
+Hybrid & Cloud (Entra)=>Hybrid & cloud (Entra)
+Entra: Sync-Dienstkonten (MSOL_/AAD_)=>Entra: sync service accounts (MSOL_/AAD_)
+Entra: Seamless SSO (AZUREADSSOACC)=>Entra: Seamless SSO (AZUREADSSOACC)
+Entra: Cloud-Anbindung (Inventar)=>Entra: cloud connectivity (inventory)
+Praefix=>Prefix
+Anzahl=>Count
+Thema=>Topic
+KennwortAlterTage=>Password age (days)
+SchwelleTage=>Threshold (days)
+KennwortLaeuftAb=>Password never expires
+Privilegiert=>Privileged
+ErstelltAm=>Created on
+SchluesselAlterTage=>Key age (days)
+RolloverEmpfohlen=>Rollover recommended
+Konto deaktiviert - vermutlich zurueckgelassen=>Account disabled - presumably left over
+Kennwortalter ueber Schwelle - Wechsel empfohlen=>Password age above threshold - rotation recommended
+Kerberos-Schluessel aelter als Schwelle - Rollover empfohlen=>Kerberos key older than threshold - rollover recommended
+Kennwortzeitpunkt nicht auslesbar=>Password timestamp not readable
+Mitglied einer privilegierten Gruppe=>Member of a privileged group
+Kennwortalter und Rechte im Rahmen=>Password age and permissions within range
+Gruppen nicht lesbar=>Group memberships not readable
+Keine Dienstkonten mit Praefix MSOL_ oder AAD_ im AD gefunden=>No service accounts with prefix MSOL_ or AAD_ found in AD
+Keine Sync-Dienstkonten (MSOL_/AAD_) gefunden=>No sync service accounts (MSOL_/AAD_) found
+Sync-Dienstkonten - Kennwortalter und Rechte im Rahmen=>sync service accounts - password age and permissions within range
+Sync-Dienstkonten - Auffaelligkeiten unten=>sync service accounts - findings below
+AZUREADSSOACC-Konto/Konten - Auffaelligkeiten unten=>AZUREADSSOACC account(s) - findings below
+je Synchronisierungs-Server ein Konto, weitere pruefen=>one account per synchronization server, review additional ones
+Dienstkonten gefunden - je Synchronisierungs-Server ein Konto, zusaetzliche Konten auf zurueckgelassene Server pruefen=>service accounts found - one per synchronization server, check additional accounts for leftover servers
+Abfrage der Sync-Dienstkonten fehlgeschlagen=>Query of the sync service accounts failed
+Kein Konto AZUREADSSOACC im AD - Seamless SSO ist nicht eingerichtet=>No AZUREADSSOACC account in AD - Seamless SSO is not configured
+AZUREADSSOACC-Konto/Konten - Kennwortalter und Rechte im Rahmen=>AZUREADSSOACC account(s) - key age and permissions within range
+Abfrage von AZUREADSSOACC fehlgeschlagen=>Query of AZUREADSSOACC failed
+Tenant & Hybrid Join=>Tenant & hybrid join
+SCP (Device Registration Configuration)=>SCP (Device Registration Configuration)
+kein SCP-Container im Configuration-NC - Hybrid Entra Join ist nicht eingerichtet=>no SCP container in the configuration NC - hybrid Entra join is not configured
+SCP-Container vorhanden, aber kein SCP-Objekt darin=>SCP container exists, but no SCP object inside
+| keine keywords=>| no keywords
+Kerberos Cloud Trust=>Kerberos cloud trust
+AzureADKerberos-Objekt=>AzureADKerberos object
+kein AzureADKerberos-Objekt gefunden=>no AzureADKerberos object found
+AzureADKerberos-Objekt gefunden: =>AzureADKerberos object found: 
+Seamless SSO=>Seamless SSO
+AZUREADSSOACC-Konto=>AZUREADSSOACC account
+Konto AZUREADSSOACC vorhanden=>AZUREADSSOACC account present
+kein Konto AZUREADSSOACC im AD vorhanden=>no AZUREADSSOACC account in AD
+Hybrid Join Geraete=>Hybrid join devices
+Computer mit msDS-DeviceID=>Computers with msDS-DeviceID
+Computer mit gesetztem msDS-DeviceID (Attribut der Entra-Geraeteregistrierung)=>Computers with msDS-DeviceID set (attribute of Entra device registration)
+Attribut msDS-DeviceID nicht im Schema vorhanden=>attribute msDS-DeviceID not present in the schema
+Synchronisierung=>Synchronization
+Sync-Dienstkonten (MSOL_/AAD_)=>Sync service accounts (MSOL_/AAD_)
+Dienstkonten der Entra-Synchronisierung gefunden: =>service accounts of the Entra synchronization found: 
+keine Dienstkonten der Entra-Synchronisierung gefunden=>no service accounts of the Entra synchronization found
+UPN-Suffixe=>UPN suffixes
+Alternative UPN-Suffixe im Forest=>Alternative UPN suffixes in the forest
+alternative UPN-Suffixe im Forest definiert: =>alternative UPN suffixes defined in the forest: 
+keine alternativen UPN-Suffixe im Forest definiert=>no alternative UPN suffixes defined in the forest
+Cloud-Anbindung=>Cloud connectivity
+Cloud-Anbindung dokumentiert=>Cloud connectivity documented
+Bereich konnte nicht ausgelesen werden=>area could not be read
 '@
 
 # --- Tabelle + Regex aufbauen -------------------------------------------------
@@ -1824,7 +1894,8 @@ function Show-ScriptMenu {
                 '32b_InactiveComputers','32c_PasswordNeverExpires','35_Backup','38_SPNDuplicates',
                 '39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                 '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints')
+                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints',
+                '72_EntraSyncAccounts','73_SeamlessSSO','74_CloudInventory')
     $sec = @('09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
              '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
              '20_KerberoastingRisk','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
@@ -7684,6 +7755,388 @@ function Get-ProtectedUsersAudit {
     return $result
 }
 
+#region ============= HYBRID / CLOUD (MICROSOFT ENTRA) - CHECKS 72-74 =========
+
+function Get-CloudAccountGroupInfo {
+    <#
+    .SYNOPSIS
+        Liest die Gruppenmitgliedschaften eines Kontos und erkennt privilegierte Gruppen.
+    .NOTES
+        Rein lesend. Privilegierte Gruppen werden ueber ihre Well-Known-SID erkannt, damit die
+        Auswertung unabhaengig von der Betriebssystemsprache ist: Domain Admins (512),
+        Enterprise Admins (519), Schema Admins (518), Group Policy Creator Owners (520),
+        Administrators (544), Account Operators (548), Server Operators (549),
+        Print Operators (550), Backup Operators (551). DnsAdmins hat keine Well-Known-SID
+        und wird ueber den Namen erkannt.
+    #>
+    param([Parameter(Mandatory)][string]$DistinguishedName)
+    $out = [pscustomobject]@{ Namen = @(); Privilegiert = $false; Fehler = '' }
+    $privSids = @()
+    try {
+        $dSid = (Get-ADDomain -ErrorAction Stop).DomainSID.Value
+        $privSids = @("$dSid-512","$dSid-519","$dSid-518","$dSid-520",
+                      'S-1-5-32-544','S-1-5-32-548','S-1-5-32-549','S-1-5-32-550','S-1-5-32-551')
+    } catch { }
+    try { $groups = @(Get-ADPrincipalGroupMembership -Identity $DistinguishedName -ErrorAction Stop) }
+    catch { $out.Fehler = "$_"; return $out }
+    $names = New-Object System.Collections.ArrayList
+    foreach ($g in $groups) {
+        $nm = "$($g.Name)"
+        [void]$names.Add($nm)
+        $sid = ''
+        try { if ($g.SID) { $sid = "$($g.SID.Value)" } } catch { }
+        if ($sid -and ($privSids -contains $sid)) { $out.Privilegiert = $true }
+        elseif ($nm -eq 'DnsAdmins') { $out.Privilegiert = $true }
+    }
+    $out.Namen = @($names | Sort-Object -Unique)
+    return $out
+}
+
+function Get-EntraSyncAccounts {
+    <#
+    .SYNOPSIS
+        Inventarisiert die Synchronisierungs-Dienstkonten von Microsoft Entra Connect Sync.
+    .NOTES
+        Rein lesend! Es werden keine Kennwoerter geaendert und keine Konten entfernt.
+        - Praefix MSOL_ : Microsoft Entra Connect Sync (Azure AD Connect)
+        - Praefix AAD_  : altes DirSync
+        Jedes Konto gehoert zu einem Synchronisierungs-Server. Ein zusaetzliches, deaktiviertes
+        oder altes Konto deutet auf einen zurueckgelassenen Server hin.
+        Das Kennwortalter stammt aus PasswordLastSet; ist es nicht lesbar, wird das ausgewiesen
+        und das Konto nicht stillschweigend als "alt" behauptet.
+        Dieser Check liest ausschliesslich das AD - es wird keine Cloud-API kontaktiert.
+    #>
+    $result = @()
+    $thr = $Global:EntraSyncAccountPwdWarnDays
+    try {
+        $accts = @(Get-ADUser -LDAPFilter '(|(sAMAccountName=MSOL_*)(sAMAccountName=AAD_*))' -ErrorAction Stop |
+                   Sort-Object SamAccountName)
+        if ($accts.Count -eq 0) {
+            $result += [pscustomobject]@{
+                Kind='Summary'; Konto='(keine)'; Praefix='-'; Aktiv='-'; KennwortAlterTage='-'
+                SchwelleTage="$thr"; KennwortLaeuftAb='-'; Privilegiert='-'; Gruppen='-'
+                ErstelltAm='-'; Bewertung='INFO'; Detail='Keine Dienstkonten mit Praefix MSOL_ oder AAD_ im AD gefunden'
+            }
+            return $result
+        }
+        $warn = 0
+        foreach ($a in $accts) {
+            $age = $null
+            try { if ($a.PasswordLastSet) { $age = [int]((New-TimeSpan -Start $a.PasswordLastSet -End (Get-Date)).Days) } } catch { $age = $null }
+            $gi = Get-CloudAccountGroupInfo -DistinguishedName $a.DistinguishedName
+            $gruppen = if (@($gi.Namen).Count -gt 0) { (@($gi.Namen) -join ', ') } else { '-' }
+            if ($gi.Fehler) { $gruppen = 'Gruppen nicht lesbar' }
+
+            $ph = New-Object System.Collections.ArrayList
+            $bw = 'OK'
+            if (-not $a.Enabled) { $bw = 'WARN'; [void]$ph.Add('Konto deaktiviert - vermutlich zurueckgelassen') }
+            if ($age -ne $null -and $age -gt $thr) { $bw = 'WARN'; [void]$ph.Add('Kennwortalter ueber Schwelle - Wechsel empfohlen') }
+            if ($age -eq $null) { [void]$ph.Add('Kennwortzeitpunkt nicht auslesbar') }
+            if ($gi.Privilegiert) { $bw = 'WARN'; [void]$ph.Add('Mitglied einer privilegierten Gruppe') }
+            if ($ph.Count -eq 0) { [void]$ph.Add('Kennwortalter und Rechte im Rahmen') }
+            if ($bw -eq 'WARN') { $warn++ }
+
+            $created = if ($a.Created) { ([datetime]$a.Created).ToString('yyyy-MM-dd') } else { '-' }
+            $result += [pscustomobject]@{
+                Kind='Konto'; Konto="$($a.SamAccountName)"
+                Praefix=$(if ("$($a.SamAccountName)" -like 'MSOL_*') { 'MSOL_' } else { 'AAD_' })
+                Aktiv=$(if ($a.Enabled) { 'Ja' } else { 'Nein' })
+                KennwortAlterTage=$(if ($age -ne $null) { "$age" } else { '-' })
+                SchwelleTage="$thr"
+                KennwortLaeuftAb=$(if ($a.PasswordNeverExpires) { 'Ja' } else { 'Nein' })
+                Privilegiert=$(if ($gi.Privilegiert) { 'Ja' } else { 'Nein' })
+                Gruppen=$gruppen
+                ErstelltAm=$created
+                Bewertung=$bw
+                Detail=(@($ph) -join ' | ')
+            }
+        }
+        $cnt = @($result | Where-Object { $_.Kind -eq 'Konto' }).Count
+        $sd = if ($warn -gt 0 -or $cnt -gt 1) { "$cnt Sync-Dienstkonten - Auffaelligkeiten unten" }
+              else { "$cnt Sync-Dienstkonten - Kennwortalter und Rechte im Rahmen" }
+        $result += [pscustomobject]@{
+            Kind='Summary'; Konto='(Uebersicht)'; Praefix='-'; Aktiv='-'; KennwortAlterTage='-'
+            SchwelleTage="$thr"; KennwortLaeuftAb='-'; Privilegiert='-'; Gruppen='-'; ErstelltAm='-'
+            Bewertung=$(if ($warn -gt 0 -or $cnt -gt 1) { 'WARN' } else { 'OK' }); Detail=$sd
+        }
+    } catch {
+        Write-Log "EntraSyncAccounts: $_" -Level WARN -NoConsole
+        $result += [pscustomobject]@{
+            Kind='Fehler'; Konto='(Abfrage)'; Praefix='-'; Aktiv='-'; KennwortAlterTage='-'
+            SchwelleTage="$thr"; KennwortLaeuftAb='-'; Privilegiert='-'; Gruppen='-'; ErstelltAm='-'
+            Bewertung='WARN'; Detail="Abfrage fehlgeschlagen: $_"
+        }
+    }
+    return $result
+}
+
+function Test-Check-EntraSyncAccounts {
+    <#
+    .SYNOPSIS
+        Bewertet Kennwortalter, Rechte und Reste der Entra-Synchronisierungs-Dienstkonten.
+    #>
+    param($data)
+    $rows = @($data)
+    if ($rows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $fehler = @($rows | Where-Object { $_.Kind -eq 'Fehler' })
+    if ($fehler.Count -gt 0) {
+        return New-Assessment -OverallStatus 'WARN' -Summary 'Abfrage der Sync-Dienstkonten fehlgeschlagen' `
+            -Findings @($fehler | ForEach-Object { "$($_.Detail)" })
+    }
+    $konten = @($rows | Where-Object { $_.Kind -eq 'Konto' })
+    if ($konten.Count -eq 0) {
+        return New-Assessment -OverallStatus 'INFO' -Summary 'Keine Sync-Dienstkonten (MSOL_/AAD_) gefunden'
+    }
+    $findings = @(); $rowFlags = @{}; $warn = $false
+    foreach ($k in $konten) {
+        $f = if ("$($k.Bewertung)" -eq 'WARN') { 'WARN' } else { 'OK' }
+        $rowFlags["$($k.Konto)"] = $f
+        if ($f -eq 'WARN') { $warn = $true; $findings += "$($k.Konto): $($k.Detail)" }
+    }
+    if ($konten.Count -gt 1) {
+        $warn = $true
+        $findings += "$($konten.Count) Dienstkonten gefunden - je Synchronisierungs-Server ein Konto, zusaetzliche Konten auf zurueckgelassene Server pruefen"
+    }
+    $status = if ($warn) { 'WARN' } else { 'OK' }
+    $summary = if ($warn) { "$($konten.Count) Sync-Dienstkonten - Auffaelligkeiten unten" }
+               else { "$($konten.Count) Sync-Dienstkonten - Kennwortalter und Rechte im Rahmen" }
+    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings -RowFlags $rowFlags
+}
+
+function Get-SeamlessSSOStatus {
+    <#
+    .SYNOPSIS
+        Prueft das Computerkonto AZUREADSSOACC (Seamless Single Sign-On).
+    .NOTES
+        Rein lesend. AZUREADSSOACC wird von Microsoft Entra Connect angelegt; sein Kennwort ist
+        der Kerberos-Entschluesselungsschluessel fuer Seamless SSO. Microsoft empfiehlt einen
+        regelmaessigen Rollover; das Kennwortalter wird aus PasswordLastSet gelesen.
+        Existiert kein Konto, ist Seamless SSO nicht im Einsatz - das wird als INFO ausgewiesen
+        und nicht als Fehler behauptet. Dieser Check liest ausschliesslich das AD.
+    #>
+    $result = @()
+    $thr = $Global:SeamlessSSOKeyWarnDays
+    try {
+        $accs = @(Get-ADComputer -LDAPFilter '(name=AZUREADSSOACC)' -ErrorAction Stop)
+        if ($accs.Count -eq 0) {
+            $result += [pscustomobject]@{
+                Kind='Summary'; Objekt='(keines)'; Aktiv='-'; SchluesselAlterTage='-'; SchwelleTage="$thr"
+                RolloverEmpfohlen='-'; Privilegiert='-'; Gruppen='-'; ErstelltAm='-'; Bewertung='INFO'
+                Detail='Kein Konto AZUREADSSOACC im AD - Seamless SSO ist nicht eingerichtet'
+            }
+            return $result
+        }
+        $warn = 0
+        foreach ($a in $accs) {
+            $age = $null
+            try { if ($a.PasswordLastSet) { $age = [int]((New-TimeSpan -Start $a.PasswordLastSet -End (Get-Date)).Days) } } catch { $age = $null }
+            $gi = Get-CloudAccountGroupInfo -DistinguishedName $a.DistinguishedName
+            $gruppen = if (@($gi.Namen).Count -gt 0) { (@($gi.Namen) -join ', ') } else { '-' }
+            if ($gi.Fehler) { $gruppen = 'Gruppen nicht lesbar' }
+            $rollover = if ($age -ne $null -and $age -gt $thr) { 'Ja' } else { 'Nein' }
+
+            $ph = New-Object System.Collections.ArrayList
+            $bw = 'OK'
+            if (-not $a.Enabled) { $bw = 'WARN'; [void]$ph.Add('Konto deaktiviert - vermutlich zurueckgelassen') }
+            if ($rollover -eq 'Ja') { $bw = 'WARN'; [void]$ph.Add('Kerberos-Schluessel aelter als Schwelle - Rollover empfohlen') }
+            if ($age -eq $null) { [void]$ph.Add('Kennwortzeitpunkt nicht auslesbar') }
+            if ($ph.Count -eq 0) { [void]$ph.Add('Kennwortalter und Rechte im Rahmen') }
+            if ($bw -eq 'WARN') { $warn++ }
+
+            $created = if ($a.Created) { ([datetime]$a.Created).ToString('yyyy-MM-dd') } else { '-' }
+            $result += [pscustomobject]@{
+                Kind='Objekt'; Objekt="$($a.Name)"; Aktiv=$(if ($a.Enabled) { 'Ja' } else { 'Nein' })
+                SchluesselAlterTage=$(if ($age -ne $null) { "$age" } else { '-' })
+                SchwelleTage="$thr"; RolloverEmpfohlen=$rollover
+                Privilegiert=$(if ($gi.Privilegiert) { 'Ja' } else { 'Nein' })
+                Gruppen=$gruppen; ErstelltAm=$created; Bewertung=$bw; Detail=(@($ph) -join ' | ')
+            }
+        }
+        $cnt = @($result | Where-Object { $_.Kind -eq 'Objekt' }).Count
+        $result += [pscustomobject]@{
+            Kind='Summary'; Objekt='(Uebersicht)'; Aktiv='-'; SchluesselAlterTage='-'; SchwelleTage="$thr"
+            RolloverEmpfohlen='-'; Privilegiert='-'; Gruppen='-'; ErstelltAm='-'
+            Bewertung=$(if ($warn -gt 0) { 'WARN' } else { 'OK' })
+            Detail=$(if ($warn -gt 0) { "$cnt AZUREADSSOACC-Konto/Konten - Auffaelligkeiten unten" }
+                     else { "$cnt AZUREADSSOACC-Konto/Konten - Kennwortalter und Rechte im Rahmen" })
+        }
+    } catch {
+        Write-Log "SeamlessSSO: $_" -Level WARN -NoConsole
+        $result += [pscustomobject]@{
+            Kind='Fehler'; Objekt='(Abfrage)'; Aktiv='-'; SchluesselAlterTage='-'; SchwelleTage="$thr"
+            RolloverEmpfohlen='-'; Privilegiert='-'; Gruppen='-'; ErstelltAm='-'; Bewertung='WARN'
+            Detail="Abfrage fehlgeschlagen: $_"
+        }
+    }
+    return $result
+}
+
+function Test-Check-SeamlessSSO {
+    <#
+    .SYNOPSIS
+        Bewertet das Alter des Seamless-SSO-Schluessels (AZUREADSSOACC).
+    #>
+    param($data)
+    $rows = @($data)
+    if ($rows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $fehler = @($rows | Where-Object { $_.Kind -eq 'Fehler' })
+    if ($fehler.Count -gt 0) {
+        return New-Assessment -OverallStatus 'WARN' -Summary 'Abfrage von AZUREADSSOACC fehlgeschlagen' `
+            -Findings @($fehler | ForEach-Object { "$($_.Detail)" })
+    }
+    $objekte = @($rows | Where-Object { $_.Kind -eq 'Objekt' })
+    if ($objekte.Count -eq 0) {
+        return New-Assessment -OverallStatus 'INFO' -Summary 'Kein Konto AZUREADSSOACC im AD - Seamless SSO ist nicht eingerichtet'
+    }
+    $findings = @(); $rowFlags = @{}; $warn = $false
+    foreach ($o in $objekte) {
+        $f = if ("$($o.Bewertung)" -eq 'WARN') { 'WARN' } else { 'OK' }
+        $rowFlags["$($o.Objekt)"] = $f
+        if ($f -eq 'WARN') { $warn = $true; $findings += "$($o.Objekt): $($o.Detail)" }
+    }
+    $status = if ($warn) { 'WARN' } else { 'OK' }
+    $summary = if ($warn) { "$($objekte.Count) AZUREADSSOACC-Konto/Konten - Auffaelligkeiten unten" }
+               else { "$($objekte.Count) AZUREADSSOACC-Konto/Konten - Kennwortalter und Rechte im Rahmen" }
+    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings -RowFlags $rowFlags
+}
+
+function Get-CloudConnectivityInventory {
+    <#
+    .SYNOPSIS
+        Dokumentiert die im AD sichtbare Cloud-Anbindung (Tenant/Hybrid Join, Kerberos Cloud Trust,
+        Seamless SSO, Hybrid-Join-Geraete, Synchronisierungs-Konten, UPN-Suffixe).
+    .NOTES
+        Reines Inventar (Bewertung INFO). Es wird nur das AD gelesen - keine Cloud-API, keine
+        Diensteabfrage, keine Aenderung. Nicht auslesbare Bereiche werden ausdruecklich als
+        solche ausgewiesen und nicht als "nicht konfiguriert" behauptet.
+        - SCP              : CN=Device Registration Configuration,CN=Services,CN=Configuration
+                             (Tenant-Bezug in den keywords azureADId/azureADName)
+        - Kerberos Cloud Trust: Objekt AzureADKerberos
+        - Hybrid Join      : Computerobjekte mit gesetztem msDS-DeviceID
+        - Synchronisierung : sAMAccountName mit Praefix MSOL_ oder AAD_
+        - UPN-Suffixe      : alternative Suffixe aus Get-ADForest
+    #>
+    $result = @()
+    $dnRoot = ''
+    try { $dnRoot = 'DC=' + ((Get-ADForest -ErrorAction Stop).RootDomain -replace '\.', ',DC=') } catch { }
+
+    # 1) Tenant / Hybrid-Join-SCP
+    if (-not $dnRoot) {
+        $result += [pscustomobject]@{ Kind='Bereich'; Bereich='Tenant & Hybrid Join'
+            Thema='SCP (Device Registration Configuration)'; Anzahl='?'; Bewertung='INFO'
+            Detail='Bereich konnte nicht ausgelesen werden' }
+    } else {
+        $scpBase = "CN=Device Registration Configuration,CN=Services,CN=Configuration,$dnRoot"
+        $scps = @(); $baseOk = $false; $err = ''
+        try { $null = Get-ADObject -Identity $scpBase -ErrorAction Stop; $baseOk = $true } catch { $err = "$_" }
+        if ($baseOk) {
+            try { $scps = @(Get-ADObject -SearchBase $scpBase -SearchScope OneLevel -Filter * -Properties keywords -ErrorAction Stop) }
+            catch { $err = "$_" }
+        }
+        if (-not $baseOk) {
+            $result += [pscustomobject]@{ Kind='Bereich'; Bereich='Tenant & Hybrid Join'
+                Thema='SCP (Device Registration Configuration)'; Anzahl='0'; Bewertung='INFO'
+                Detail='kein SCP-Container im Configuration-NC - Hybrid Entra Join ist nicht eingerichtet' }
+        } elseif (@($scps).Count -eq 0) {
+            $result += [pscustomobject]@{ Kind='Bereich'; Bereich='Tenant & Hybrid Join'
+                Thema='SCP (Device Registration Configuration)'; Anzahl='0'; Bewertung='INFO'
+                Detail='SCP-Container vorhanden, aber kein SCP-Objekt darin' }
+        } else {
+            foreach ($s in $scps) {
+                $kw = @($s.keywords)
+                $tid = @($kw | Where-Object { "$_" -like 'azureADId:*' } | ForEach-Object { "$_".Substring(10) })
+                $tname = @($kw | Where-Object { "$_" -like 'azureADName:*' } | ForEach-Object { "$_".Substring(12) })
+                $det = "SCP $($s.Name)"
+                if (@($tid).Count -gt 0) { $det = "$det | AzureADId=$(@($tid) -join ',')" }
+                if (@($tname).Count -gt 0) { $det = "$det | AzureADName=$(@($tname) -join ',')" }
+                if ($kw.Count -eq 0) { $det = "$det | keine keywords" }
+                $result += [pscustomobject]@{ Kind='Bereich'; Bereich='Tenant & Hybrid Join'
+                    Thema='SCP (Device Registration Configuration)'; Anzahl="$($kw.Count)"; Bewertung='INFO'; Detail=$det }
+            }
+        }
+    }
+
+    # 2) Kerberos Cloud Trust
+    $kb = @(); $kbErr = ''
+    try { $kb += @(Get-ADObject -Filter "Name -eq 'AzureADKerberos'" -ErrorAction Stop) } catch { $kbErr = "$_" }
+    if ($dnRoot) {
+        try { $kb += @(Get-ADObject -SearchBase "CN=Services,CN=Configuration,$dnRoot" -Filter "Name -eq 'AzureADKerberos'" -ErrorAction Stop) } catch { if (-not $kbErr) { $kbErr = "$_" } }
+    }
+    $kb = @($kb | Sort-Object DistinguishedName -Unique)
+    if (@($kb).Count -eq 0) {
+        $det = if ($kbErr) { 'Bereich konnte nicht ausgelesen werden' } else { 'kein AzureADKerberos-Objekt gefunden' }
+        $result += [pscustomobject]@{ Kind='Bereich'; Bereich='Kerberos Cloud Trust'
+            Thema='AzureADKerberos-Objekt'; Anzahl='0'; Bewertung='INFO'; Detail=$det }
+    } else {
+        foreach ($o in $kb) {
+            $result += [pscustomobject]@{ Kind='Bereich'; Bereich='Kerberos Cloud Trust'
+                Thema='AzureADKerberos-Objekt'; Anzahl='1'; Bewertung='INFO'
+                Detail="AzureADKerberos-Objekt gefunden: $($o.DistinguishedName)" }
+        }
+    }
+
+    # 3) Seamless SSO (Objekt vorhanden?)
+    try {
+        $sso = @(Get-ADComputer -LDAPFilter '(name=AZUREADSSOACC)' -ErrorAction Stop)
+        $det = if (@($sso).Count -gt 0) { 'Konto AZUREADSSOACC vorhanden' } else { 'kein Konto AZUREADSSOACC im AD vorhanden' }
+        $result += [pscustomobject]@{ Kind='Bereich'; Bereich='Seamless SSO'; Thema='AZUREADSSOACC-Konto'
+            Anzahl="$(@($sso).Count)"; Bewertung='INFO'; Detail=$det }
+    } catch {
+        $result += [pscustomobject]@{ Kind='Bereich'; Bereich='Seamless SSO'; Thema='AZUREADSSOACC-Konto'
+            Anzahl='?'; Bewertung='INFO'; Detail='Bereich konnte nicht ausgelesen werden' }
+    }
+
+    # 4) Hybrid-Join-Geraete
+    $devs = @(); $devErr = ''
+    try { $devs = @(Get-ADComputer -LDAPFilter '(msDS-DeviceID=*)' -ErrorAction Stop) } catch { $devErr = "$_" }
+    $det = if ($devErr) { 'Bereich konnte nicht ausgelesen werden' }
+           else { 'Computer mit gesetztem msDS-DeviceID (Attribut der Entra-Geraeteregistrierung)' }
+    $result += [pscustomobject]@{ Kind='Bereich'; Bereich='Hybrid Join Geraete'; Thema='Computer mit msDS-DeviceID'
+        Anzahl=$(if ($devErr) { '?' } else { "$(@($devs).Count)" }); Bewertung='INFO'; Detail=$det }
+
+    # 5) Synchronisierungs-Konten
+    try {
+        $sync = @(Get-ADUser -LDAPFilter '(|(sAMAccountName=MSOL_*)(sAMAccountName=AAD_*))' -ErrorAction Stop)
+        $det = if (@($sync).Count -gt 0) { 'Dienstkonten der Entra-Synchronisierung gefunden: ' + (@($sync | Select-Object -ExpandProperty SamAccountName) -join ', ') }
+               else { 'keine Dienstkonten der Entra-Synchronisierung gefunden' }
+        $result += [pscustomobject]@{ Kind='Bereich'; Bereich='Synchronisierung'; Thema='Sync-Dienstkonten (MSOL_/AAD_)'
+            Anzahl="$(@($sync).Count)"; Bewertung='INFO'; Detail=$det }
+    } catch {
+        $result += [pscustomobject]@{ Kind='Bereich'; Bereich='Synchronisierung'; Thema='Sync-Dienstkonten (MSOL_/AAD_)'
+            Anzahl='?'; Bewertung='INFO'; Detail='Bereich konnte nicht ausgelesen werden' }
+    }
+
+    # 6) Alternative UPN-Suffixe
+    try {
+        $suf = @((Get-ADForest -ErrorAction Stop).UPNSuffixes)
+        $det = if ($suf.Count -gt 0) { 'alternative UPN-Suffixe im Forest definiert: ' + ($suf -join ', ') }
+               else { 'keine alternativen UPN-Suffixe im Forest definiert' }
+        $result += [pscustomobject]@{ Kind='Bereich'; Bereich='UPN-Suffixe'; Thema='Alternative UPN-Suffixe im Forest'
+            Anzahl="$($suf.Count)"; Bewertung='INFO'; Detail=$det }
+    } catch {
+        $result += [pscustomobject]@{ Kind='Bereich'; Bereich='UPN-Suffixe'; Thema='Alternative UPN-Suffixe im Forest'
+            Anzahl='?'; Bewertung='INFO'; Detail='Bereich konnte nicht ausgelesen werden' }
+    }
+
+    $cnt = @($result | Where-Object { $_.Kind -eq 'Bereich' }).Count
+    $result += [pscustomobject]@{ Kind='Summary'; Bereich='(Uebersicht)'; Thema='Cloud-Anbindung'
+        Anzahl="$cnt"; Bewertung='INFO'; Detail="Cloud-Anbindung dokumentiert ($cnt)" }
+    return $result
+}
+
+function Test-Check-CloudInventory {
+    <#
+    .SYNOPSIS
+        Bewertet das Cloud-Inventar nicht - dokumentiert es nur und nennt nicht auslesbare Bereiche.
+    #>
+    param($data)
+    $rows = @($data | Where-Object { $_.Kind -eq 'Bereich' })
+    if ($rows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $findings = @($rows | Where-Object { "$($_.Detail)" -eq 'Bereich konnte nicht ausgelesen werden' } |
+                  ForEach-Object { "$($_.Thema): $($_.Detail)" })
+    New-Assessment -OverallStatus 'INFO' -Summary "Cloud-Anbindung dokumentiert ($($rows.Count))" -Findings $findings
+}
+
 #endregion
 
 #region ============= ASSESSMENT-ENGINE ======================================
@@ -8602,6 +9055,9 @@ function Invoke-AllAssessments {
         '69_PKITemplates'            = { Test-Check-PkiCertificateTemplates $Global:Results['69_PKITemplates'] }
         '70_PKIWlanMail'             = { Test-Check-PkiWlanMailMapping      $Global:Results['70_PKIWlanMail'] }
         '71_PKIEndpoints'            = { Test-Check-PkiCertificateEndpoints $Global:Results['71_PKIEndpoints'] }
+        '72_EntraSyncAccounts'       = { Test-Check-EntraSyncAccounts        $Global:Results['72_EntraSyncAccounts'] }
+        '73_SeamlessSSO'             = { Test-Check-SeamlessSSO              $Global:Results['73_SeamlessSSO'] }
+        '74_CloudInventory'          = { Test-Check-CloudInventory           $Global:Results['74_CloudInventory'] }
     }
     $toAssess = @()
     foreach ($k in $Global:ReportTitles.Keys) {
@@ -8844,6 +9300,9 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                             '69_PKITemplates'            { $row.RowKey }
                             '70_PKIWlanMail'             { $row.RowKey }
                             '71_PKIEndpoints'            { $row.RowKey }
+                            '72_EntraSyncAccounts'       { $row.Konto }
+                            '73_SeamlessSSO'             { $row.Objekt }
+                            '74_CloudInventory'          { $row.Detail }
                             default                      { '' }
                         }
                         $cls = ''
@@ -9126,7 +9585,7 @@ function Start-ADHealthCheck {
                                              '28_ADRecycleBin','29_TombstoneLifetime','30_Levels','31_GPO','35_Backup',
                                              '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                                              '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints') |
+                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints','72_EntraSyncAccounts','73_SeamlessSSO','74_CloudInventory') |
                      Where-Object { $Global:SelectedChecks -contains $_ }
         $selInact = if ((Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')) { 1 } else { 0 }
         $Global:ProgressStats.TotalChecks = ($selPerDC.Count * $dcCountReachable) + $selForest.Count + $selInact + $dcCount
@@ -9218,6 +9677,9 @@ function Start-ADHealthCheck {
         if (Test-IsCheckSelected '69_PKITemplates')            { $r = Invoke-TimedCheck -CheckKey '69_PKITemplates'            -ScriptBlock { Get-PkiCertificateTemplates };   $Global:Results['69_PKITemplates']     = @($r) }
         if (Test-IsCheckSelected '70_PKIWlanMail')             { $r = Invoke-TimedCheck -CheckKey '70_PKIWlanMail'             -ScriptBlock { Get-PkiWlanMailMapping };        $Global:Results['70_PKIWlanMail']      = @($r) }
         if (Test-IsCheckSelected '71_PKIEndpoints')            { $r = Invoke-TimedCheck -CheckKey '71_PKIEndpoints'            -ScriptBlock { Get-PkiCertificateEndpoints };   $Global:Results['71_PKIEndpoints']     = @($r) }
+        if (Test-IsCheckSelected '72_EntraSyncAccounts')       { $r = Invoke-TimedCheck -CheckKey '72_EntraSyncAccounts'       -ScriptBlock { Get-EntraSyncAccounts };         $Global:Results['72_EntraSyncAccounts'] = @($r) }
+        if (Test-IsCheckSelected '73_SeamlessSSO')             { $r = Invoke-TimedCheck -CheckKey '73_SeamlessSSO'             -ScriptBlock { Get-SeamlessSSOStatus };         $Global:Results['73_SeamlessSSO']      = @($r) }
+        if (Test-IsCheckSelected '74_CloudInventory')          { $r = Invoke-TimedCheck -CheckKey '74_CloudInventory'          -ScriptBlock { Get-CloudConnectivityInventory }; $Global:Results['74_CloudInventory']   = @($r) }
 
         # Inaktive Accounts - einmaliger Aufruf fuer 3 Check-Keys
         $wantInact = (Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')
