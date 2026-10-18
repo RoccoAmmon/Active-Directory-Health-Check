@@ -1,10 +1,10 @@
-﻿# 🛡️ Active Directory Health Check v2.11
+﻿# 🛡️ Active Directory Health Check v2.12
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.11-brightgreen.svg)]()
-[![Checks](https://img.shields.io/badge/Checks-71-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.12-brightgreen.svg)]()
+[![Checks](https://img.shields.io/badge/Checks-74-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
 > 🇩🇪 [Deutsch](#-deutsch) | 🇬🇧 [English](#-english)
@@ -13,9 +13,9 @@
 
 ![Auswahlfenster des AD Health Check mit Update-Badge](docs/gui-screenshot.png)
 
-> **DE:** Auswahlfenster der GUI: thematische Check-Gruppen, Suite-Buttons und frei wählbarer Ausgabepfad – hier bewusst mit einer **Testversion** (eine Version unter dem damals neuesten Release), damit das klickbare Badge „Update verfügbar: v2.10" neben der Versionsnummer sichtbar wird. Beim Start wird die GitLab-Releases-API geprüft (Timeout 3 s), ein Klick auf das Badge öffnet die Release-Seite; abschaltbar mit `-NoUpdateCheck`. Das Versions-Badge im Kopf dieser README zeigt weiterhin die echte Release-Version 2.11.
+> **DE:** Auswahlfenster der GUI: thematische Check-Gruppen, Suite-Buttons und frei wählbarer Ausgabepfad – hier bewusst mit einer **Testversion** (eine Version unter dem damals neuesten Release), damit das klickbare Badge „Update verfügbar: v2.10" neben der Versionsnummer sichtbar wird. Beim Start wird die GitLab-Releases-API geprüft (Timeout 3 s), ein Klick auf das Badge öffnet die Release-Seite; abschaltbar mit `-NoUpdateCheck`. Das Versions-Badge im Kopf dieser README zeigt weiterhin die echte Release-Version 2.12.
 >
-> **EN:** GUI selection window: thematic check groups, suite buttons and freely selectable output path – deliberately shown as a **test version** (one version below the then-latest release) so that the clickable badge “Update verfügbar: v2.10” (German UI) next to the version number becomes visible. On startup the GitLab releases API is queried (3 s timeout), clicking the badge opens the release page; can be disabled with `-NoUpdateCheck`. The version badge at the top of this README still shows the actual release version 2.11.
+> **EN:** GUI selection window: thematic check groups, suite buttons and freely selectable output path – deliberately shown as a **test version** (one version below the then-latest release) so that the clickable badge “Update verfügbar: v2.10” (German UI) next to the version number becomes visible. On startup the GitLab releases API is queried (3 s timeout), clicking the badge opens the release page; can be disabled with `-NoUpdateCheck`. The version badge at the top of this README still shows the actual release version 2.12.
 
 ---
 
@@ -24,7 +24,7 @@
 ### 📑 Inhaltsverzeichnis
 
 - [Features](#-features)
-- [Die 71 Checks](#-die-71-checks)
+- [Die 74 Checks](#-die-74-checks)
 - [Systemanforderungen](#-systemanforderungen)
 - [Installation](#-installation)
 - [Verwendung](#-verwendung)
@@ -41,7 +41,7 @@
 
 ### ✨ Features
 
-- 🎯 **71 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring)
+- 🎯 **74 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring, Hybrid/Cloud)
 - 🖼️ **Moderne WPF-GUI** (Light Theme) mit Gruppen-Auswahl, Suite-Buttons und Ausgabepfad-Wahl
 - 🎨 **Farbcodierter HTML-Report** mit Executive Dashboard (OK / WARN / KRITISCH / INFO)
 - 📋 **Gesamtübersicht der Auffälligkeiten** – alle auffälligen Checks in einer Tabelle, nach Schwere sortiert, Befunde je Check gekürzt
@@ -58,7 +58,7 @@
 - 📝 **Ausführliches Logging** (`C:\ScriptLog`)
 - 🔧 **Modular aufgebaut** - einzelne Checks können gezielt ausgeführt werden
 
-### 📋 Die 71 Checks
+### 📋 Die 74 Checks
 
 ### 🏗️ DC-Basis-Infrastruktur
 | # | Check | Beschreibung |
@@ -113,6 +113,15 @@
 | 69 | **PKI: Zertifikatvorlagen** | Vorlagen mit EKU-Klartext, Gültigkeit, Autoenrollment und tatsächlicher CA-Veröffentlichung; fehlende Vorlagenobjekte und zu offene Vorlagen (Heuristik) |
 | 70 | **PKI: WLAN & Mail** | Zuordnung über EKUs (Client Authentication, Secure Email, EFS) und Richtlinien – ausdrücklich als Plausibilitätsprüfung gekennzeichnet |
 | 71 | **PKI: Sperrlisten-Endpunkte** | CDP-/AIA-Adressen der CA-Zertifikate inkl. Erreichbarkeit und die im AD veröffentlichten Sperrlisten |
+
+### ☁️ Hybrid & Cloud (Entra)
+| # | Check | Beschreibung |
+|---|---|---|
+| 72 | **Entra: Sync-Dienstkonten** | Dienstkonten `MSOL_*`/`AAD_*` je Synchronisierungs-Server mit Kennwortalter, „Kennwort läuft nie ab", Aktivstatus und privilegierten Gruppen (Well-Known-SID) |
+| 73 | **Entra: Seamless SSO** | Computerkonto `AZUREADSSOACC` mit Alter des Kerberos-Schlüssels (Rollover-Empfehlung ab 30 Tagen) |
+| 74 | **Entra: Cloud-Anbindung (Inventar)** | Doku-Inventar: Hybrid-Join-SCP (`Device Registration Configuration`, Tenant-ID/Name), Kerberos-Cloud-Trust (`AzureADKerberos`), Hybrid-Join-Geräte (`msDS-DeviceID`), Sync-Konten und UPN-Suffixe |
+
+> **Nur lesend, rein lokal:** Die Gruppe liest ausschließlich das AD – keine Cloud-API, kein `Connect-MgGraph`. Check 74 ist bewusst ein Inventar (INFO) ohne Schwere-Bewertung; nicht auslesbare Bereiche werden als solche benannt.
 
 ### 🌐 AD-Struktur
 | # | Check | Beschreibung |
@@ -196,7 +205,7 @@ cd Active-Directory-Health-Check
 # Skript ausführen (interaktiv)
 .\AD_Health_Check.ps1
 
-# Oder automatisiert (alle 71 Checks)
+# Oder automatisiert (alle 74 Checks)
 .\AD_Health_Check.ps1 -FullRun
 ```
 
@@ -290,7 +299,13 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.11 (aktuell)
+### v2.12 (aktuell)
+- **3 neue Checks** (72–74): Entra-Sync-Dienstkonten (`MSOL_*`/`AAD_*` inkl. Kennwortalter und privilegierten Gruppen), Seamless SSO (`AZUREADSSOACC` inkl. Rollover-Alter) und ein Cloud-Inventar (Hybrid-Join-SCP, Kerberos Cloud Trust, Hybrid-Join-Geräte, Sync-Konten, UPN-Suffixe)
+- **Neue GUI-Gruppe "Hybrid & Cloud (Entra)"** – rein lokal, ohne Cloud-Login; Check 74 ist bewusst ein Doku-Inventar ohne Schwere-Bewertung
+- Neue Schwellwerte `EntraSyncAccountPwdWarnDays` (365 Tage) und `SeamlessSSOKeyWarnDays` (30 Tage)
+- Version 2.12 (74 Checks)
+
+### v2.11
 - **8 neue Checks** (64–71): IPv6-Status je DC, SPN-Exporte (Computer sowie Benutzer/MSA/gMSA – ein SPN je Zeile) und die PKI in fünf getrennten Teilprüfungen (CA-Inventar, vertrauenswürdige Stamm-/Zwischenzertifikate, Zertifikatvorlagen & Veröffentlichung, WLAN-/Mail-Bezüge, Sperrlisten- und Veröffentlichungsendpunkte)
 - **Neue GUI-Gruppe "PKI & Zertifikate"** – bewusst ohne zusammenfassende "PKI OK"-Aussage; nicht ermittelbare Angaben erscheinen als WARN, nie als OK
 - Neue Schwellwerte `PkiCertWarnDays` (90 Tage) und `PkiEndpointTimeoutSec` (10 s)
@@ -386,7 +401,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 ### 📑 Table of Contents
 
 - [Features](#-features)
-- [The 71 Checks](#-the-71-checks)
+- [The 74 Checks](#-the-74-checks)
 - [System Requirements](#-system-requirements)
 - [Installation](#-installation)
 - [Usage](#-usage)
@@ -403,7 +418,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 
 ### ✨ Features
 
-- 🎯 **71 best-practice checks**, sorted thematically (DC fundamentals, security, structure, monitoring)
+- 🎯 **74 best-practice checks**, sorted thematically (DC fundamentals, security, structure, monitoring, hybrid/cloud)
 - 🖼️ **Modern WPF GUI** (light theme) with group selection, suite buttons and output path selection
 - 🎨 **Color-coded HTML report** with executive dashboard (OK / WARN / CRITICAL / INFO)
 - 📋 **Overall summary of findings** – all flagged checks in a single table, sorted by severity, findings per check capped
@@ -420,7 +435,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 - 📝 **Verbose logging** (`C:\ScriptLog`)
 - 🔧 **Modular design** – individual checks can be run selectively
 
-### 📋 The 71 Checks
+### 📋 The 74 Checks
 
 ### 🏗️ DC Core Infrastructure
 | # | Check | Description |
@@ -475,6 +490,15 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 69 | **PKI: Certificate templates** | Templates with EKU plain text, validity, autoenrollment and actual CA publication; missing template objects and overly open templates (heuristic) |
 | 70 | **PKI: WLAN & mail** | Mapping via EKUs (client authentication, secure email, EFS) and policies – explicitly marked as a plausibility check |
 | 71 | **PKI: Revocation endpoints** | CDP/AIA addresses of the CA certificates incl. reachability and the revocation lists published in AD |
+
+### ☁️ Hybrid & Cloud (Entra)
+| # | Check | Description |
+|---|---|---|
+| 72 | **Entra: Sync service accounts** | Service accounts `MSOL_*`/`AAD_*` per synchronization server with password age, "password never expires", enabled state and privileged groups (well-known SID) |
+| 73 | **Entra: Seamless SSO** | Computer account `AZUREADSSOACC` with age of the Kerberos key (rollover recommended after 30 days) |
+| 74 | **Entra: Cloud connectivity (inventory)** | Documentation inventory: hybrid join SCP (`Device Registration Configuration`, tenant ID/name), Kerberos cloud trust (`AzureADKerberos`), hybrid join devices (`msDS-DeviceID`), sync accounts and UPN suffixes |
+
+> **Read-only, purely local:** this group only reads AD – no cloud API, no `Connect-MgGraph`. Check 74 is deliberately an inventory (INFO) without severity assessment; areas that cannot be read are named as such.
 
 ### 🌐 AD Structure
 | # | Check | Description |
@@ -558,7 +582,7 @@ cd Active-Directory-Health-Check
 # Run the script (interactive)
 .\AD_Health_Check.ps1
 
-# Or automated (all 71 checks)
+# Or automated (all 74 checks)
 .\AD_Health_Check.ps1 -FullRun
 ```
 
@@ -652,7 +676,13 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.11 (current)
+### v2.12 (current)
+- **3 new checks** (72–74): Entra sync service accounts (`MSOL_*`/`AAD_*` incl. password age and privileged groups), Seamless SSO (`AZUREADSSOACC` incl. rollover age) and a cloud inventory (hybrid join SCP, Kerberos cloud trust, hybrid join devices, sync accounts, UPN suffixes)
+- **New GUI group "Hybrid & Cloud (Entra)"** – purely local, without cloud login; check 74 is deliberately a documentation inventory without severity assessment
+- New thresholds `EntraSyncAccountPwdWarnDays` (365 days) and `SeamlessSSOKeyWarnDays` (30 days)
+- Version 2.12 (74 checks)
+
+### v2.11
 - **8 new checks** (64–71): IPv6 status per DC, SPN exports (computers and users/MSA/gMSA – one SPN per row) and PKI in five separate sub-checks (CA inventory, trusted root/intermediate certificates, certificate templates & publication, WLAN/mail references, revocation and publication endpoints)
 - **New GUI group "PKI & Zertifikate"** – deliberately without a summarizing "PKI OK" statement; data that cannot be determined appears as WARN, never as OK
 - New thresholds `PkiCertWarnDays` (90 days) and `PkiEndpointTimeoutSec` (10 s)

@@ -9,6 +9,22 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [2.12] - 2026-10-19
+
+#### Hinzugefügt
+- **Neue GUI-Gruppe „Hybrid & Cloud (Entra)"** – rein lokal prüfbare Checks der Cloud-Anbindung; es wird ausschließlich das AD gelesen, keine Cloud-API kontaktiert und nichts geändert
+- **Check 72: Entra-Sync-Dienstkonten** – inventarisiert die Dienstkonten der Entra-Synchronisierung (`MSOL_*` = Entra Connect Sync, `AAD_*` = altes DirSync) mit Kennwortalter (`PasswordLastSet`), „Kennwort läuft nie ab", Aktivstatus, Erstellungsdatum und Gruppenmitgliedschaften; privilegierte Gruppen werden über die Well-Known-SID erkannt (sprachunabhängig). Mehr als ein Konto, ein deaktiviertes Konto, ein zu altes Kennwort (`$Global:EntraSyncAccountPwdWarnDays`, 365 Tage) oder eine privilegierte Gruppe werden als WARN geführt
+  - Row-Kinds `Konto`, `Summary`, `Fehler`
+- **Check 73: Seamless SSO (AZUREADSSOACC)** – prüft das Computerkonto `AZUREADSSOACC` und das Alter seines Kerberos-Entschlüsselungsschlüssels (`PasswordLastSet`); bei Überschreitung von `$Global:SeamlessSSOKeyWarnDays` (30 Tage) wird ein Rollover empfohlen. Existiert kein Konto, ist Seamless SSO nicht eingerichtet – das wird als INFO und nicht als Fehler ausgewiesen
+  - Row-Kinds `Objekt`, `Summary`, `Fehler`
+- **Check 74: Cloud-Anbindung (Inventar)** – dokumentiert die im AD sichtbare Cloud-Anbindung: Hybrid-Join-SCP (`CN=Device Registration Configuration` inkl. `azureADId`/`azureADName`), Kerberos-Cloud-Trust-Objekt (`AzureADKerberos`), Hybrid-Join-Geräte (`msDS-DeviceID`), Synchronisierungs-Konten und alternative UPN-Suffixe des Forests. Ausdrücklich ein Doku-Inventar (Bewertung INFO); nicht auslesbare Bereiche werden als solche benannt und nicht als „nicht konfiguriert" behauptet
+  - Row-Kinds `Bereich`, `Summary`
+- Neue Schwellwerte `$Global:EntraSyncAccountPwdWarnDays` (365 Tage) und `$Global:SeamlessSSOKeyWarnDays` (30 Tage)
+
+#### Geändert
+- Version auf 2.12 erhöht (74 Checks); Skript-Header, README und Wiki angeglichen
+- Neues Testskript `test-72-74-cloud.ps1` in die Test-Suite aufgenommen
+
 ### [2.11] - 2026-10-18
 
 #### Hinzugefügt
@@ -271,6 +287,22 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [2.12] - 2026-10-19
+
+#### Added
+- **New GUI group "Hybrid & Cloud (Entra)"** – purely local checks of the cloud connection; only AD is read, no cloud API is contacted and nothing is changed
+- **Check 72: Entra sync service accounts** – inventories the service accounts of the Entra synchronization (`MSOL_*` = Entra Connect Sync, `AAD_*` = legacy DirSync) with password age (`PasswordLastSet`), "password never expires", enabled state, creation date and group memberships; privileged groups are detected via well-known SID (language-independent). More than one account, a disabled account, an outdated password (`$Global:EntraSyncAccountPwdWarnDays`, 365 days) or a privileged group are reported as WARN
+  - Row kinds `Konto`, `Summary`, `Fehler`
+- **Check 73: Seamless SSO (AZUREADSSOACC)** – checks the computer account `AZUREADSSOACC` and the age of its Kerberos decryption key (`PasswordLastSet`); if `$Global:SeamlessSSOKeyWarnDays` (30 days) is exceeded, a rollover is recommended. If no account exists, Seamless SSO is not set up – reported as INFO and not as an error
+  - Row kinds `Objekt`, `Summary`, `Fehler`
+- **Check 74: Cloud connectivity (inventory)** – documents the cloud connection visible in AD: hybrid join SCP (`CN=Device Registration Configuration` incl. `azureADId`/`azureADName`), Kerberos cloud trust object (`AzureADKerberos`), hybrid join devices (`msDS-DeviceID`), synchronization accounts and alternative UPN suffixes of the forest. Explicitly a documentation inventory (assessment INFO); areas that cannot be read are named as such and not claimed to be "not configured"
+  - Row kinds `Bereich`, `Summary`
+- New thresholds `$Global:EntraSyncAccountPwdWarnDays` (365 days) and `$Global:SeamlessSSOKeyWarnDays` (30 days)
+
+#### Changed
+- Version bumped to 2.12 (74 checks); script header, README and wiki aligned
+- New test script `test-72-74-cloud.ps1` added to the test suite
 
 ### [2.11] - 2026-10-18
 
