@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.12 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.13 mit Best-Practice-Bewertung.
 .DESCRIPTION
     74 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
@@ -29,7 +29,7 @@
     (fuer Luftschacht-/Airgap-Umgebungen oder streng firewalled Server).
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.12 (74 Checks, Internationalisierung DE/EN, Update-Anzeige GitLab)
+    Version : 2.13 (74 Checks + Teilpruefung 55b, Internationalisierung DE/EN, Update-Anzeige GitLab)
     Sprache : automatisch aus dem Betriebssystem, sonst -Language <de|en>
     LogPfad : C:\ScriptLog
 .EXAMPLE
@@ -59,7 +59,7 @@ param(
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.12"
+$Global:ScriptVersion   = "2.13"
 $Global:NoUpdateCheck   = [bool]$NoUpdateCheck
 $Global:Timestamp       = Get-Date -Format "yyyyMMdd_HHmmss"
 $Global:LogDirectory    = if ($OutputPath) { $OutputPath } else { "C:\AD_Health_Check_Log" }
@@ -90,6 +90,8 @@ $Global:DNSAgingMinDays      = 7
 # v2.9 Thresholds
 $Global:KMSMinCountServer    = 5
 $Global:KMSMinCountClient    = 25
+$Global:KMSProbeTimeoutMs    = 1500
+$Global:KMSCimTimeoutSec     = 6
 $Global:StaleDCWarnAgeDays   = 0
 $Global:RC4EventDays         = 7
 $Global:RC4EventSampleLimit  = 5000
@@ -146,7 +148,7 @@ $Global:ServiceMap = [ordered]@{
 $Global:CheckGroups = [ordered]@{
     'DC-Infrastruktur' = @(
         '01_DCSystemInfo','02_Services','03_DCDiag','04_Replication','04b_ReplicationFailures',
-        '05_FSMO','06_DNS','60_ZonenSOA','61_Forwarder','62_ReverseLookup','07_SYSVOL','08_Database','34_TimeSync','35_Backup','55_KMS','56_StaleDCs','64_IPv6'
+        '05_FSMO','06_DNS','60_ZonenSOA','61_Forwarder','62_ReverseLookup','07_SYSVOL','08_Database','34_TimeSync','35_Backup','55_KMS','55b_ADBA','56_StaleDCs','64_IPv6'
     )
     'Security & Hardening' = @(
         '09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity',
@@ -238,7 +240,8 @@ $Global:ReportTitles = [ordered]@{
     '52_AnonymousLDAP'           = 'Anonymer LDAP-Zugriff'
     '53_GPPPasswords'            = 'GPP/cpassword in SYSVOL'
     '54_ProtectedUsers'          = 'Protected Users Audit'
-    '55_KMS'                     = 'KMS-Server & Konfiguration'
+    '55_KMS'                     = 'KMS: Hosts, Dienst & Zaehler'
+    '55b_ADBA'                   = 'KMS: AD-basierte Aktivierung (ADBA)'
     '56_StaleDCs'                = 'Tote DCs & DC-Verfuegbarkeit'
     '64_IPv6'                    = 'IPv6-Status & Registry-Abschaltung'
     '57_RCAudit'                 = 'RC4 / LM Belege je DC'
@@ -539,6 +542,52 @@ Kein Host-Key =>no host key
 Key-Kanal != Volume=>key channel != Volume
 Mehr als 50% Fehlanfragen=>more than 50% failed requests
 Nur ein KMS-Host=>only one KMS host
+KMS: Hosts, Dienst & Zaehler=>KMS: hosts, service & counters
+KMS: AD-basierte Aktivierung (ADBA)=>KMS: Active Directory-based activation (ADBA)
+AufDC=>On DC
+PortOffen=>Port open
+Dienststatus=>Service status
+HostKey=>Host key
+Aktivierungen=>Activations
+Aktivierungsschwelle=>Activation threshold
+Anfragen=>Requests
+Fehlanfragen=>Failed requests
+Abruf=>Retrieved via
+Anzeigename=>Display name
+ProduktKeyTeil=>Product key part
+LizenzGroesse=>License size
+GeaendertAm=>Changed
+Kind=>Type
+KMS-Hosts gesamt: =>KMS hosts total: 
+per DNS-SRV: =>via DNS SRV: 
+auf DC: =>on DC: 
+Kein KMS-Host per DNS-SRV (_vlmcs._tcp) gefunden; auf keinem DC lauscht TCP 1688=>No KMS host found via DNS SRV (_vlmcs._tcp); TCP 1688 is not listening on any DC
+KMS ist nicht in DNS veroeffentlicht - Aktivierung moeglicherweise ueber ADBA (Check 55b) oder MAK=>KMS is not published in DNS - activation may run via ADBA (check 55b) or MAK
+DNS-SRV-Abfrage fehlgeschlagen: =>DNS SRV query failed: 
+KMS-Status nicht ermittelbar - DNS-Abfrage fehlgeschlagen=>KMS status not determinable - DNS query failed
+TCP-Port lauscht, aber kein DNS-SRV-Eintrag - Clients finden den Host nicht=>TCP port is listening, but there is no DNS SRV record - clients cannot find the host
+SRV-Port weicht von 1688 ab (per SRV veroeffentlicht)=>SRV port differs from 1688 (published via SRV)
+TCP-Port nicht erreichbar - veroeffentlichter KMS-Host antwortet nicht=>TCP port unreachable - published KMS host does not respond
+Details nicht auslesbar (CIM/WinRM und DCOM nicht verfuegbar) - TCP-Port ist offen=>Details not readable (CIM/WinRM and DCOM unavailable) - TCP port is open
+Software Protection (sppsvc) laeuft nicht=>Software Protection (sppsvc) is not running
+Dienststatus von sppsvc nicht auslesbar=>Service status of sppsvc not readable
+Kein KMS-Host-Key (CSVLK) installiert - SRV-Eintrag vermutlich veraltet=>No KMS host key (CSVLK) installed - SRV record probably stale
+Aktivierungsschwelle noch nicht erreicht - kein Fehler=>Activation threshold not reached yet - not an error
+KMS-Host erreichbar, Host-Key vorhanden=>KMS host reachable, host key present
+Nur ein KMS-Host veroeffentlicht - kein Failover bei Ausfall=>Only one KMS host published - no failover on outage
+KMS laeuft auf Domaincontroller(n) - AD-KMS=>KMS runs on domain controller(s) - AD KMS
+Kein KMS-Host gefunden - KMS ist nicht in DNS veroeffentlicht=>No KMS host found - KMS is not published in DNS
+KMS-Status nicht ermittelbar - Abfrage fehlgeschlagen=>KMS status not determinable - query failed
+Kein Container fuer AD-Aktivierungsobjekte - ADBA ist nicht eingerichtet=>No container for AD activation objects - ADBA is not configured
+Container fuer AD-Aktivierungsobjekte vorhanden, aber kein Objekt - ADBA ist nicht aktiv=>Container for AD activation objects present, but no object - ADBA is not active
+CSVLK-Teilkey vorhanden=>CSVLK partial key present
+kein CSVLK-Teilkey lesbar=>no CSVLK partial key readable
+Lizenzblob vorhanden=>License blob present
+kein Lizenzblob lesbar=>no license blob readable
+ADBA-Aktivierungsobjekt(e) im Configuration-Naming-Context=>ADBA activation object(s) in the configuration naming context
+ADBA-Abfrage fehlgeschlagen: =>ADBA query failed: 
+ADBA-Aktivierungsobjekt(e) vorhanden=>ADBA activation object(s) present
+ADBA ist nicht eingerichtet=>ADBA is not configured
 Globaler Forwarder=>Global Forwarder
 Conditional Forwarder=>Conditional Forwarder
 Root Hints=>Root Hints
@@ -1894,7 +1943,7 @@ function Show-ScriptMenu {
                 '32b_InactiveComputers','32c_PasswordNeverExpires','35_Backup','38_SPNDuplicates',
                 '39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                 '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints',
+                '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','55b_ADBA','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints',
                 '72_EntraSyncAccounts','73_SeamlessSSO','74_CloudInventory')
     $sec = @('09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
              '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
@@ -4280,180 +4329,511 @@ function Test-Check-SubnetReverse {
     New-Assessment -OverallStatus $status -Summary $sumText -Findings $findings
 }
 
-function Get-KMSConfiguration {
+# ============================================================================
+# KMS & Aktivierung
+# ============================================================================
+# Bewusst getrennt (keine Sammel-Aussage "KMS/ADBA OK"):
+#   Check 55   : KMS-Hosts (DNS-SRV _vlmcs._tcp, TCP-Erreichbarkeit, Dienst, Zaehler)
+#   Check 55b  : AD-basierte Aktivierung (ADBA) ueber Aktivierungsobjekte im AD
+# Beide Checks lesen ausschliesslich; es wird nichts aktiviert oder veraendert.
+
+function Test-KmsTcpPort {
     <#
     .SYNOPSIS
-        Sucht KMS-Hosts per DNS-SRV (_vlmcs._tcp) und liest deren Konfiguration aus.
+        Prueft, ob ein TCP-Port auf einem Host erreichbar ist (mit Timeout).
     .NOTES
-        - Forest-weiter Check
-        - Discovery per Resolve-DnsName -Type SRV auf _vlmcs._tcp.<ForestRoot> und _vlmcs._tcp.<Domain>
-        - Falls kein SRV-Eintrag: Scan aller erreichbaren DCs nach installiertem KeyManagementService
-        - Konfiguration je Host: Dienst, Port, Prozess, Aktivierungszahlen, Host-Key, Key-Kanal
-        - Mehrstufige Diensterkennung (Get-Service, CIM Win32_Service, Registry)
-        - Registry-Lesen in expliziter 64-Bit-Ansicht mit PS-Provider-Fallback
+        Bewusst ohne Test-NetConnection: das Cmdlet ist langsam und liefert bei
+        gesperrter Firewall keine schnelle Antwort. TcpClient mit eigenem Timeout
+        ergibt ein eindeutiges Ja/Nein.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$ComputerName,
+        [int]$Port = 1688,
+        [int]$TimeoutMs = 1500
+    )
+    $client = $null
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $iar = $client.BeginConnect($ComputerName, $Port, $null, $null)
+        if (-not $iar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
+        $client.EndConnect($iar)
+        return [bool]$client.Connected
+    } catch { return $false }
+    finally { if ($client) { try { $client.Close() } catch {} } }
+}
+
+function Get-KmsHostRuntimeInfo {
+    <#
+    .SYNOPSIS
+        Liest Dienststatus und KMS-Zaehler eines Hosts (CIM per WinRM, dann DCOM).
+    .NOTES
+        - sppsvc (Software Protection) ist der Dienst, der KMS auf dem Host bereitstellt.
+          Einen Dienst "KeyManagementService" gibt es nicht.
+        - Der KMS-Host-Key (CSVLK) und die Zaehler stehen in SoftwareLicensingProduct,
+          nicht in SoftwareLicensingService.
+        - IsKeyManagementServiceMachine=1 kennzeichnet den Eintrag mit KMS-Host-Key.
+        - Ist CIM per WinRM und per DCOM gesperrt, bleibt Ok=$false; der Aufrufer
+          wertet das als "Details nicht auslesbar" und nicht als Host-Fehler.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$ComputerName,
+        [int]$TimeoutSec = 6
+    )
+    $out = [pscustomobject]@{
+        Ok = $false; Abruf = 'nicht verfuegbar'; DienstStatus = '-'; StartModus = '-'
+        HostKey = '-'; Aktivierungen = '-'; Aktivierungsschwelle = '-'; Anfragen = '-'; Fehlanfragen = '-'
+        FehlerText = ''
+    }
+    $sess = $null
+    try {
+        $istLokal = Test-IsLocalComputer -ComputerName $ComputerName
+        if ($istLokal) {
+            $out.Abruf = 'lokal'
+        } else {
+            try {
+                $sess = New-CimSession -ComputerName $ComputerName -OperationTimeoutSec $TimeoutSec -ErrorAction Stop
+                $out.Abruf = 'CIM (WinRM)'
+            } catch {
+                try {
+                    $opt = New-CimSessionOption -Protocol Dcom
+                    $sess = New-CimSession -ComputerName $ComputerName -SessionOption $opt -OperationTimeoutSec $TimeoutSec -ErrorAction Stop
+                    $out.Abruf = 'CIM (DCOM)'
+                } catch {
+                    $out.FehlerText = "$_"
+                    return $out
+                }
+            }
+        }
+
+        # Dienst (sppsvc = Software Protection)
+        $svc = $null
+        try {
+            if ($sess) { $svc = Get-CimInstance -CimSession $sess -ClassName Win32_Service -Filter "Name='sppsvc'" -ErrorAction Stop }
+            else       { $svc = Get-CimInstance -ClassName Win32_Service -Filter "Name='sppsvc'" -ErrorAction Stop }
+        } catch { }
+        if ($svc) {
+            $out.DienstStatus = "$($svc.State)"
+            $out.StartModus   = "$($svc.StartMode)"
+        }
+
+        # KMS-Produkteintrag (Host-Key und Zaehler)
+        $prods = @()
+        try {
+            if ($sess) { $prods = @(Get-CimInstance -CimSession $sess -ClassName SoftwareLicensingProduct -ErrorAction Stop) }
+            else       { $prods = @(Get-CimInstance -ClassName SoftwareLicensingProduct -ErrorAction Stop) }
+        } catch {
+            $out.FehlerText = "$_"
+            return $out
+        }
+        $kms = @($prods | Where-Object { $_.IsKeyManagementServiceMachine -eq 1 })
+        if ($kms.Count -gt 0) {
+            $p = $kms | Select-Object -First 1
+            if ($p.PartialProductKey) { $out.HostKey = "$($p.PartialProductKey)" }
+            if ($null -ne $p.KeyManagementServiceCurrentCount)   { $out.Aktivierungen = [int]$p.KeyManagementServiceCurrentCount }
+            if ($null -ne $p.RequiredClientCount)                { $out.Aktivierungsschwelle = [int]$p.RequiredClientCount }
+            if ($null -ne $p.KeyManagementServiceTotalRequests)  { $out.Anfragen     = [int]$p.KeyManagementServiceTotalRequests }
+            if ($null -ne $p.KeyManagementServiceFailedRequests) { $out.Fehlanfragen = [int]$p.KeyManagementServiceFailedRequests }
+        }
+        $out.Ok = $true
+        return $out
+    } finally {
+        if ($sess) { Remove-CimSession $sess -ErrorAction SilentlyContinue }
+    }
+}
+
+function New-KmsRow {
+    <# Erzeugt eine Ergebniszeile mit einheitlichen Spalten (Report/CSV). #>
+    param(
+        [string]$Kind = 'Hinweis', [string]$HostName = '-', [string]$AufDC = '-',
+        [string]$Quelle = '-', [string]$Port = '-', [string]$PortOffen = '-',
+        [string]$Dienststatus = '-', [string]$HostKey = '-', [string]$Aktivierungen = '-',
+        [string]$Aktivierungsschwelle = '-', [string]$Anfragen = '-', [string]$Fehlanfragen = '-',
+        [string]$Abruf = '-', [string]$Bewertung = 'INFO', [string]$Detail = ''
+    )
+    [pscustomobject]@{
+        Kind = $Kind; Host = $HostName; AufDC = $AufDC; Quelle = $Quelle; Port = $Port
+        PortOffen = $PortOffen; Dienststatus = $Dienststatus; HostKey = $HostKey
+        Aktivierungen = $Aktivierungen; Aktivierungsschwelle = $Aktivierungsschwelle; Anfragen = $Anfragen
+        Fehlanfragen = $Fehlanfragen; Abruf = $Abruf; Bewertung = $Bewertung; Detail = $Detail
+    }
+}
+
+function Get-KmsConfiguration {
+    <#
+    .SYNOPSIS
+        Inventarisiert KMS-Hosts per DNS-SRV (_vlmcs._tcp) inkl. Erreichbarkeit und Zaehlern.
+    .NOTES
+        - Forest-weiter Check, rein lesend
+        - Discovery: SRV-Records der Forest-Root-Domaene, der eigenen Domaene und je
+          Site (_vlmcs._tcp.<site>._sites.<domain>)
+        - Kein SRV-Eintrag: TCP-Scan von Port 1688 auf allen DCs. Damit wird auch ein
+          KMS auf einem Domaincontroller gefunden, der nicht per DNS veroeffentlicht ist
+          (Spalte AufDC = "Ja" beantwortet die Frage nach einem AD-KMS).
+        - Details je Host: TCP-Erreichbarkeit, Software Protection (sppsvc), KMS-Host-Key
+          (CSVLK), Aktivierungsstand, Anfragen und Fehlanfragen
+        - CIM zuerst per WinRM, danach per DCOM; ist beides gesperrt, wird das
+          ausgewiesen und der Host nicht stillschweigend als fehlerhaft bewertet
+        - Bewertung: veroeffentlichter Host nicht erreichbar = CRITICAL,
+          Host ohne CSVLK oder ohne Veroeffentlichung = WARN,
+          fehlende Detaildaten oder noch nicht erreichte Schwelle = INFO
     #>
     $result = @()
+    $probeMs = if ($Global:KMSProbeTimeoutMs) { [int]$Global:KMSProbeTimeoutMs } else { 1500 }
+    $cimSec  = if ($Global:KMSCimTimeoutSec)  { [int]$Global:KMSCimTimeoutSec }  else { 6 }
     try {
-        $forest = Get-ADForest -ErrorAction Stop
-        $domain = Get-ADDomain -ErrorAction Stop
-        $dcs = @(Get-ADDomainController -Filter * -ErrorAction Stop | Where-Object { $_.IPv4Address })
-        if ($dcs.Count -eq 0) {
-            return @([pscustomobject]@{ Kind='Fehler'; Target='KMS'; Detail='Keine erreichbaren DCs'; Risk='WARN' })
+        $forest   = Get-ADForest -ErrorAction Stop
+        $adDomain = Get-ADDomain -ErrorAction Stop
+        $dcNames  = @(Get-ADDomainController -Filter * -ErrorAction Stop |
+                      ForEach-Object { "$($_.HostName)".TrimEnd('.') } |
+                      Where-Object { $_ } | Sort-Object -Unique)
+        $dcShort  = @($dcNames | ForEach-Object { ($_ -split '\.')[0].ToUpperInvariant() })
+
+        # --- 1) DNS-SRV-Discovery ---
+        $zonen = @(@("$($forest.RootDomain)", "$($adDomain.DNSRoot)") | Where-Object { $_ } | Select-Object -Unique)
+        $srvNames = New-Object System.Collections.Generic.List[string]
+        foreach ($z in $zonen) { [void]$srvNames.Add("_vlmcs._tcp.$z") }
+        foreach ($site in @($forest.Sites | Where-Object { $_ })) {
+            foreach ($z in $zonen) { [void]$srvNames.Add("_vlmcs._tcp.$site._sites.$z") }
         }
 
-        # 1) SRV-Discovery
-        $srvTargets = @("_vlmcs._tcp.$($forest.RootDomain)", "_vlmcs._tcp.$($domain.DNSRoot)")
-        $kmsHosts = @{}
-        foreach ($srv in $srvTargets) {
-            try {
-                $records = Resolve-DnsName -Name $srv -Type SRV -ErrorAction Stop -DnsOnly
-                foreach ($r in $records) {
-                    $hnRaw = if ($r.PSObject.Properties['NameTarget']) { [string]$r.NameTarget } elseif ($r.PSObject.Properties['NameHost']) { [string]$r.NameHost } else { '' }
-                    if (-not $hnRaw) { continue }
-                    $hn = $hnRaw.TrimEnd('.')
-                    if (-not $kmsHosts.ContainsKey($hn)) { $kmsHosts[$hn] = @{ SRV=$true; Source=$srv } }
+        $srv = [ordered]@{}
+        $dnsErrors = New-Object System.Collections.ArrayList
+        foreach ($n in @($srvNames | Select-Object -Unique)) {
+            $recs = @()
+            try { $recs = @(Resolve-DnsName -Name $n -Type SRV -DnsOnly -ErrorAction Stop) }
+            catch {
+                try { $recs = @(Resolve-DnsName -Name $n -Type SRV -ErrorAction Stop) }
+                catch {
+                    # NXDOMAIN ist normal (nicht jede Site hat einen KMS-Eintrag)
+                    if ("$($_.FullyQualifiedErrorId)" -notmatch 'NAME_ERROR|NXDOMAIN') {
+                        [void]$dnsErrors.Add("$n : $($_.Exception.Message)")
+                    }
+                    continue
                 }
-            } catch {}
-        }
-
-        # 2) Falls keine SRV-Eintraege: DCs nach KMS-Dienst scannen
-        if ($kmsHosts.Count -eq 0) {
-            foreach ($dc in $dcs) {
-                $hn = $dc.HostName
-                if (-not $kmsHosts.ContainsKey($hn)) { $kmsHosts[$hn] = @{ SRV=$false; Source='DC-Scan' } }
             }
-        }
-
-        # 3) Konfiguration je Host auslesen
-        foreach ($hostEntry in $kmsHosts.GetEnumerator()) {
-            $kmsHost = $hostEntry.Key
-            $meta = $hostEntry.Value
-            $detail = [ordered]@{
-                HostName = $kmsHost
-                HasSRV   = $meta.SRV
-                Source   = $meta.Source
-                Service  = 'Nicht gefunden'
-                StartType= '-'
-                Port     = '-'
-                Process  = '-'
-                ActivationCount = 0
-                RequestCount    = 0
-                FailedCount     = 0
-                PartialProductKey = '-'
-                KeyChannel        = '-'
-                Issue          = $null
-            }
-
-            $target = $kmsHost
-            $cim = $null
-            try {
-                $cim = New-CimSession -ComputerName $target -OperationTimeoutSec 10 -ErrorAction Stop
-            } catch {
-                $detail.Issue = "CIM-Verbindung fehlgeschlagen: $_"
-                $result += [pscustomobject]@{ Kind='Host'; Target=$kmsHost; Detail=($detail.Values -join ' | '); Risk='WARN'; HostName=$kmsHost; Service=$detail.Service; StartType=$detail.StartType; Port=$detail.Port; Process=$detail.Process; ActivationCount=$detail.ActivationCount; RequestCount=$detail.RequestCount; FailedCount=$detail.FailedCount; PartialProductKey=$detail.PartialProductKey; KeyChannel=$detail.KeyChannel; HasSRV=$detail.HasSRV }
-                continue
-            }
-
-            # Dienst erkennen (mehrstufig)
-            $svc = $null
-            try { $svc = Get-CimInstance -CimSession $cim -ClassName Win32_Service -Filter "Name='KeyManagementService'" -ErrorAction Stop } catch {}
-            if (-not $svc) {
-                try { $svc = Get-CimInstance -CimSession $cim -ClassName Win32_Service -Filter "DisplayName='Key Management Service'" -ErrorAction Stop } catch {}
-            }
-            if (-not $svc) {
-                try { $allSvcs = Get-CimInstance -CimSession $cim -ClassName Win32_Service -ErrorAction Stop; $svc = $allSvcs | Where-Object { $_.Name -like '*KeyManagement*' -or $_.DisplayName -like '*Key Management*' } | Select-Object -First 1 } catch {}
-            }
-            if (-not $svc) {
-                # Registry-Fallback
-                try {
-                    $reg = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\KeyManagementService' -ErrorAction Stop
-                    if ($reg) { $svc = [pscustomobject]@{ Name='KeyManagementService'; State='Unknown'; StartMode=$reg.Start } }
-                } catch {}
-            }
-
-            if ($svc) {
-                $detail.Service = $svc.Name
-                $detail.StartType = if ($svc.StartMode) { $svc.StartMode } else { 'Unknown' }
-                $detail.State = if ($svc.State) { $svc.State } else { 'Unknown' }
-            }
-
-            # Port aus Registry
-            try {
-                $portReg = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\KeyManagementService\Parameters' -ErrorAction Stop
-                if ($portReg -and $portReg.Port) { $detail.Port = $portReg.Port }
-            } catch {}
-
-            # Prozess auf Port (lokal oder remote via CIM)
-            if ($detail.Port -ne '-') {
-                try {
-                    $conns = Get-CimInstance -CimSession $cim -ClassName Win32_TCPConnection -Filter "LocalPort=$($detail.Port) AND State='Listen'" -ErrorAction Stop
-                    if ($conns) { $detail.Process = $conns[0].OwningProcess }
-                } catch {}
-            }
-
-            # SoftwareLicensingService Daten
-            try {
-                $sls = Get-CimInstance -CimSession $cim -Namespace 'root\cimv2' -ClassName SoftwareLicensingService -ErrorAction Stop
-                if ($sls) {
-                    $detail.ActivationCount = if ($sls.ActivationCount) { $sls.ActivationCount } else { 0 }
-                    $detail.RequestCount    = if ($sls.RequestCount) { $sls.RequestCount } else { 0 }
-                    $detail.FailedCount     = if ($sls.FailedRequestCount) { $sls.FailedRequestCount } else { 0 }
-                    $detail.PartialProductKey = if ($sls.PartialProductKey) { $sls.PartialProductKey } else { '-' }
-                    $detail.KeyChannel = if ($sls.LicenseChannel) { $sls.LicenseChannel } else { '-' }
+            foreach ($r in $recs) {
+                if (-not $r.PSObject.Properties['NameTarget']) { continue }
+                $hnRaw = "$($r.NameTarget)"
+                if (-not $hnRaw) { continue }
+                $hn = $hnRaw.TrimEnd('.')
+                $p = 1688
+                try { if ($r.PSObject.Properties['Port'] -and [int]$r.Port -gt 0) { $p = [int]$r.Port } } catch { }
+                if ($srv.Contains($hn)) {
+                    if ($srv[$hn].Sources -notcontains $n) { $srv[$hn].Sources += $n }
+                } else {
+                    $srv[$hn] = [pscustomobject]@{
+                        Host = $hn; Port = $p; Published = $true; Sources = @($n)
+                        Priority = $(if ($r.PSObject.Properties['Priority']) { "$($r.Priority)" } else { '-' })
+                        Weight   = $(if ($r.PSObject.Properties['Weight'])   { "$($r.Weight)" }   else { '-' })
+                    }
                 }
-            } catch {}
-
-            # Bewertung je Host
-            $risk = 'OK'
-            $issues = @()
-            if (-not $detail.HasSRV) { $issues += 'Kein _vlmcs SRV-Eintrag'; $risk = 'CRITICAL' }
-            if ($detail.Service -eq 'Nicht gefunden' -or $detail.State -ne 'Running') { $issues += "Dienst nicht lauffaehig ($($detail.State))"; $risk = 'CRITICAL' }
-            if ($detail.Port -ne '-' -and $detail.Process -eq '-') { $issues += "Port $($detail.Port) nicht abhoerend"; $risk = 'CRITICAL' }
-            if ($detail.ActivationCount -lt $Global:KMSMinCountServer) { $issues += "Aktivierungen ($($detail.ActivationCount)) < Server-Min ($Global:KMSMinCountServer)"; $risk = 'CRITICAL' }
-            if ($detail.RequestCount -lt $Global:KMSMinCountClient) { $issues += "Anfragen ($($detail.RequestCount)) < Client-Min ($Global:KMSMinCountClient)"; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
-            if ($detail.Port -ne '-' -and $detail.Port -ne 1688) { $issues += "Port $($detail.Port) != 1688"; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
-            if ($detail.PartialProductKey -eq '-') { $issues += 'Kein Host-Key (PartialProductKey)'; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
-            if ($detail.KeyChannel -ne 'Volume') { $issues += "Key-Kanal '$($detail.KeyChannel)' != Volume"; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
-            if ($detail.FailedCount -gt 0 -and ($detail.RequestCount -gt 0) -and (($detail.FailedCount / $detail.RequestCount) -gt 0.5)) { $issues += "Mehr als 50% Fehlanfragen"; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
-            if ($detail.HasSRV -and $kmsHosts.Count -eq 1) { $issues += 'Nur ein KMS-Host (kein Failover)'; if ($risk -ne 'CRITICAL') { $risk = 'WARN' } }
-
-            $detail.Issue = if ($issues.Count) { $issues -join ' | ' } else { 'OK' }
-            $result += [pscustomobject]@{
-                Kind='Host'; Target=$kmsHost; Detail=($detail.Values -join ' | '); Risk=$risk
-                HostName=$kmsHost; Service=$detail.Service; StartType=$detail.StartType; Port=$detail.Port
-                Process=$detail.Process; ActivationCount=$detail.ActivationCount; RequestCount=$detail.RequestCount
-                FailedCount=$detail.FailedCount; PartialProductKey=$detail.PartialProductKey; KeyChannel=$detail.KeyChannel
-                HasSRV=$detail.HasSRV; Method=$detail.Source
             }
-            Remove-CimSession $cim -ErrorAction SilentlyContinue
         }
+
+        # --- 2) Kein SRV-Eintrag: DCs auf KMS-Port pruefen ---
+        if ($srv.Count -eq 0) {
+            foreach ($dc in $dcNames) {
+                if (Test-KmsTcpPort -ComputerName $dc -Port 1688 -TimeoutMs $probeMs) {
+                    $srv[$dc] = [pscustomobject]@{
+                        Host = $dc; Port = 1688; Published = $false; Sources = @('DC-Scan (TCP 1688)')
+                        Priority = '-'; Weight = '-'
+                    }
+                }
+            }
+        }
+
+        if ($srv.Count -eq 0) {
+            if ($dnsErrors.Count -gt 0) {
+                $result += New-KmsRow -Kind 'Fehler' -Bewertung 'WARN' `
+                    -Detail "DNS-SRV-Abfrage fehlgeschlagen: $($dnsErrors[0])"
+                $result += New-KmsRow -Kind 'Summary' -Bewertung 'WARN' `
+                    -Detail 'KMS-Status nicht ermittelbar - DNS-Abfrage fehlgeschlagen'
+            } else {
+                $result += New-KmsRow -Kind 'Hinweis' -Bewertung 'INFO' `
+                    -Detail 'Kein KMS-Host per DNS-SRV (_vlmcs._tcp) gefunden; auf keinem DC lauscht TCP 1688'
+                $result += New-KmsRow -Kind 'Summary' -Bewertung 'INFO' `
+                    -Detail 'KMS ist nicht in DNS veroeffentlicht - Aktivierung moeglicherweise ueber ADBA (Check 55b) oder MAK'
+            }
+            return $result
+        }
+
+        # --- 3) Bewertung je Host ---
+        $cntOk = 0; $cntWarn = 0; $cntCrit = 0; $cntInfo = 0; $cntDC = 0; $cntPub = 0
+        foreach ($entry in @($srv.Values | Sort-Object -Property Host)) {
+            $hn = $entry.Host
+            $istDC = ($dcShort -contains (($hn -split '\.')[0].ToUpperInvariant()))
+            if ($istDC) { $cntDC++ }
+            if ($entry.Published) { $cntPub++ }
+
+            $offen = Test-KmsTcpPort -ComputerName $hn -Port $entry.Port -TimeoutMs $probeMs
+            $rt = $null
+            if ($offen) { $rt = Get-KmsHostRuntimeInfo -ComputerName $hn -TimeoutSec $cimSec }
+
+            $bw = 'OK'
+            $hinweise = New-Object System.Collections.ArrayList
+
+            if (-not $entry.Published) {
+                $bw = 'WARN'
+                [void]$hinweise.Add('TCP-Port lauscht, aber kein DNS-SRV-Eintrag - Clients finden den Host nicht')
+            }
+            if ($entry.Port -ne 1688) {
+                if ($bw -eq 'OK') { $bw = 'INFO' }
+                [void]$hinweise.Add('SRV-Port weicht von 1688 ab (per SRV veroeffentlicht)')
+            }
+            if (-not $offen) {
+                $bw = 'CRITICAL'
+                [void]$hinweise.Add('TCP-Port nicht erreichbar - veroeffentlichter KMS-Host antwortet nicht')
+            } elseif (-not $rt -or -not $rt.Ok) {
+                if ($bw -eq 'OK') { $bw = 'INFO' }
+                [void]$hinweise.Add('Details nicht auslesbar (CIM/WinRM und DCOM nicht verfuegbar) - TCP-Port ist offen')
+                if ($rt -and $rt.FehlerText) {
+                    $kurz = "$($rt.FehlerText)".Trim()
+                    if ($kurz.Length -gt 160) { $kurz = $kurz.Substring(0, 160) + '...' }
+                    [void]$hinweise.Add($kurz)
+                }
+            } else {
+                if ($rt.DienstStatus -ne '-' -and $rt.DienstStatus -ne 'Running') {
+                    $bw = 'CRITICAL'
+                    [void]$hinweise.Add('Software Protection (sppsvc) laeuft nicht')
+                } elseif ($rt.DienstStatus -eq '-') {
+                    [void]$hinweise.Add('Dienststatus von sppsvc nicht auslesbar')
+                }
+
+                if ($rt.HostKey -eq '-') {
+                    if ($bw -ne 'CRITICAL') { $bw = 'WARN' }
+                    [void]$hinweise.Add('Kein KMS-Host-Key (CSVLK) installiert - SRV-Eintrag vermutlich veraltet')
+                } else {
+                    $thr = 0
+                    if ($rt.Aktivierungsschwelle -ne '-' -and [int]$rt.Aktivierungsschwelle -gt 0) { $thr = [int]$rt.Aktivierungsschwelle }
+                    elseif ($istDC) { $thr = [int]$Global:KMSMinCountServer }
+                    else { $thr = [int]$Global:KMSMinCountClient }
+
+                    if ($rt.Aktivierungen -ne '-' -and [int]$rt.Aktivierungen -ge 0 -and [int]$rt.Aktivierungen -lt $thr) {
+                        if ($bw -eq 'OK') { $bw = 'INFO' }
+                        [void]$hinweise.Add('Aktivierungsschwelle noch nicht erreicht - kein Fehler')
+                    }
+                    if ($rt.Fehlanfragen -ne '-' -and $rt.Anfragen -ne '-' -and [int]$rt.Anfragen -gt 0) {
+                        if (([double]$rt.Fehlanfragen / [double]$rt.Anfragen) -gt 0.5) {
+                            if ($bw -ne 'CRITICAL') { $bw = 'WARN' }
+                            [void]$hinweise.Add('Mehr als 50% Fehlanfragen')
+                        }
+                    }
+                }
+            }
+            if ($hinweise.Count -eq 0) { [void]$hinweise.Add('KMS-Host erreichbar, Host-Key vorhanden') }
+
+            switch ($bw) {
+                'OK'       { $cntOk++ }
+                'WARN'     { $cntWarn++ }
+                'CRITICAL' { $cntCrit++ }
+                'INFO'     { $cntInfo++ }
+            }
+
+            $result += New-KmsRow -Kind 'Host' -HostName $hn `
+                -AufDC $(if ($istDC) { 'Ja' } else { 'Nein' }) `
+                -Quelle ((@($entry.Sources)) -join '; ') -Port "$($entry.Port)" `
+                -PortOffen $(if ($offen) { 'Ja' } else { 'Nein' }) `
+                -Dienststatus $(if ($rt -and $rt.DienstStatus -ne '-') { "$($rt.DienstStatus)" } else { '-' }) `
+                -HostKey $(if ($rt) { "$($rt.HostKey)" } else { '-' }) `
+                -Aktivierungen $(if ($rt) { "$($rt.Aktivierungen)" } else { '-' }) `
+                -Aktivierungsschwelle $(if ($rt) { "$($rt.Aktivierungsschwelle)" } else { '-' }) `
+                -Anfragen $(if ($rt) { "$($rt.Anfragen)" } else { '-' }) `
+                -Fehlanfragen $(if ($rt) { "$($rt.Fehlanfragen)" } else { '-' }) `
+                -Abruf $(if ($rt) { "$($rt.Abruf)" } else { 'nicht verfuegbar' }) `
+                -Bewertung $bw -Detail ((@($hinweise)) -join ' | ')
+        }
+
+        if ($cntPub -eq 1) {
+            $result += New-KmsRow -Kind 'Hinweis' -Bewertung 'WARN' `
+                -Detail 'Nur ein KMS-Host veroeffentlicht - kein Failover bei Ausfall'
+            $cntWarn++
+        }
+        if ($cntDC -gt 0) {
+            $result += New-KmsRow -Kind 'Hinweis' -Bewertung 'INFO' `
+                -Detail 'KMS laeuft auf Domaincontroller(n) - AD-KMS'
+        }
+
+        $status = if ($cntCrit -gt 0) { 'CRITICAL' } elseif ($cntWarn -gt 0) { 'WARN' } elseif ($cntInfo -gt 0) { 'INFO' } else { 'OK' }
+        $result += New-KmsRow -Kind 'Summary' -Bewertung $status `
+            -Detail "KMS-Hosts gesamt: $($srv.Count) | per DNS-SRV: $cntPub | auf DC: $cntDC"
+        return $result
     } catch {
-        $result += [pscustomobject]@{ Kind='Fehler'; Target='KMS'; Detail="Abfrage fehlgeschlagen: $_"; Risk='WARN' }
+        Write-Log "KMSConfiguration: $_" -Level WARN -NoConsole
+        $result += New-KmsRow -Kind 'Fehler' -Bewertung 'WARN' -Detail "Abfrage fehlgeschlagen: $_"
+        return $result
     }
-    return $result
 }
 
 function Test-Check-KMS {
     <#
     .SYNOPSIS
-        Bewertet KMS-Konfiguration.
+        Bewertet KMS-Verfuegbarkeit und KMS-Zaehler (ohne ADBA - siehe Check 55b).
     #>
     param($data)
-    if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
-    $hosts = @($data | Where-Object { $_.Kind -eq 'Host' })
-    if ($hosts.Count -eq 0) {
-        $err = @($data | Where-Object { $_.Kind -eq 'Fehler' })
-        if ($err.Count) { return New-Assessment -OverallStatus 'WARN' -Summary $err[0].Detail -Findings @($err[0].Detail) }
-        return New-Assessment -OverallStatus 'CRITICAL' -Summary 'Keine KMS-Hosts gefunden (weder SRV noch DC-Scan)' -Findings @('Keine KMS-Hosts gefunden')
+    $rows = @($data)
+    if ($rows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+
+    $fehler = @($rows | Where-Object { $_.Kind -eq 'Fehler' })
+    $hosts  = @($rows | Where-Object { $_.Kind -eq 'Host' })
+    $hints  = @($rows | Where-Object { $_.Kind -eq 'Hinweis' })
+
+    $rowFlags = @{}
+    $findings = New-Object System.Collections.ArrayList
+    foreach ($r in @($rows | Where-Object { $_.Kind -in @('Host','Hinweis','Fehler') })) {
+        if ($r.Bewertung -in @('WARN','CRITICAL')) {
+            $key = "$($r.Kind)|$($r.Host)|$($r.Detail)"
+            $rowFlags[$key] = $r.Bewertung
+            if ($r.Kind -eq 'Host') { [void]$findings.Add("$($r.Host): $($r.Detail)") }
+            else { [void]$findings.Add("$($r.Detail)") }
+        }
     }
-    $critical = @($hosts | Where-Object { $_.Risk -eq 'CRITICAL' })
-    $warn = @($hosts | Where-Object { $_.Risk -eq 'WARN' })
-    $ok = @($hosts | Where-Object { $_.Risk -eq 'OK' })
-    $findings = @()
-    foreach ($h in $hosts) { if ($h.Risk -ne 'OK') { $findings += $h.Detail } }
-    $status = if ($critical.Count) { 'CRITICAL' } elseif ($warn.Count) { 'WARN' } else { 'OK' }
-    $summary = "$($hosts.Count) KMS-Host(s): OK $($ok.Count), WARN $($warn.Count), CRITICAL $($critical.Count)"
-    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
+
+    $crit = @($hosts | Where-Object { $_.Bewertung -eq 'CRITICAL' }).Count
+    $warn = @($hosts | Where-Object { $_.Bewertung -eq 'WARN' }).Count
+    $info = @($hosts | Where-Object { $_.Bewertung -eq 'INFO' }).Count
+    $ok   = @($hosts | Where-Object { $_.Bewertung -eq 'OK' }).Count
+    $hintWarn = @($hints | Where-Object { $_.Bewertung -eq 'WARN' }).Count
+
+    if ($hosts.Count -eq 0) {
+        if ($fehler.Count -gt 0) {
+            return New-Assessment -OverallStatus 'WARN' -Summary 'KMS-Status nicht ermittelbar - Abfrage fehlgeschlagen' `
+                -Findings @($findings) -RowFlags $rowFlags
+        }
+        return New-Assessment -OverallStatus 'INFO' `
+            -Summary 'Kein KMS-Host gefunden - KMS ist nicht in DNS veroeffentlicht' `
+            -Findings @($findings) -RowFlags $rowFlags
+    }
+
+    $status = if ($crit -gt 0) { 'CRITICAL' }
+              elseif ($warn -gt 0 -or $hintWarn -gt 0) { 'WARN' }
+              elseif ($info -gt 0) { 'INFO' }
+              else { 'OK' }
+    $pub = @($hosts | Where-Object { "$($_.Quelle)" -notlike 'DC-Scan*' }).Count
+    $summary = "KMS-Hosts gesamt: $($hosts.Count) | per DNS-SRV: $pub | OK: $ok | WARN: $warn | CRITICAL: $crit | INFO: $info"
+    New-Assessment -OverallStatus $status -Summary $summary -Findings @($findings) -RowFlags $rowFlags
+}
+
+function New-AdbaRow {
+    <# Erzeugt eine Ergebniszeile mit einheitlichen Spalten (Report/CSV). #>
+    param(
+        [string]$Kind = 'Hinweis', [string]$Objekt = '-', [string]$Anzeigename = '-',
+        [string]$ProduktKeyTeil = '-', [string]$LizenzGroesse = '-',
+        [string]$ErstelltAm = '-', [string]$GeaendertAm = '-',
+        [string]$Bewertung = 'INFO', [string]$Detail = ''
+    )
+    [pscustomobject]@{
+        Kind = $Kind; Objekt = $Objekt; Anzeigename = $Anzeigename
+        ProduktKeyTeil = $ProduktKeyTeil; LizenzGroesse = $LizenzGroesse
+        ErstelltAm = $ErstelltAm; GeaendertAm = $GeaendertAm
+        Bewertung = $Bewertung; Detail = $Detail
+    }
+}
+
+function Get-AdbaConfiguration {
+    <#
+    .SYNOPSIS
+        Inventarisiert die AD-basierte Aktivierung (ADBA) im Configuration-Naming-Context.
+    .NOTES
+        ADBA legt Aktivierungsobjekte unter
+          CN=Activation Objects,CN=Microsoft SPP,CN=Services,CN=Configuration,<Forest-Root>
+        ab (Klasse msSPP-ActivationObject, ab Windows Server 2012). Der Teilkey des
+        CSVLK steht in msSPP-CSVLKPartialProductKey, die Lizenz in msSPP-OnlineLicense.
+        Rein lesend. Fehlt der Container oder sind keine Objekte vorhanden, ist ADBA
+        nicht eingerichtet bzw. nicht aktiv - das ist kein Fehler (INFO).
+        Der Suchbereich wird aus dem Configuration-Naming-Context abgeleitet, damit
+        der Check auch in Domaenen unterhalb der Forest-Root-Domaene funktioniert.
+    #>
+    $result = @()
+    try {
+        $forest = Get-ADForest -ErrorAction Stop
+        $configNC = "$($forest.PartitionsContainer)" -replace '^CN=Partitions,', ''
+        if (-not $configNC) { throw 'Configuration-Naming-Context nicht ermittelbar' }
+        $base = "CN=Activation Objects,CN=Microsoft SPP,CN=Services,$configNC"
+
+        $containerVorhanden = $false
+        try {
+            $null = Get-ADObject -Identity $base -ErrorAction Stop
+            $containerVorhanden = $true
+        } catch {
+            if ("$($_.FullyQualifiedErrorId)" -notmatch 'ADIdentityNotFoundException|ADObjectNotFound') { throw }
+        }
+        if (-not $containerVorhanden) {
+            $result += New-AdbaRow -Kind 'Summary' -Bewertung 'INFO' `
+                -Detail 'Kein Container fuer AD-Aktivierungsobjekte - ADBA ist nicht eingerichtet'
+            return $result
+        }
+
+        $objekte = @(Get-ADObject -SearchBase $base -SearchScope OneLevel `
+                        -LDAPFilter '(objectClass=msSPP-ActivationObject)' -Properties * -ErrorAction Stop)
+        if ($objekte.Count -eq 0) {
+            $result += New-AdbaRow -Kind 'Summary' -Bewertung 'INFO' `
+                -Detail 'Container fuer AD-Aktivierungsobjekte vorhanden, aber kein Objekt - ADBA ist nicht aktiv'
+            return $result
+        }
+
+        foreach ($o in $objekte) {
+            $pk = ''
+            try { if ($o.'msSPP-CSVLKPartialProductKey') { $pk = "$($o.'msSPP-CSVLKPartialProductKey')" } } catch { }
+            $lic = 0
+            try {
+                $v = $o.'msSPP-OnlineLicense'
+                if ($v -is [byte[]]) { $lic = $v.Length } elseif ($v) { $lic = "$v".Length }
+            } catch { }
+
+            $anzeige = ''
+            try { $anzeige = "$($o.displayName)" } catch { }
+            if (-not $anzeige) { $anzeige = "$($o.Name)" }
+
+            $erstellt = if ($o.whenCreated) { ([datetime]$o.whenCreated).ToString('yyyy-MM-dd') } else { '-' }
+            $geaendert = if ($o.whenChanged) { ([datetime]$o.whenChanged).ToString('yyyy-MM-dd') } else { '-' }
+
+            $ph = New-Object System.Collections.ArrayList
+            if ($pk) { [void]$ph.Add('CSVLK-Teilkey vorhanden') } else { [void]$ph.Add('kein CSVLK-Teilkey lesbar') }
+            if ($lic -gt 0) { [void]$ph.Add('Lizenzblob vorhanden') } else { [void]$ph.Add('kein Lizenzblob lesbar') }
+
+            $result += New-AdbaRow -Kind 'Objekt' -Objekt "$($o.Name)" -Anzeigename $anzeige `
+                -ProduktKeyTeil $(if ($pk) { $pk } else { '-' }) `
+                -LizenzGroesse $(if ($lic -gt 0) { "$lic Bytes" } else { '-' }) `
+                -ErstelltAm $erstellt -GeaendertAm $geaendert -Bewertung 'OK' `
+                -Detail ((@($ph)) -join ' | ')
+        }
+
+        $result += New-AdbaRow -Kind 'Summary' -Bewertung 'OK' `
+            -Detail "$($objekte.Count) ADBA-Aktivierungsobjekt(e) im Configuration-Naming-Context"
+        return $result
+    } catch {
+        Write-Log "ADBAConfiguration: $_" -Level WARN -NoConsole
+        $result += New-AdbaRow -Kind 'Fehler' -Bewertung 'WARN' -Detail "ADBA-Abfrage fehlgeschlagen: $_"
+        return $result
+    }
+}
+
+function Test-Check-ADBA {
+    <#
+    .SYNOPSIS
+        Bewertet die AD-basierte Aktivierung (ADBA) anhand der Aktivierungsobjekte.
+    #>
+    param($data)
+    $rows = @($data)
+    if ($rows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+
+    $fehler = @($rows | Where-Object { $_.Kind -eq 'Fehler' })
+    if ($fehler.Count -gt 0) {
+        return New-Assessment -OverallStatus 'WARN' -Summary 'ADBA-Abfrage fehlgeschlagen' `
+            -Findings @($fehler | ForEach-Object { "$($_.Detail)" })
+    }
+
+    $objekte = @($rows | Where-Object { $_.Kind -eq 'Objekt' })
+    if ($objekte.Count -eq 0) {
+        $sum = @($rows | Where-Object { $_.Kind -eq 'Summary' } | Select-Object -First 1)
+        $text = if ($sum) { "$($sum.Detail)" } else { 'ADBA ist nicht eingerichtet' }
+        return New-Assessment -OverallStatus 'INFO' -Summary $text
+    }
+
+    $rowFlags = @{}
+    foreach ($o in $objekte) { $rowFlags["Objekt|$($o.Objekt)"] = 'OK' }
+    New-Assessment -OverallStatus 'OK' `
+        -Summary "$($objekte.Count) ADBA-Aktivierungsobjekt(e) vorhanden" -RowFlags $rowFlags
 }
 
 function Convert-DCSourceName {
@@ -9039,6 +9419,7 @@ function Invoke-AllAssessments {
         '53_GPPPasswords'            = { Test-Check-GPPPasswords            $Global:Results['53_GPPPasswords'] }
         '54_ProtectedUsers'          = { Test-Check-ProtectedUsers          $Global:Results['54_ProtectedUsers'] }
         '55_KMS'                     = { Test-Check-KMS                     $Global:Results['55_KMS'] }
+        '55b_ADBA'                   = { Test-Check-ADBA                    $Global:Results['55b_ADBA'] }
         '56_StaleDCs'                = { Test-Check-StaleDCs                $Global:Results['56_StaleDCs'] }
         '57_RCAudit'                 = { Test-Check-RCAudit                 $Global:Results['57_RCAudit'] }
         '58_SPNInventory'            = { Test-Check-SPNInventory            $Global:Results['58_SPNInventory'] }
@@ -9294,6 +9675,8 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                             '52_AnonymousLDAP'           { $row.Test }
                             '53_GPPPasswords'            { $row.Datei }
                             '54_ProtectedUsers'          { $row.Account }
+                            '55_KMS'                     { "$($row.Kind)|$($row.Host)|$($row.Detail)" }
+                            '55b_ADBA'                   { "$($row.Kind)|$($row.Objekt)" }
                             '64_IPv6'                    { $row.DCName }
                             '67_PKICA'                   { $row.RowKey }
                             '68_PKIRoots'                { $row.RowKey }
@@ -9585,7 +9968,7 @@ function Start-ADHealthCheck {
                                              '28_ADRecycleBin','29_TombstoneLifetime','30_Levels','31_GPO','35_Backup',
                                              '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                                              '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints','72_EntraSyncAccounts','73_SeamlessSSO','74_CloudInventory') |
+                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','55b_ADBA','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints','72_EntraSyncAccounts','73_SeamlessSSO','74_CloudInventory') |
                      Where-Object { $Global:SelectedChecks -contains $_ }
         $selInact = if ((Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')) { 1 } else { 0 }
         $Global:ProgressStats.TotalChecks = ($selPerDC.Count * $dcCountReachable) + $selForest.Count + $selInact + $dcCount
@@ -9661,6 +10044,7 @@ function Start-ADHealthCheck {
         if (Test-IsCheckSelected '53_GPPPasswords')            { $r = Invoke-TimedCheck -CheckKey '53_GPPPasswords'            -ScriptBlock { Get-GPPPasswords };            $Global:Results['53_GPPPasswords']            = @($r) }
         if (Test-IsCheckSelected '54_ProtectedUsers')          { $r = Invoke-TimedCheck -CheckKey '54_ProtectedUsers'          -ScriptBlock { Get-ProtectedUsersAudit };     $Global:Results['54_ProtectedUsers']          = @($r) }
         if (Test-IsCheckSelected '55_KMS')                     { $r = Invoke-TimedCheck -CheckKey '55_KMS'                     -ScriptBlock { Get-KMSConfiguration };        $Global:Results['55_KMS']                     = @($r) }
+        if (Test-IsCheckSelected '55b_ADBA')                   { $r = Invoke-TimedCheck -CheckKey '55b_ADBA'                   -ScriptBlock { Get-AdbaConfiguration };       $Global:Results['55b_ADBA']                   = @($r) }
         if (Test-IsCheckSelected '56_StaleDCs')                { $r = Invoke-TimedCheck -CheckKey '56_StaleDCs'                -ScriptBlock { Get-StaleDCObjects };          $Global:Results['56_StaleDCs']                = @($r) }
         if (Test-IsCheckSelected '57_RCAudit')                 { $r = Invoke-TimedCheck -CheckKey '57_RCAudit'                 -ScriptBlock { Get-RCAudit };                 $Global:Results['57_RCAudit']                 = @($r) }
         if (Test-IsCheckSelected '58_SPNInventory')            { $r = Invoke-TimedCheck -CheckKey '58_SPNInventory'            -ScriptBlock { Get-SPNInventory };            $Global:Results['58_SPNInventory']            = @($r) }

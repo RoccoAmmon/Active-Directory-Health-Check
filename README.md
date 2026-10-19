@@ -1,9 +1,9 @@
-﻿# 🛡️ Active Directory Health Check v2.12
+﻿# 🛡️ Active Directory Health Check v2.13
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.12-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.13-brightgreen.svg)]()
 [![Checks](https://img.shields.io/badge/Checks-74-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
@@ -13,9 +13,9 @@
 
 ![Auswahlfenster des AD Health Check mit Update-Badge](docs/gui-screenshot.png)
 
-> **DE:** Auswahlfenster der GUI: thematische Check-Gruppen, Suite-Buttons und frei wählbarer Ausgabepfad – hier bewusst mit einer **Testversion** (eine Version unter dem damals neuesten Release), damit das klickbare Badge „Update verfügbar: v2.10" neben der Versionsnummer sichtbar wird. Beim Start wird die GitLab-Releases-API geprüft (Timeout 3 s), ein Klick auf das Badge öffnet die Release-Seite; abschaltbar mit `-NoUpdateCheck`. Das Versions-Badge im Kopf dieser README zeigt weiterhin die echte Release-Version 2.12.
+> **DE:** Auswahlfenster der GUI: thematische Check-Gruppen, Suite-Buttons und frei wählbarer Ausgabepfad – hier bewusst mit einer **Testversion** (eine Version unter dem damals neuesten Release), damit das klickbare Badge „Update verfügbar: v2.10" neben der Versionsnummer sichtbar wird. Beim Start wird die GitLab-Releases-API geprüft (Timeout 3 s), ein Klick auf das Badge öffnet die Release-Seite; abschaltbar mit `-NoUpdateCheck`. Das Versions-Badge im Kopf dieser README zeigt weiterhin die echte Release-Version 2.13.
 >
-> **EN:** GUI selection window: thematic check groups, suite buttons and freely selectable output path – deliberately shown as a **test version** (one version below the then-latest release) so that the clickable badge “Update verfügbar: v2.10” (German UI) next to the version number becomes visible. On startup the GitLab releases API is queried (3 s timeout), clicking the badge opens the release page; can be disabled with `-NoUpdateCheck`. The version badge at the top of this README still shows the actual release version 2.12.
+> **EN:** GUI selection window: thematic check groups, suite buttons and freely selectable output path – deliberately shown as a **test version** (one version below the then-latest release) so that the clickable badge “Update verfügbar: v2.10” (German UI) next to the version number becomes visible. On startup the GitLab releases API is queried (3 s timeout), clicking the badge opens the release page; can be disabled with `-NoUpdateCheck`. The version badge at the top of this README still shows the actual release version 2.13.
 
 ---
 
@@ -41,7 +41,7 @@
 
 ### ✨ Features
 
-- 🎯 **74 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring, Hybrid/Cloud)
+- 🎯 **74 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring, Hybrid/Cloud) – inkl. Teilprüfung 55b (ADBA)
 - 🖼️ **Moderne WPF-GUI** (Light Theme) mit Gruppen-Auswahl, Suite-Buttons und Ausgabepfad-Wahl
 - 🎨 **Farbcodierter HTML-Report** mit Executive Dashboard (OK / WARN / KRITISCH / INFO)
 - 📋 **Gesamtübersicht der Auffälligkeiten** – alle auffälligen Checks in einer Tabelle, nach Schwere sortiert, Befunde je Check gekürzt
@@ -179,7 +179,8 @@
 | 52 | **Anonymer LDAP-Zugriff** | Anonymer Bind-Test gegen PDC + dSHeuristics |
 | 53 | **GPP/cpassword in SYSVOL** | Klartext-dechiffrierbare Passwörter in GPP-XMLs (MS14-025) |
 | 54 | **Protected Users Audit** | Alle privilegierten Konten in der Protected-Users-Gruppe? |
-| 55 | **KMS-Server & Konfiguration** | KMS-Hosts per DNS-SRV (`_vlmcs._tcp`) finden und deren Konfiguration auslesen: Dienststatus, Port und lauschender Prozess, Aktivierungs-Anzahl (Schwellwerte konfigurierbar, Standard 5/25), Host-Key – inkl. Erkennung, ob der befragte Host überhaupt Windows-KMS betreibt |
+| 55 | **KMS: Hosts & Aktivierung** | KMS-Hosts per DNS-SRV (`_vlmcs._tcp`, inkl. Site-Einträgen `_vlmcs._tcp.<Site>._sites.<Domain>`) finden; je Host TCP-Erreichbarkeit, Software Protection (`sppsvc`), Host-Key (CSVLK) und Zähler. Ohne SRV-Eintrag werden alle DCs auf TCP 1688 geprüft – die Spalte `AufDC` beantwortet damit die Frage nach einem KMS auf einem Domaincontroller |
+| 55b | **KMS: AD-basierte Aktivierung (ADBA)** | Aktivierungsobjekte (`msSPP-ActivationObject`) unter `CN=Activation Objects,CN=Microsoft SPP,CN=Services,CN=Configuration` inkl. CSVLK-Teilkey und Lizenzblob; „nicht eingerichtet" ist ein INFO, kein Fehler |
 | 57 | **RC4 / LM Belege je DC** | `AllowableEncryptionTypes`, `NoLMHash` und Kerberos-Ereignisse 4768/4769 (RC4 vs. AES) je DC |
 | 59 | **Encryption-Types: Verteilung & AES-Abdeckung** | Verteilung nach EncType-Kombination, AES-Abdeckung gegen die Schwelle (Standard 90 %), Korrelation OS × EncType |
 
@@ -299,7 +300,15 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.12 (aktuell)
+### v2.13 (aktuell)
+- **Check 55 neu aufgebaut:** KMS-Hosts werden über die DNS-SRV-Einträge `_vlmcs._tcp.<Domain>` und `_vlmcs._tcp.<Site>._sites.<Domain>` gefunden. Je Host: TCP-Erreichbarkeit, Software Protection (`sppsvc`), KMS-Host-Key (CSVLK) und Zähler aus `SoftwareLicensingProduct` – CIM zuerst per WinRM, dann per DCOM
+- **Behoben:** die bisherigen Abfragen liefen ins Leere – falscher Dienstname (`KeyManagementService`), falsche CIM-Klasse für die Zähler und ein Registry-Zugriff, der den lokalen statt des entfernten Rechners gelesen hat. Ein gesperrtes WinRM/DCOM führt jetzt zu INFO statt zu CRITICAL
+- **Neu: Check 55b – AD-basierte Aktivierung (ADBA)** mit Aktivierungsobjekten, CSVLK-Teilkey und Lizenzblob; „nicht eingerichtet" ist INFO
+- **AD-KMS:** ohne SRV-Eintrag prüft Check 55 alle DCs auf TCP 1688; die Spalte `AufDC` beantwortet, ob ein KMS auf einem Domaincontroller läuft
+- Neue Schwellwerte `KMSProbeTimeoutMs` (1500 ms) und `KMSCimTimeoutSec` (6 s)
+- Version 2.13 (74 nummerierte Checks, zusätzlich die Teilprüfungen 04b, 32a–c und 55b)
+
+### v2.12
 - **3 neue Checks** (72–74): Entra-Sync-Dienstkonten (`MSOL_*`/`AAD_*` inkl. Kennwortalter und privilegierten Gruppen), Seamless SSO (`AZUREADSSOACC` inkl. Rollover-Alter) und ein Cloud-Inventar (Hybrid-Join-SCP, Kerberos Cloud Trust, Hybrid-Join-Geräte, Sync-Konten, UPN-Suffixe)
 - **Neue GUI-Gruppe "Hybrid & Cloud (Entra)"** – rein lokal, ohne Cloud-Login; Check 74 ist bewusst ein Doku-Inventar ohne Schwere-Bewertung
 - Neue Schwellwerte `EntraSyncAccountPwdWarnDays` (365 Tage) und `SeamlessSSOKeyWarnDays` (30 Tage)
@@ -418,7 +427,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 
 ### ✨ Features
 
-- 🎯 **74 best-practice checks**, sorted thematically (DC fundamentals, security, structure, monitoring, hybrid/cloud)
+- 🎯 **74 best-practice checks**, sorted thematically (DC fundamentals, security, structure, monitoring, hybrid/cloud) – incl. sub-check 55b (ADBA)
 - 🖼️ **Modern WPF GUI** (light theme) with group selection, suite buttons and output path selection
 - 🎨 **Color-coded HTML report** with executive dashboard (OK / WARN / CRITICAL / INFO)
 - 📋 **Overall summary of findings** – all flagged checks in a single table, sorted by severity, findings per check capped
@@ -556,7 +565,8 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 52 | **Anonymous LDAP Access** | Anonymous bind test against the PDC + dSHeuristics |
 | 53 | **GPP/cpassword in SYSVOL** | Passwords in GPP XML files that can be decrypted to plain text (MS14-025) |
 | 54 | **Protected Users Audit** | Are all privileged accounts in the Protected Users group? |
-| 55 | **KMS servers & configuration** | Find KMS hosts via DNS SRV (`_vlmcs._tcp`) and read their configuration: service status, port and listening process, activation count (configurable thresholds, default 5/25), host key – including detection of whether the queried host runs Windows KMS at all |
+| 55 | **KMS: hosts & activation** | Find KMS hosts via DNS SRV (`_vlmcs._tcp`, incl. site records `_vlmcs._tcp.<site>._sites.<domain>`); per host: TCP reachability, Software Protection (`sppsvc`), host key (CSVLK) and counters. Without an SRV record all DCs are probed on TCP 1688 – the `AufDC` column answers whether a KMS runs on a domain controller |
+| 55b | **KMS: Active Directory-based activation (ADBA)** | Activation objects (`msSPP-ActivationObject`) under `CN=Activation Objects,CN=Microsoft SPP,CN=Services,CN=Configuration` incl. CSVLK partial key and license blob; "not configured" is INFO, not an error |
 | 57 | **RC4 / LM evidence per DC** | `AllowableEncryptionTypes`, `NoLMHash` and Kerberos events 4768/4769 (RC4 vs. AES) per DC |
 | 59 | **Encryption types: distribution & AES coverage** | Distribution by encryption type combination, AES coverage against the threshold (default 90%), correlation of OS × encryption type |
 
@@ -676,7 +686,15 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.12 (current)
+### v2.13 (current)
+- **Check 55 rebuilt:** KMS hosts are discovered via the DNS SRV records `_vlmcs._tcp.<domain>` and `_vlmcs._tcp.<site>._sites.<domain>`. Per host: TCP reachability, Software Protection (`sppsvc`), KMS host key (CSVLK) and counters from `SoftwareLicensingProduct` – CIM via WinRM first, then via DCOM
+- **Fixed:** the previous queries came back empty – wrong service name (`KeyManagementService`), wrong CIM class for the counters, and a registry read that targeted the local instead of the remote machine. Blocked WinRM/DCOM now results in INFO instead of CRITICAL
+- **New: check 55b – Active Directory-based activation (ADBA)** with activation objects, CSVLK partial key and license blob; "not configured" is INFO
+- **AD KMS:** without an SRV record, check 55 probes all DCs on TCP 1688; the `AufDC` column tells whether a KMS runs on a domain controller
+- New thresholds `KMSProbeTimeoutMs` (1500 ms) and `KMSCimTimeoutSec` (6 s)
+- Version 2.13 (74 numbered checks, plus sub-checks 04b, 32a–c and 55b)
+
+### v2.12
 - **3 new checks** (72–74): Entra sync service accounts (`MSOL_*`/`AAD_*` incl. password age and privileged groups), Seamless SSO (`AZUREADSSOACC` incl. rollover age) and a cloud inventory (hybrid join SCP, Kerberos cloud trust, hybrid join devices, sync accounts, UPN suffixes)
 - **New GUI group "Hybrid & Cloud (Entra)"** – purely local, without cloud login; check 74 is deliberately a documentation inventory without severity assessment
 - New thresholds `EntraSyncAccountPwdWarnDays` (365 days) and `SeamlessSSOKeyWarnDays` (30 days)

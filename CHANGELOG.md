@@ -9,6 +9,27 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [2.13] - 2026-10-19
+
+#### Geändert
+- **Check 55 vollständig neu aufgebaut** (bisherige Abfragen liefen ins Leere):
+  - **Discovery** über die DNS-SRV-Einträge `_vlmcs._tcp.<ForestRoot>`, `_vlmcs._tcp.<Domain>` und je Site `_vlmcs._tcp.<Site>._sites.<Domain>`; alle Treffer werden je Host zusammengeführt
+  - **Je Host:** TCP-Erreichbarkeit des veröffentlichten Ports, Software Protection (`sppsvc`) inkl. Starttyp, KMS-Host-Key (CSVLK) und Zähler aus `SoftwareLicensingProduct` (`IsKeyManagementServiceMachine`, `KeyManagementServiceCurrentCount`, `RequiredClientCount`, `...TotalRequests`, `...FailedRequests`)
+  - **Behoben:** falscher Dienstname (`KeyManagementService` existiert nicht – KMS läuft im Dienst `sppsvc`), falsche CIM-Klasse für die Zähler (`SoftwareLicensingService` statt `SoftwareLicensingProduct`) und ein Registry-Zugriff, der den lokalen statt des entfernten Rechners gelesen hat
+  - **CIM** zuerst per WinRM, dann per DCOM. Ist beides gesperrt, werden die Details als nicht auslesbar benannt (INFO) – der Host wird nicht mehr pauschal als CRITICAL gemeldet
+  - **AD-KMS:** Ist kein SRV-Eintrag vorhanden, prüft der Check alle DCs auf TCP 1688. Die Spalte `AufDC` beantwortet damit die Frage, ob ein KMS auf einem Domaincontroller läuft
+  - **Bewertung:** veröffentlichter Host nicht erreichbar = CRITICAL; Host ohne CSVLK oder ohne DNS-Veröffentlichung = WARN; fehlende Detaildaten oder noch nicht erreichte Aktivierungsschwelle = INFO
+  - Row-Kinds `Host`, `Hinweis`, `Summary`, `Fehler`
+
+#### Hinzugefügt
+- **Check 55b: AD-basierte Aktivierung (ADBA)** – liest die Aktivierungsobjekte (`msSPP-ActivationObject`) unter `CN=Activation Objects,CN=Microsoft SPP,CN=Services,CN=Configuration` inkl. Anzeigename, CSVLK-Teilkey (`msSPP-CSVLKPartialProductKey`), Lizenzblob (`msSPP-OnlineLicense`), Erstellungs- und Änderungsdatum. Fehlt der Container oder ist er leer, wird das als INFO („nicht eingerichtet"/„nicht aktiv") ausgewiesen – nicht als Fehler
+  - Row-Kinds `Objekt`, `Summary`, `Fehler`
+- Neue Schwellwerte `$Global:KMSProbeTimeoutMs` (1500 ms, TCP-Test) und `$Global:KMSCimTimeoutSec` (6 s, CIM-Verbindung)
+- Neues Testskript `test-55-kms-adba.ps1` in die Test-Suite aufgenommen
+
+#### Version
+- Version auf 2.13 erhöht (74 nummerierte Checks, zusätzlich die Teilprüfungen 04b, 32a–c und 55b); Skript-Header, README und Wiki angeglichen
+
 ### [2.12] - 2026-10-19
 
 #### Hinzugefügt
@@ -287,6 +308,27 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [2.13] - 2026-10-19
+
+#### Changed
+- **Check 55 completely rebuilt** (the previous queries came back empty):
+  - **Discovery** via the DNS SRV records `_vlmcs._tcp.<ForestRoot>`, `_vlmcs._tcp.<Domain>` and per site `_vlmcs._tcp.<Site>._sites.<Domain>`; all hits are merged per host
+  - **Per host:** TCP reachability of the published port, Software Protection (`sppsvc`) incl. start type, KMS host key (CSVLK) and counters from `SoftwareLicensingProduct` (`IsKeyManagementServiceMachine`, `KeyManagementServiceCurrentCount`, `RequiredClientCount`, `...TotalRequests`, `...FailedRequests`)
+  - **Fixed:** wrong service name (`KeyManagementService` does not exist – KMS runs inside the `sppsvc` service), wrong CIM class for the counters (`SoftwareLicensingService` instead of `SoftwareLicensingProduct`) and a registry read that targeted the local instead of the remote machine
+  - **CIM** via WinRM first, then via DCOM. If both are blocked, the details are reported as unreadable (INFO) – the host is no longer flagged as CRITICAL across the board
+  - **AD KMS:** if no SRV record exists, the check probes all DCs on TCP 1688. The `AufDC` column thereby answers whether a KMS runs on a domain controller
+  - **Assessment:** published host unreachable = CRITICAL; host without CSVLK or without DNS publication = WARN; missing detail data or activation threshold not yet reached = INFO
+  - Row kinds `Host`, `Hinweis`, `Summary`, `Fehler`
+
+#### Added
+- **Check 55b: Active Directory-based activation (ADBA)** – reads the activation objects (`msSPP-ActivationObject`) under `CN=Activation Objects,CN=Microsoft SPP,CN=Services,CN=Configuration` incl. display name, CSVLK partial key (`msSPP-CSVLKPartialProductKey`), license blob (`msSPP-OnlineLicense`), creation and change date. If the container is missing or empty, this is reported as INFO ("not configured"/"not active") – not as an error
+  - Row kinds `Objekt`, `Summary`, `Fehler`
+- New thresholds `$Global:KMSProbeTimeoutMs` (1500 ms, TCP test) and `$Global:KMSCimTimeoutSec` (6 s, CIM connection)
+- New test script `test-55-kms-adba.ps1` added to the test suite
+
+#### Version
+- Version bumped to 2.13 (74 numbered checks, plus sub-checks 04b, 32a–c and 55b); script header, README and wiki aligned
 
 ### [2.12] - 2026-10-19
 
