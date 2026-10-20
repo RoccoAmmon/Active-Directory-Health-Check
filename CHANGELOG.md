@@ -19,9 +19,22 @@ All notable changes to this project are documented here.
   - Ein Lesefehler wird nicht mehr als fehlendes Objekt gewertet: die Quelle wird als nicht lesbar ausgewiesen (INFO-Hinweiszeile), es gibt dann bewusst keinen Befund je DC
   - Serverobjekt vorhanden, NTDS-Settings aber nicht gefunden = WARN (statt CRITICAL); CRITICAL nur noch, wenn Serverobjekt **und** NTDS-Settings fehlen
   - Die Namensauflösung der `CN=Sites`-Quelle nutzt ebenfalls `dNSHostName`; vorher entstanden Phantom-DCs, wenn der RDN vom Hostnamen abwich
+- **Check 34 (Zeitsynchronisation): Konfiguration und Wirkung werden getrennt**
+  - **Behoben:** `LastSyncTime` wurde auf deutschen Systemen nie gelesen (Label „Letzte erfolgr. Synchronisierungszeit" statt „Letzte erfolgreiche …")
+  - **Behoben:** Die Meldung „PDC nutzt LokaleUhr" sagte nicht, dass eine NTP-Quelle konfiguriert ist, aber nicht antwortet – der Befund wirkte wie ein False Positive
+  - Nutzt der PDC die lokale Uhr, wird die konfigurierte Gegenstelle wie mit `w32tm /stripchart` angesprochen; ein Timeout (`0x800705B4`) belegt die fehlende Antwort. Zusätzlich werden Peer-Status (`w32tm /query /peers`), letzter Fehlercode und die Time-Service-Ereignisse der letzten drei Tage ausgewiesen
+  - Drei Fälle getrennt: keine NTP-Quelle konfiguriert (CRITICAL) / Quelle konfiguriert, antwortet nicht (CRITICAL, mit Ursache) / Quelle antwortet, erster Sync steht aus (WARN)
+  - Nicht-PDC ohne erfolgreiche Synchronisierung erbt den Fehler des PDC (INFO, „Ursache dort") statt einen zweiten CRITICAL zu erzeugen
+  - Neue Spalten `PeerStatus` und `PeerProbe`; Referenz-ID, Fehlercode und Ereignis-IDs stehen im Befund
+- **Check 55 (KMS): Teilkey, Ziel-IP und „kein Eintrag" vs. „nicht lesbar"**
+  - **Behoben:** „Kein KMS-Host-Key (CSVLK) installiert - SRV-Eintrag vermutlich veraltet" war eine unbelegte Vermutung und traf auch Hosts, deren CSVLK nur als Teilkey lesbar ist
+  - Neue Spalte `ZielIP` (A/AAAA des SRV-Ziels) und Abgleich mit den DC-Adressen: zeigt ein alter Name auf einen aktuellen DC, wird das als veralteter SRV-Eintrag benannt
+  - Kein CSVLK-Eintrag (`IsKeyManagementServiceMachine` nirgends 1) ist jetzt von „Eintrag vorhanden, Teilkey nicht lesbar" getrennt (WARN vs. INFO)
+  - Hinweiszeile: Windows liefert nur die letzten 5 Zeichen des CSVLK – das ist kein Fehler; der Produktname des Keys steht im Detail
 
 #### Hinzugefügt
 - Neues Testskript `test-56-staledcs.ps1` in die Test-Suite aufgenommen (Sammelabfragen, RootDSE-Pfad, „nicht gefunden" vs. „fehlt", Lesefehler ≠ fehlendes Objekt)
+- Neues Testskript `test-34-timesync.ps1` in die Test-Suite aufgenommen (Peer-Status, NTP-Test, getrennte Fälle, Vererbung beim Nicht-PDC, L10n)
 
 ### [2.13] - 2026-10-19
 
@@ -333,9 +346,22 @@ All notable changes to this project are documented here.
   - A read error is no longer treated as a missing object: the source is reported as unreadable (INFO notice row) and deliberately no per-DC finding is raised
   - Server object present but NTDS settings not found = WARN (instead of CRITICAL); CRITICAL only if **both** the server object and the NTDS settings are missing
   - The `CN=Sites` source also resolves names through `dNSHostName`; previously phantom DCs appeared when the RDN differed from the host name
+- **Check 34 (time synchronization): configuration and effect are now separated**
+  - **Fixed:** `LastSyncTime` was never read on German systems (label "Letzte erfolgr. Synchronisierungszeit" instead of "Letzte erfolgreiche …")
+  - **Fixed:** the message "PDC nutzt LokaleUhr" did not say that an NTP source is configured but does not answer – the finding looked like a false positive
+  - If the PDC uses the local clock, the configured peer is probed like `w32tm /stripchart`; a timeout (`0x800705B4`) proves the missing response. Peer status (`w32tm /query /peers`), last error code and the time service events of the last three days are reported as well
+  - Three cases are separated: no NTP source configured (CRITICAL) / source configured but not answering (CRITICAL, with cause) / source answers, first sync still pending (WARN)
+  - A non-PDC without successful synchronization inherits the PDC fault (INFO, "root cause there") instead of producing a second CRITICAL
+  - New columns `PeerStatus` and `PeerProbe`; reference ID, error code and event IDs are part of the finding
+- **Check 55 (KMS): partial key, target IP and "no entry" vs. "not readable"**
+  - **Fixed:** "No KMS host key (CSVLK) installed - SRV record probably stale" was an unproven assumption and also hit hosts whose CSVLK is merely readable as a partial key
+  - New column `ZielIP` (A/AAAA of the SRV target) compared with the DC addresses: if an old name points to a current DC, it is reported as a stale SRV record
+  - No CSVLK entry (`IsKeyManagementServiceMachine` never 1) is now separated from "entry present, partial key not readable" (WARN vs. INFO)
+  - Notice row: Windows only returns the last 5 characters of the CSVLK – this is not an error; the product name of the key is part of the detail
 
 #### Added
 - New test script `test-56-staledcs.ps1` added to the test suite (bulk queries, RootDSE path, "not found" vs. "missing", read error ≠ missing object)
+- New test script `test-34-timesync.ps1` added to the test suite (peer status, NTP probe, separated cases, inheritance for non-PDC, L10n)
 
 ### [2.13] - 2026-10-19
 

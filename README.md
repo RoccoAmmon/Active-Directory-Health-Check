@@ -147,7 +147,7 @@
 | # | Check | Beschreibung |
 |---|---|---|
 | 33 | **Event-Log-Auswertung** | System / Directory Service / DNS (letzte 24h) |
-| 34 | **Zeitsynchronisation** | PDC + Domain-DCs |
+| 34 | **Zeitsynchronisation** | PDC + Domain-DCs; prüft Konfiguration **und** Wirkung: Peer-Status, NTP-Test wie `w32tm /stripchart`, Time-Service-Ereignisse, wenn die lokale Uhr als Quelle dient |
 | 35 | **AD-Backup-Status** | via `repadmin /showbackup` |
 | 36 | **Installierte Programme** | Inventory pro DC |
 | 37 | **Windows Updates** | Letzte 20 Updates, Altersbewertung |
@@ -179,7 +179,7 @@
 | 52 | **Anonymer LDAP-Zugriff** | Anonymer Bind-Test gegen PDC + dSHeuristics |
 | 53 | **GPP/cpassword in SYSVOL** | Klartext-dechiffrierbare Passwörter in GPP-XMLs (MS14-025) |
 | 54 | **Protected Users Audit** | Alle privilegierten Konten in der Protected-Users-Gruppe? |
-| 55 | **KMS: Hosts & Aktivierung** | KMS-Hosts per DNS-SRV (`_vlmcs._tcp`, inkl. Site-Einträgen `_vlmcs._tcp.<Site>._sites.<Domain>`) finden; je Host TCP-Erreichbarkeit, Software Protection (`sppsvc`), Host-Key (CSVLK) und Zähler. Ohne SRV-Eintrag werden alle DCs auf TCP 1688 geprüft – die Spalte `AufDC` beantwortet damit die Frage nach einem KMS auf einem Domaincontroller |
+| 55 | **KMS: Hosts & Aktivierung** | KMS-Hosts per DNS-SRV (`_vlmcs._tcp`, inkl. Site-Einträgen `_vlmcs._tcp.<Site>._sites.<Domain>`) finden; je Host TCP-Erreichbarkeit, Software Protection (`sppsvc`), Host-Key (CSVLK, nur als Teilkey lesbar) und Zähler; SRV-Ziel wird aufgelöst (`ZielIP`) und gegen die DC-Adressen geprüft. Ohne SRV-Eintrag werden alle DCs auf TCP 1688 geprüft – die Spalte `AufDC` beantwortet damit die Frage nach einem KMS auf einem Domaincontroller |
 | 55b | **KMS: AD-basierte Aktivierung (ADBA)** | Aktivierungsobjekte (`msSPP-ActivationObject`) unter `CN=Activation Objects,CN=Microsoft SPP,CN=Services,CN=Configuration` inkl. CSVLK-Teilkey und Lizenzblob; „nicht eingerichtet" ist ein INFO, kein Fehler |
 | 57 | **RC4 / LM Belege je DC** | `AllowableEncryptionTypes`, `NoLMHash` und Kerberos-Ereignisse 4768/4769 (RC4 vs. AES) je DC |
 | 59 | **Encryption-Types: Verteilung & AES-Abdeckung** | Verteilung nach EncType-Kombination, AES-Abdeckung gegen die Schwelle (Standard 90 %), Korrelation OS × EncType |
@@ -533,7 +533,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | # | Check | Description |
 |---|---|---|
 | 33 | **Event Log Analysis** | System / Directory Service / DNS (last 24 h) |
-| 34 | **Time Synchronization** | PDC + domain DCs |
+| 34 | **Time Synchronization** | PDC + domain DCs; checks configuration **and** effect: peer status, NTP probe like `w32tm /stripchart`, time service events when the local clock is the source |
 | 35 | **AD Backup Status** | via `repadmin /showbackup` |
 | 36 | **Installed Software** | Inventory per DC |
 | 37 | **Windows Updates** | Last 20 updates, age rating |
@@ -565,7 +565,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 52 | **Anonymous LDAP Access** | Anonymous bind test against the PDC + dSHeuristics |
 | 53 | **GPP/cpassword in SYSVOL** | Passwords in GPP XML files that can be decrypted to plain text (MS14-025) |
 | 54 | **Protected Users Audit** | Are all privileged accounts in the Protected Users group? |
-| 55 | **KMS: hosts & activation** | Find KMS hosts via DNS SRV (`_vlmcs._tcp`, incl. site records `_vlmcs._tcp.<site>._sites.<domain>`); per host: TCP reachability, Software Protection (`sppsvc`), host key (CSVLK) and counters. Without an SRV record all DCs are probed on TCP 1688 – the `AufDC` column answers whether a KMS runs on a domain controller |
+| 55 | **KMS: hosts & activation** | Find KMS hosts via DNS SRV (`_vlmcs._tcp`, incl. site records `_vlmcs._tcp.<site>._sites.<domain>`); per host: TCP reachability, Software Protection (`sppsvc`), host key (CSVLK, readable as partial key only) and counters; the SRV target is resolved (`ZielIP`) and compared with the DC addresses. Without an SRV record all DCs are probed on TCP 1688 – the `AufDC` column answers whether a KMS runs on a domain controller |
 | 55b | **KMS: Active Directory-based activation (ADBA)** | Activation objects (`msSPP-ActivationObject`) under `CN=Activation Objects,CN=Microsoft SPP,CN=Services,CN=Configuration` incl. CSVLK partial key and license blob; "not configured" is INFO, not an error |
 | 57 | **RC4 / LM evidence per DC** | `AllowableEncryptionTypes`, `NoLMHash` and Kerberos events 4768/4769 (RC4 vs. AES) per DC |
 | 59 | **Encryption types: distribution & AES coverage** | Distribution by encryption type combination, AES coverage against the threshold (default 90%), correlation of OS × encryption type |

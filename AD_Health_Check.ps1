@@ -571,7 +571,6 @@ TCP-Port nicht erreichbar - veroeffentlichter KMS-Host antwortet nicht=>TCP port
 Details nicht auslesbar (CIM/WinRM und DCOM nicht verfuegbar) - TCP-Port ist offen=>Details not readable (CIM/WinRM and DCOM unavailable) - TCP port is open
 Software Protection (sppsvc) laeuft nicht=>Software Protection (sppsvc) is not running
 Dienststatus von sppsvc nicht auslesbar=>Service status of sppsvc not readable
-Kein KMS-Host-Key (CSVLK) installiert - SRV-Eintrag vermutlich veraltet=>No KMS host key (CSVLK) installed - SRV record probably stale
 Aktivierungsschwelle noch nicht erreicht - kein Fehler=>Activation threshold not reached yet - not an error
 KMS-Host erreichbar, Host-Key vorhanden=>KMS host reachable, host key present
 Nur ein KMS-Host veroeffentlicht - kein Failover bei Ausfall=>Only one KMS host published - no failover on outage
@@ -1080,6 +1079,28 @@ keine alternativen UPN-Suffixe im Forest definiert=>no alternative UPN suffixes 
 Cloud-Anbindung=>Cloud connectivity
 Cloud-Anbindung dokumentiert=>Cloud connectivity documented
 Bereich konnte nicht ausgelesen werden=>area could not be read
+Zeitsync OK=>Time sync OK
+PDC nutzt LokaleUhr - keine NTP-Quelle konfiguriert=>PDC uses the local clock - no NTP source configured
+PDC nutzt LokaleUhr - NTP-Quelle =>PDC uses the local clock - NTP source 
+antwortet, erster Sync steht aus=>responds, first sync pending
+antwortet nicht=>does not respond
+Peer-Status: =>Peer status: 
+letzter Synchronisierungsfehler: Code =>last synchronization error: code 
+Time-Service-Ereignisse (3 Tage): =>time service events (3 days): 
+DC nutzt LokaleUhr statt PDC=>DC uses the local clock instead of the PDC
+keine erfolgreiche Synchronisierung - folgt dem PDC, dessen Quelle fehlerhaft ist (Ursache dort)=>no successful synchronization - follows the PDC whose source is faulty (root cause there)
+keine erfolgreiche Synchronisierung seit Dienststart=>no successful synchronization since service start
+PDC nutzt die lokale Uhr - NTP-Quelle nicht erreichbar=>PDC uses the local clock - NTP source unreachable
+PeerStatus=>Peer status
+PeerProbe=>NTP probe
+ZielIP=>Target IP
+SRV-Ziel ist ein alter Name - =>SRV target is an old name - 
+gehoert zu DC =>belongs to DC 
+SRV-Ziel loest nicht auf - Eintrag verweist ins Leere=>SRV target does not resolve - record points nowhere
+Kein CSVLK-Eintrag auf diesem Host - er nimmt keine KMS-Aktivierungen an=>No CSVLK entry on this host - it does not accept KMS activation requests
+CSVLK-Eintrag vorhanden, Teilkey aber nicht auslesbar=>CSVLK entry present, but partial key not readable
+CSVLK wird von Windows nur als Teilkey (letzte 5 Zeichen) ausgeliefert - der vollstaendige Key ist nicht auslesbar=>Windows only provides the CSVLK as a partial key (last 5 characters) - the full key cannot be read
+CSVLK-Teilkey =>CSVLK partial key 
 '@
 
 # --- Tabelle + Regex aufbauen -------------------------------------------------
@@ -2697,10 +2718,54 @@ function Get-TimeSyncStatus {
         $srcR = & w32tm /query /source 2>&1 | Out-String
         $src = ($srcR -split "`r?`n" | Where-Object { $_.Trim() -and $_ -notmatch '^Die Abfrage|^The following|^$' } | Select-Object -First 1).Trim()
         $strat=$null; if ($sR -match 'Stratum\s*:\s*(\d+)') { $strat=[int]$Matches[1] }
-        $ls=$null; $m=[regex]::Match($sR,'(?:Last Successful Sync Time|Letzte erfolgreiche Synchronisierungszeit)\s*:\s*(.+)'); if ($m.Success) { $ls=$m.Groups[1].Value.Trim() }
+        $ls=$null; $m=[regex]::Match($sR,'(?:Last Successful Sync Time|Letzte erfolgr\.? Synchronisierungszeit|Letzte erfolgreiche Synchronisierungszeit)\s*:\s*(.+)'); if ($m.Success) { $ls=$m.Groups[1].Value.Trim() }
         $type=$null; $m=[regex]::Match($cR,'(?:^|\s)Type:\s*([^\r\n]+)'); if ($m.Success) { $type=$m.Groups[1].Value.Trim() }
         $ntp=$null; $m=[regex]::Match($cR,'NtpServer:\s*([^\r\n]+)'); if ($m.Success) { $ntp=$m.Groups[1].Value.Trim() }
-        [pscustomobject]@{ Source=$src; Stratum=$strat; LastSyncTime=$ls; ConfiguredType=$type; ConfiguredNtpSrv=$ntp }
+
+        # Referenz-ID: "LOCL" heisst lokale Uhr, alles andere ist eine echte Referenz
+        # (deutsche Ausgabe: 0x4C4F434C (Quellname:  "LOCL"))
+        $refId=$null
+        $m=[regex]::Match($sR,'(?:Reference ID|Referenz-ID)\s*:\s*(0x[0-9A-Fa-f]+)(?:\s*\(([^)]*)\))?')
+        if ($m.Success) {
+            $raw = $m.Groups[2].Value.Trim()
+            $q = [regex]::Match($raw,'"([^"]+)"')
+            if ($q.Success) { $refId = $q.Groups[1].Value }
+            elseif ($raw)   { $refId = $raw }
+            else            { $refId = $m.Groups[1].Value }
+        }
+
+        # 0 = kein Fehler, 1 = keine Zeitdaten verfuegbar, 2.. = Peer-/Zugriffsfehler
+        $lsErr=$null
+        $m=[regex]::Match($sR,'(?:Last Sync Error|Letzter Synchronisierungsfehler)\s*:\s*(\d+)')
+        if ($m.Success) { $lsErr=[int]$m.Groups[1].Value }
+
+        # Peer-Liste: Aktiv/Active = Peer antwortet, Ausstehend/Pending = keine Antwort
+        $pR = & w32tm /query /peers 2>&1 | Out-String
+        $peer=$null;        $m=[regex]::Match($pR,'(?m)^\s*Peer:\s*(\S+)');   if ($m.Success) { $peer=$m.Groups[1].Value.Trim() }
+        $peerStatus=$null;  $m=[regex]::Match($pR,'(?m)^\s*Status:\s*([^\r\n]+)'); if ($m.Success) { $peerStatus=$m.Groups[1].Value.Trim() }
+
+        # Nur im Fehlerfall: NTP-Peer direkt ansprechen (wie w32tm /stripchart) und die
+        # letzten Time-Service-Ereignisse mitnehmen. Ein Timeout belegt, dass der Peer
+        # nicht antwortet - dann ist die lokale Uhr die Ursache, nicht die Konfiguration.
+        $probe='-'; $evIds=''
+        if ($src -match 'Local CMOS Clock|Lokale CMOS-Uhr|Free-running') {
+            $peerHost = if ($peer) { ($peer -split ',')[0].Trim() }
+                        elseif ($ntp) { (($ntp -split ',')[0] -split '\s+')[0].Trim() }
+                        else { '' }
+            if ($peerHost) {
+                $scR = & w32tm /stripchart /computer:$peerHost /samples:1 /dataonly 2>&1 | Out-String
+                if ($scR -match '0x([0-9A-Fa-f]{8})') { $probe = "Fehler 0x$($Matches[1])" }
+                elseif ($scR -match ',\s*d:\s*[+-]?\d') { $probe = 'Antwort' }
+                else { $probe = 'keine Antwort' }
+            }
+            try {
+                $ev = @(Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Time-Service'; StartTime=(Get-Date).AddDays(-3)} -MaxEvents 10 -ErrorAction Stop)
+                $evIds = (@($ev | ForEach-Object { $_.Id }) | Sort-Object -Unique) -join ','
+            } catch { $evIds = 'nicht lesbar' }
+        }
+
+        [pscustomobject]@{ Source=$src; Stratum=$strat; LastSyncTime=$ls; ConfiguredType=$type; ConfiguredNtpSrv=$ntp
+            RefId=$refId; LastSyncError=$lsErr; Peer=$peer; PeerStatus=$peerStatus; PeerProbe=$probe; TimeEvents=$evIds }
     }
     $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
     if (-not $data) { return }
@@ -2710,7 +2775,11 @@ function Get-TimeSyncStatus {
     elseif ($data.Source -match 'Free-running') { $sk='FreeRunning' }
     elseif ($data.Source -match 'VM IC Time Provider') { $sk='HyperVHost' }
     elseif ($data.Source -match '^[\w\.\-]+$') { $sk='Server' }
-    [pscustomobject]@{ DCName=$DC; IsPDCEmulator=$isPDC; Source=$data.Source; SourceKind=$sk; Stratum=$data.Stratum; LastSyncTime=$data.LastSyncTime; ConfiguredType=$data.ConfiguredType; ConfiguredNtpSrv=$data.ConfiguredNtpSrv }
+    # Felder mit "_" werden im Report nicht als Spalte angezeigt, stehen aber der Bewertung zur Verfuegung
+    [pscustomobject]@{ DCName=$DC; IsPDCEmulator=$isPDC; Source=$data.Source; SourceKind=$sk; Stratum=$data.Stratum
+        LastSyncTime=$data.LastSyncTime; ConfiguredType=$data.ConfiguredType; ConfiguredNtpSrv=$data.ConfiguredNtpSrv
+        PeerStatus=$data.PeerStatus; PeerProbe=$data.PeerProbe
+        _Peer=$data.Peer; _RefId=$data.RefId; _LastSyncError=$data.LastSyncError; _TimeEvents=$data.TimeEvents }
 }
 
 function Get-ADBackupStatus {
@@ -3379,10 +3448,54 @@ function Get-TimeSyncStatus {
         $srcR = & w32tm /query /source 2>&1 | Out-String
         $src = ($srcR -split "`r?`n" | Where-Object { $_.Trim() -and $_ -notmatch '^Die Abfrage|^The following|^$' } | Select-Object -First 1).Trim()
         $strat=$null; if ($sR -match 'Stratum\s*:\s*(\d+)') { $strat=[int]$Matches[1] }
-        $ls=$null; $m=[regex]::Match($sR,'(?:Last Successful Sync Time|Letzte erfolgreiche Synchronisierungszeit)\s*:\s*(.+)'); if ($m.Success) { $ls=$m.Groups[1].Value.Trim() }
+        $ls=$null; $m=[regex]::Match($sR,'(?:Last Successful Sync Time|Letzte erfolgr\.? Synchronisierungszeit|Letzte erfolgreiche Synchronisierungszeit)\s*:\s*(.+)'); if ($m.Success) { $ls=$m.Groups[1].Value.Trim() }
         $type=$null; $m=[regex]::Match($cR,'(?:^|\s)Type:\s*([^\r\n]+)'); if ($m.Success) { $type=$m.Groups[1].Value.Trim() }
         $ntp=$null; $m=[regex]::Match($cR,'NtpServer:\s*([^\r\n]+)'); if ($m.Success) { $ntp=$m.Groups[1].Value.Trim() }
-        [pscustomobject]@{ Source=$src; Stratum=$strat; LastSyncTime=$ls; ConfiguredType=$type; ConfiguredNtpSrv=$ntp }
+
+        # Referenz-ID: "LOCL" heisst lokale Uhr, alles andere ist eine echte Referenz
+        # (deutsche Ausgabe: 0x4C4F434C (Quellname:  "LOCL"))
+        $refId=$null
+        $m=[regex]::Match($sR,'(?:Reference ID|Referenz-ID)\s*:\s*(0x[0-9A-Fa-f]+)(?:\s*\(([^)]*)\))?')
+        if ($m.Success) {
+            $raw = $m.Groups[2].Value.Trim()
+            $q = [regex]::Match($raw,'"([^"]+)"')
+            if ($q.Success) { $refId = $q.Groups[1].Value }
+            elseif ($raw)   { $refId = $raw }
+            else            { $refId = $m.Groups[1].Value }
+        }
+
+        # 0 = kein Fehler, 1 = keine Zeitdaten verfuegbar, 2.. = Peer-/Zugriffsfehler
+        $lsErr=$null
+        $m=[regex]::Match($sR,'(?:Last Sync Error|Letzter Synchronisierungsfehler)\s*:\s*(\d+)')
+        if ($m.Success) { $lsErr=[int]$m.Groups[1].Value }
+
+        # Peer-Liste: Aktiv/Active = Peer antwortet, Ausstehend/Pending = keine Antwort
+        $pR = & w32tm /query /peers 2>&1 | Out-String
+        $peer=$null;        $m=[regex]::Match($pR,'(?m)^\s*Peer:\s*(\S+)');   if ($m.Success) { $peer=$m.Groups[1].Value.Trim() }
+        $peerStatus=$null;  $m=[regex]::Match($pR,'(?m)^\s*Status:\s*([^\r\n]+)'); if ($m.Success) { $peerStatus=$m.Groups[1].Value.Trim() }
+
+        # Nur im Fehlerfall: NTP-Peer direkt ansprechen (wie w32tm /stripchart) und die
+        # letzten Time-Service-Ereignisse mitnehmen. Ein Timeout belegt, dass der Peer
+        # nicht antwortet - dann ist die lokale Uhr die Ursache, nicht die Konfiguration.
+        $probe='-'; $evIds=''
+        if ($src -match 'Local CMOS Clock|Lokale CMOS-Uhr|Free-running') {
+            $peerHost = if ($peer) { ($peer -split ',')[0].Trim() }
+                        elseif ($ntp) { (($ntp -split ',')[0] -split '\s+')[0].Trim() }
+                        else { '' }
+            if ($peerHost) {
+                $scR = & w32tm /stripchart /computer:$peerHost /samples:1 /dataonly 2>&1 | Out-String
+                if ($scR -match '0x([0-9A-Fa-f]{8})') { $probe = "Fehler 0x$($Matches[1])" }
+                elseif ($scR -match ',\s*d:\s*[+-]?\d') { $probe = 'Antwort' }
+                else { $probe = 'keine Antwort' }
+            }
+            try {
+                $ev = @(Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Time-Service'; StartTime=(Get-Date).AddDays(-3)} -MaxEvents 10 -ErrorAction Stop)
+                $evIds = (@($ev | ForEach-Object { $_.Id }) | Sort-Object -Unique) -join ','
+            } catch { $evIds = 'nicht lesbar' }
+        }
+
+        [pscustomobject]@{ Source=$src; Stratum=$strat; LastSyncTime=$ls; ConfiguredType=$type; ConfiguredNtpSrv=$ntp
+            RefId=$refId; LastSyncError=$lsErr; Peer=$peer; PeerStatus=$peerStatus; PeerProbe=$probe; TimeEvents=$evIds }
     }
     $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
     if (-not $data) { return }
@@ -3392,7 +3505,11 @@ function Get-TimeSyncStatus {
     elseif ($data.Source -match 'Free-running') { $sk='FreeRunning' }
     elseif ($data.Source -match 'VM IC Time Provider') { $sk='HyperVHost' }
     elseif ($data.Source -match '^[\w\.\-]+$') { $sk='Server' }
-    [pscustomobject]@{ DCName=$DC; IsPDCEmulator=$isPDC; Source=$data.Source; SourceKind=$sk; Stratum=$data.Stratum; LastSyncTime=$data.LastSyncTime; ConfiguredType=$data.ConfiguredType; ConfiguredNtpSrv=$data.ConfiguredNtpSrv }
+    # Felder mit "_" werden im Report nicht als Spalte angezeigt, stehen aber der Bewertung zur Verfuegung
+    [pscustomobject]@{ DCName=$DC; IsPDCEmulator=$isPDC; Source=$data.Source; SourceKind=$sk; Stratum=$data.Stratum
+        LastSyncTime=$data.LastSyncTime; ConfiguredType=$data.ConfiguredType; ConfiguredNtpSrv=$data.ConfiguredNtpSrv
+        PeerStatus=$data.PeerStatus; PeerProbe=$data.PeerProbe
+        _Peer=$data.Peer; _RefId=$data.RefId; _LastSyncError=$data.LastSyncError; _TimeEvents=$data.TimeEvents }
 }
 
 function Get-ADBackupStatus {
@@ -4381,7 +4498,8 @@ function Get-KmsHostRuntimeInfo {
     )
     $out = [pscustomobject]@{
         Ok = $false; Abruf = 'nicht verfuegbar'; DienstStatus = '-'; StartModus = '-'
-        HostKey = '-'; Aktivierungen = '-'; Aktivierungsschwelle = '-'; Anfragen = '-'; Fehlanfragen = '-'
+        HostKey = '-'; HostKeyStatus = 'unbekannt'; HostKeyProdukt = '-'; KmsEintraege = 0
+        Aktivierungen = '-'; Aktivierungsschwelle = '-'; Anfragen = '-'; Fehlanfragen = '-'
         FehlerText = ''
     }
     $sess = $null
@@ -4426,13 +4544,25 @@ function Get-KmsHostRuntimeInfo {
             return $out
         }
         $kms = @($prods | Where-Object { $_.IsKeyManagementServiceMachine -eq 1 })
+        $out.KmsEintraege = $kms.Count
         if ($kms.Count -gt 0) {
             $p = $kms | Select-Object -First 1
-            if ($p.PartialProductKey) { $out.HostKey = "$($p.PartialProductKey)" }
+            if ($p.PartialProductKey) {
+                # Windows liefert hier nur die letzten 5 Zeichen des CSVLK (PartialProductKey).
+                # Der vollstaendige Key ist nach der Installation nicht mehr auslesbar.
+                $out.HostKey = "$($p.PartialProductKey)"
+                $out.HostKeyStatus = 'Teilkey'
+            } else {
+                # KMS-Rolle ist gesetzt, der Teilkey wird aber nicht geliefert
+                $out.HostKeyStatus = 'nicht lesbar'
+            }
+            if ($p.Name) { $out.HostKeyProdukt = "$($p.Name)" }
             if ($null -ne $p.KeyManagementServiceCurrentCount)   { $out.Aktivierungen = [int]$p.KeyManagementServiceCurrentCount }
             if ($null -ne $p.RequiredClientCount)                { $out.Aktivierungsschwelle = [int]$p.RequiredClientCount }
             if ($null -ne $p.KeyManagementServiceTotalRequests)  { $out.Anfragen     = [int]$p.KeyManagementServiceTotalRequests }
             if ($null -ne $p.KeyManagementServiceFailedRequests) { $out.Fehlanfragen = [int]$p.KeyManagementServiceFailedRequests }
+        } else {
+            $out.HostKeyStatus = 'kein CSVLK'
         }
         $out.Ok = $true
         return $out
@@ -4441,17 +4571,38 @@ function Get-KmsHostRuntimeInfo {
     }
 }
 
+function Get-KmsTargetAddress {
+    <#
+    .SYNOPSIS
+        Loest das Ziel eines DNS-SRV-Eintrags auf (A/AAAA).
+    .NOTES
+        Dient der Frage, ob ein veroeffentlichter KMS-Name noch auf einen
+        aktuellen Host zeigt. Ein alter Name (z. B. nach einer Umbenennung)
+        loest oft auf denselben DC auf - das ist ein veralteter SRV-Eintrag.
+    #>
+    param([Parameter(Mandatory)][string]$Name)
+    $out = @()
+    foreach ($t in @('A','AAAA')) {
+        try {
+            $out += @(Resolve-DnsName -Name $Name -Type $t -DnsOnly -ErrorAction Stop |
+                      Where-Object { $_.PSObject.Properties['IPAddress'] } |
+                      ForEach-Object { "$($_.IPAddress)" })
+        } catch { }
+    }
+    return @($out | Where-Object { $_ } | Select-Object -Unique)
+}
+
 function New-KmsRow {
     <# Erzeugt eine Ergebniszeile mit einheitlichen Spalten (Report/CSV). #>
     param(
         [string]$Kind = 'Hinweis', [string]$HostName = '-', [string]$AufDC = '-',
-        [string]$Quelle = '-', [string]$Port = '-', [string]$PortOffen = '-',
+        [string]$Quelle = '-', [string]$ZielIP = '-', [string]$Port = '-', [string]$PortOffen = '-',
         [string]$Dienststatus = '-', [string]$HostKey = '-', [string]$Aktivierungen = '-',
         [string]$Aktivierungsschwelle = '-', [string]$Anfragen = '-', [string]$Fehlanfragen = '-',
         [string]$Abruf = '-', [string]$Bewertung = 'INFO', [string]$Detail = ''
     )
     [pscustomobject]@{
-        Kind = $Kind; Host = $HostName; AufDC = $AufDC; Quelle = $Quelle; Port = $Port
+        Kind = $Kind; Host = $HostName; AufDC = $AufDC; Quelle = $Quelle; ZielIP = $ZielIP; Port = $Port
         PortOffen = $PortOffen; Dienststatus = $Dienststatus; HostKey = $HostKey
         Aktivierungen = $Aktivierungen; Aktivierungsschwelle = $Aktivierungsschwelle; Anfragen = $Anfragen
         Fehlanfragen = $Fehlanfragen; Abruf = $Abruf; Bewertung = $Bewertung; Detail = $Detail
@@ -4483,10 +4634,18 @@ function Get-KmsConfiguration {
     try {
         $forest   = Get-ADForest -ErrorAction Stop
         $adDomain = Get-ADDomain -ErrorAction Stop
-        $dcNames  = @(Get-ADDomainController -Filter * -ErrorAction Stop |
+        $dcObjs   = @(Get-ADDomainController -Filter * -ErrorAction Stop)
+        $dcNames  = @($dcObjs |
                       ForEach-Object { "$($_.HostName)".TrimEnd('.') } |
                       Where-Object { $_ } | Sort-Object -Unique)
         $dcShort  = @($dcNames | ForEach-Object { ($_ -split '\.')[0].ToUpperInvariant() })
+        # IP -> DC-Name: erkennt einen SRV-Eintrag, der unter altem Namen auf einen
+        # aktuellen DC zeigt (typischer Rest nach einer Umbenennung)
+        $dcIPs = @{}
+        foreach ($d in $dcObjs) {
+            $ip = "$($d.IPv4Address)".Trim()
+            if ($ip -and $ip -ne '') { $dcIPs[$ip] = "$($d.Name)" }
+        }
 
         # --- 1) DNS-SRV-Discovery ---
         $zonen = @(@("$($forest.RootDomain)", "$($adDomain.DNSRoot)") | Where-Object { $_ } | Select-Object -Unique)
@@ -4561,7 +4720,14 @@ function Get-KmsConfiguration {
         $cntOk = 0; $cntWarn = 0; $cntCrit = 0; $cntInfo = 0; $cntDC = 0; $cntPub = 0
         foreach ($entry in @($srv.Values | Sort-Object -Property Host)) {
             $hn = $entry.Host
+            # Ziel-IP nur bei per DNS veroeffentlichten Hosts - sie zeigt, wohin der
+            # SRV-Eintrag aktuell wirklich zeigt (auch bei einem alten Namen)
+            $zielIPs = @()
+            if ($entry.Published) { $zielIPs = @(Get-KmsTargetAddress -Name $hn) }
+            $dcTreffer = $null
+            foreach ($ip in $zielIPs) { if ($dcIPs.ContainsKey($ip)) { $dcTreffer = $dcIPs[$ip]; break } }
             $istDC = ($dcShort -contains (($hn -split '\.')[0].ToUpperInvariant()))
+            if (-not $istDC -and $dcTreffer) { $istDC = $true }
             if ($istDC) { $cntDC++ }
             if ($entry.Published) { $cntPub++ }
 
@@ -4575,6 +4741,14 @@ function Get-KmsConfiguration {
             if (-not $entry.Published) {
                 $bw = 'WARN'
                 [void]$hinweise.Add('TCP-Port lauscht, aber kein DNS-SRV-Eintrag - Clients finden den Host nicht')
+            }
+            if ($entry.Published -and $zielIPs.Count -eq 0) {
+                if ($bw -eq 'OK') { $bw = 'WARN' }
+                [void]$hinweise.Add('SRV-Ziel loest nicht auf - Eintrag verweist ins Leere')
+            }
+            if ($entry.Published -and $dcTreffer -and (($hn -split '\.')[0] -ine $dcTreffer)) {
+                if ($bw -eq 'OK') { $bw = 'WARN' }
+                [void]$hinweise.Add("SRV-Ziel ist ein alter Name - $($zielIPs -join ', ') gehoert zu DC $dcTreffer")
             }
             if ($entry.Port -ne 1688) {
                 if ($bw -eq 'OK') { $bw = 'INFO' }
@@ -4599,9 +4773,16 @@ function Get-KmsConfiguration {
                     [void]$hinweise.Add('Dienststatus von sppsvc nicht auslesbar')
                 }
 
-                if ($rt.HostKey -eq '-') {
+                if ($rt.HostKeyStatus -eq 'kein CSVLK') {
                     if ($bw -ne 'CRITICAL') { $bw = 'WARN' }
-                    [void]$hinweise.Add('Kein KMS-Host-Key (CSVLK) installiert - SRV-Eintrag vermutlich veraltet')
+                    $txt = 'Kein CSVLK-Eintrag auf diesem Host - er nimmt keine KMS-Aktivierungen an'
+                    if ($dcTreffer -and (($hn -split '\.')[0] -ine $dcTreffer)) {
+                        $txt += " (SRV-Ziel zeigt auf DC $dcTreffer - Eintrag veraltet)"
+                    }
+                    [void]$hinweise.Add($txt)
+                } elseif ($rt.HostKeyStatus -eq 'nicht lesbar') {
+                    if ($bw -eq 'OK') { $bw = 'INFO' }
+                    [void]$hinweise.Add('CSVLK-Eintrag vorhanden, Teilkey aber nicht auslesbar')
                 } else {
                     $thr = 0
                     if ($rt.Aktivierungsschwelle -ne '-' -and [int]$rt.Aktivierungsschwelle -gt 0) { $thr = [int]$rt.Aktivierungsschwelle }
@@ -4620,7 +4801,15 @@ function Get-KmsConfiguration {
                     }
                 }
             }
-            if ($hinweise.Count -eq 0) { [void]$hinweise.Add('KMS-Host erreichbar, Host-Key vorhanden') }
+            if ($hinweise.Count -eq 0) {
+                if ($rt -and $rt.HostKey -ne '-') {
+                    $kt = "CSVLK-Teilkey $($rt.HostKey)"
+                    if ($rt.HostKeyProdukt -ne '-') { $kt += " ($($rt.HostKeyProdukt))" }
+                    [void]$hinweise.Add($kt)
+                } else {
+                    [void]$hinweise.Add('KMS-Host erreichbar, Host-Key vorhanden')
+                }
+            }
 
             switch ($bw) {
                 'OK'       { $cntOk++ }
@@ -4631,7 +4820,9 @@ function Get-KmsConfiguration {
 
             $result += New-KmsRow -Kind 'Host' -HostName $hn `
                 -AufDC $(if ($istDC) { 'Ja' } else { 'Nein' }) `
-                -Quelle ((@($entry.Sources)) -join '; ') -Port "$($entry.Port)" `
+                -Quelle ((@($entry.Sources)) -join '; ') `
+                -ZielIP $(if ($zielIPs.Count) { $zielIPs -join ', ' } else { '-' }) `
+                -Port "$($entry.Port)" `
                 -PortOffen $(if ($offen) { 'Ja' } else { 'Nein' }) `
                 -Dienststatus $(if ($rt -and $rt.DienstStatus -ne '-') { "$($rt.DienstStatus)" } else { '-' }) `
                 -HostKey $(if ($rt) { "$($rt.HostKey)" } else { '-' }) `
@@ -4643,6 +4834,10 @@ function Get-KmsConfiguration {
                 -Bewertung $bw -Detail ((@($hinweise)) -join ' | ')
         }
 
+        if (@($result | Where-Object { $_.Kind -eq 'Host' -and $_.HostKey -ne '-' }).Count -gt 0) {
+            $result += New-KmsRow -Kind 'Hinweis' -Bewertung 'INFO' `
+                -Detail 'CSVLK wird von Windows nur als Teilkey (letzte 5 Zeichen) ausgeliefert - der vollstaendige Key ist nicht auslesbar'
+        }
         if ($cntPub -eq 1) {
             $result += New-KmsRow -Kind 'Hinweis' -Bewertung 'WARN' `
                 -Detail 'Nur ein KMS-Host veroeffentlicht - kein Failover bei Ausfall'
@@ -9025,23 +9220,59 @@ function Test-Check-EventLog {
 
 function Test-Check-TimeSync {
     param($data); if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+    $data = @($data)
+    $pdcRow   = $data | Where-Object { $_.IsPDCEmulator } | Select-Object -First 1
+    $pdcLocal = ($pdcRow -and $pdcRow.SourceKind -in 'LocalClock','FreeRunning')
     $f=@(); $rf=@{}; $c=$false
     foreach ($t in $data) {
         $id=$t.DCName; $p=@()
+        $lokal = $t.SourceKind -in 'LocalClock','FreeRunning'
+        $ntpKonfiguriert = ($t.ConfiguredType -match 'NTP|AllSync' -and $t.ConfiguredNtpSrv -and $t.ConfiguredNtpSrv -ne '-')
+        $probeTxt = if ($t.PeerProbe -and $t.PeerProbe -ne '-') { $t.PeerProbe } else { 'keine Antwort' }
         if ($t.IsPDCEmulator) {
-            if ($t.SourceKind -in 'LocalClock','FreeRunning') { $p += "PDC nutzt LokaleUhr!"; $rf[$id]='CRITICAL'; $c=$true }
+            if ($lokal) {
+                if ($ntpKonfiguriert) {
+                    if ($t.PeerProbe -eq 'Antwort') {
+                        $p += "PDC nutzt LokaleUhr - NTP-Quelle $($t.ConfiguredNtpSrv) antwortet, erster Sync steht aus"
+                        $rf[$id]='WARN'
+                    } else {
+                        $p += "PDC nutzt LokaleUhr - NTP-Quelle $($t.ConfiguredNtpSrv) antwortet nicht ($probeTxt)"
+                        $rf[$id]='CRITICAL'; $c=$true
+                    }
+                } else {
+                    $p += "PDC nutzt LokaleUhr - keine NTP-Quelle konfiguriert"
+                    $rf[$id]='CRITICAL'; $c=$true
+                }
+                if ($t.PeerStatus) { $p += "Peer-Status: $($t.PeerStatus)" }
+                if ($t._LastSyncError) { $p += "letzter Synchronisierungsfehler: Code $($t._LastSyncError)" }
+                if ($t._TimeEvents) { $p += "Time-Service-Ereignisse (3 Tage): $($t._TimeEvents)" }
+            }
             elseif ($t.ConfiguredType -notmatch 'NTP|AllSync') { $p += "PDC Type='$($t.ConfiguredType)' statt NTP"; $rf[$id]='WARN' }
             elseif (-not $t.ConfiguredNtpSrv -or $t.ConfiguredNtpSrv -match 'time\.windows\.com') { $p += "PDC NTP: '$($t.ConfiguredNtpSrv)'"; $rf[$id]='WARN' }
             else { $rf[$id]='OK' }
         } else {
-            if ($t.SourceKind -in 'LocalClock','FreeRunning') { $p += "DC nutzt LokaleUhr statt PDC!"; $rf[$id]='CRITICAL'; $c=$true }
-            elseif ($t.ConfiguredType -notmatch 'NT5DS|AllSync') { $p += "Type='$($t.ConfiguredType)' statt NT5DS"; $rf[$id]='WARN' }
+            if ($lokal) {
+                $p += "DC nutzt LokaleUhr statt PDC!"
+                $rf[$id]='CRITICAL'; $c=$true
+            } elseif ($t.ConfiguredType -notmatch 'NT5DS|AllSync') { $p += "Type='$($t.ConfiguredType)' statt NT5DS"; $rf[$id]='WARN' }
+            elseif (-not $t.LastSyncTime) {
+                if ($pdcLocal) {
+                    $p += "keine erfolgreiche Synchronisierung - folgt dem PDC, dessen Quelle fehlerhaft ist (Ursache dort)"
+                    $rf[$id]='INFO'
+                } else {
+                    $p += "keine erfolgreiche Synchronisierung seit Dienststart"
+                    $rf[$id]='WARN'
+                }
+            }
             else { $rf[$id]='OK' }
         }
         foreach ($x in $p) { $f += "[$($t.DCName)] $x" }
     }
     $s = if ($c) { 'CRITICAL' } elseif ($f.Count) { 'WARN' } else { 'OK' }
-    New-Assessment -OverallStatus $s -Summary $(if($s -eq 'OK'){'Zeitsync OK'}else{"$($f.Count) Problem(e)"}) -Findings $f -RowFlags $rf
+    $summary = if ($s -eq 'OK') { 'Zeitsync OK' }
+               elseif ($pdcLocal) { "PDC $($pdcRow.DCName) nutzt die lokale Uhr - NTP-Quelle nicht erreichbar" }
+               else { "$($f.Count) Problem(e)" }
+    New-Assessment -OverallStatus $s -Summary $summary -Findings $f -RowFlags $rf
 }
 
 function Test-Check-Backup {
