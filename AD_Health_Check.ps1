@@ -4848,7 +4848,7 @@ function Convert-DCSourceName {
 function Get-StaleDCObjects {
     <#
     .SYNOPSIS
-        Gleicht 10 unabhaengige Quellen fuer „welche DCs gibt es“ gegeneinander ab.
+        Gleicht 11 unabhaengige Quellen fuer „welche DCs gibt es“ gegeneinander ab.
     .NOTES
         Quellen:
         1. Live-DCs (Get-ADDomainController -Filter *)
@@ -4861,10 +4861,16 @@ function Get-StaleDCObjects {
         8. DNS SRV _gc._tcp (Forest)
         9. DNS SRV _kerberos._tcp (Domain)
         10. DNS SRV _kpasswd._tcp (Domain)
+        11. Server-Objekte unter CN=Sites (auch ohne NTDS-Settings)
         Bewertung:
         - CRITICAL: Aktiver DC deaktiviert / ohne DNS-A / ohne DNS-SRV
         - CRITICAL: Nicht-lebender DC traegt noch FSMO/NTDS/Account-Reste
+        - CRITICAL: Aktiver DC ohne Server-Objekt und ohne NTDS-Settings im Config-NC
+        - WARN: Aktiver DC ohne NTDS-Settings, obwohl sein Server-Objekt existiert
+          (deutet auf Abfrage- oder Replikationsproblem, nicht auf ein fehlendes Objekt)
         - WARN: Inkonsistenzen zwischen Quellen
+        - INFO: Config-NC nicht lesbar - Quelle wird uebersprungen und ausgewiesen,
+          es gibt dann bewusst keinen Befund je DC
         Schwellwert: $Global:StaleDCWarnAgeDays (0 = jedes verwaiste Objekt)
     #>
     $result = @()
@@ -4872,8 +4878,14 @@ function Get-StaleDCObjects {
         $forest = Get-ADForest -ErrorAction Stop
         $adDomain = Get-ADDomain -ErrorAction Stop
         $domainDN = $adDomain.DistinguishedName
-        $configNC = "CN=Configuration,$domainDN"
         $dcOU = "OU=Domain Controllers,$domainDN"
+        # Die Configuration-Partition liegt IMMER unter der Forest-Root-Domaene.
+        # "CN=Configuration,<eigene Domaene>" ist in einer Child-Domaene ein DN, den es nicht gibt.
+        $configNC = ''
+        try { $configNC = "$((Get-ADRootDSE -ErrorAction Stop).configurationNamingContext)" } catch { }
+        if (-not $configNC) {
+            $configNC = "CN=Configuration,DC=$($forest.RootDomain -replace '\.', ',DC=')"
+        }
 
         # Quelle 1: Live DCs
         $dcObjs = @(Get-ADDomainController -Filter * -ErrorAction Stop)
@@ -4885,18 +4897,44 @@ function Get-StaleDCObjects {
         try { $ouComputers = @(Get-ADComputer -SearchBase $dcOU -Filter * -ErrorAction Stop | Select-Object -ExpandProperty Name | ForEach-Object { Convert-DCSourceName -Name $_ } | Where-Object { $_ } | Sort-Object -Unique) } catch {}
 
         # Quelle 3: Server-Objekte + NTDS-Settings im Config-NC
+        # Bewusst zwei Sammelabfragen statt einer Einzelabfrage je Server:
+        # - ein Lesefehler wird nicht mehr verschluckt (kein falsches "Objekt fehlt")
+        # - die Zuordnung erfolgt ueber den Eltern-DN des nTDSDSA, nicht ueber Namen
         $configServers = @()
+        $configSourceOk = $false
+        $configSourceError = ''
+        $servers = @()
         try {
-            $servers = Get-ADObject -SearchBase $configNC -LDAPFilter '(objectClass=server)' -Properties 'name' -ErrorAction Stop
-            foreach ($s in $servers) {
-                $ntds = Get-ADObject -SearchBase "CN=NTDS Settings,$($s.DistinguishedName)" -LDAPFilter '(objectClass=nTDSDSA)' -ErrorAction SilentlyContinue
-                if ($ntds) { $configServers += (Convert-DCSourceName -Name $s.Name) }
+            $servers = @(Get-ADObject -SearchBase $configNC -LDAPFilter '(objectClass=server)' -Properties 'name','dNSHostName' -ErrorAction Stop)
+            $dsa = @(Get-ADObject -SearchBase "CN=Sites,$configNC" -LDAPFilter '(objectClass=nTDSDSA)' -ErrorAction Stop)
+            $dsaParents = @{}
+            foreach ($d in $dsa) {
+                $dn = "$($d.DistinguishedName)"
+                if (-not $dn) { continue }
+                if ($dn.StartsWith('CN=NTDS Settings,', [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $dsaParents[$dn.Substring($dn.IndexOf(',') + 1)] = $true
+                }
             }
-        } catch {}
-        $configServers = $configServers | Where-Object { $_ } | Sort-Object -Unique
+            foreach ($s in $servers) {
+                $sdn = "$($s.DistinguishedName)"
+                if (-not $sdn -or -not $dsaParents.ContainsKey($sdn)) { continue }
+                $nm = "$($s.dNSHostName)"
+                if (-not $nm) { $nm = "$($s.Name)" }
+                $configServers += (Convert-DCSourceName -Name $nm)
+            }
+            $configSourceOk = $true
+        } catch {
+            $configSourceError = "$_"
+        }
+        $configServers = @($configServers | Where-Object { $_ } | Sort-Object -Unique)
 
         # Quelle 11: alle Server-Objekte unter CN=Sites (auch ohne NTDS-Settings)
-        $siteServers = @($servers | Where-Object { $_.DistinguishedName -like '*,CN=Sites,*' } | ForEach-Object { Convert-DCSourceName -Name $_.Name } | Where-Object { $_ } | Sort-Object -Unique)
+        # Namensaufloesung wie bei der Config-Quelle: dNSHostName hat Vorrang vor dem RDN
+        $siteServers = @($servers | Where-Object { $_.DistinguishedName -like '*,CN=Sites,*' } | ForEach-Object {
+            $n = "$($_.dNSHostName)"
+            if (-not $n) { $n = "$($_.Name)" }
+            Convert-DCSourceName -Name $n
+        } | Where-Object { $_ } | Sort-Object -Unique)
 
         # Quelle 4: Replikationspartner
         $replPartners = @()
@@ -4970,14 +5008,26 @@ function Get-StaleDCObjects {
             if ($siteServers -contains $name) { $row.InSites = $true }
 
             # Bewertung
+            # $strong zaehlt echte Inkonsistenzen (CRITICAL). Alle uebrigen Befunde eines
+            # lebenden DC (z. B. NTDS-Settings nur nicht auffindbar) bleiben WARN.
+            $strong = 0
             if ($row.Live) {
-                if (-not $row.InOU) { $row.Issues += 'Computer-Objekt in OU=Domain Controllers fehlt' }
-                if (-not $row.InConfig) { $row.Issues += 'NTDS-Settings im Config-NC fehlen' }
-                if (-not $row.InDNS) { $row.Issues += 'Kein DNS-A-Eintrag' }
-                if (-not $row.InSRV) { $row.Issues += 'Kein DNS-SRV (_ldap._tcp)' }
-                if ($gcDCs -contains $name -and -not $row.InGC) { $row.Issues += 'Kein DNS-SRV (_gc._tcp)' }
-                if (-not $row.InKerb) { $row.Issues += 'Kein DNS-SRV (_kerberos._tcp)' }
-                if (-not $row.InKpw) { $row.Issues += 'Kein DNS-SRV (_kpasswd._tcp)' }
+                if (-not $row.InOU) { $row.Issues += 'Computer-Objekt in OU=Domain Controllers fehlt'; $strong++ }
+                if (-not $row.InConfig) {
+                    if (-not $configSourceOk) {
+                        # Quelle nicht lesbar: kein Befund je DC, der Hinweis steht in der Quellen-Zusammenfassung
+                    } elseif ($row.InSites) {
+                        $row.Issues += 'NTDS-Settings im Config-NC nicht gefunden (Server-Objekt vorhanden - Abfrage/Replikation pruefen)'
+                    } else {
+                        $row.Issues += 'Server-Objekt und NTDS-Settings im Config-NC fehlen'
+                        $strong++
+                    }
+                }
+                if (-not $row.InDNS) { $row.Issues += 'Kein DNS-A-Eintrag'; $strong++ }
+                if (-not $row.InSRV) { $row.Issues += 'Kein DNS-SRV (_ldap._tcp)'; $strong++ }
+                if ($gcDCs -contains $name -and -not $row.InGC) { $row.Issues += 'Kein DNS-SRV (_gc._tcp)'; $strong++ }
+                if (-not $row.InKerb) { $row.Issues += 'Kein DNS-SRV (_kerberos._tcp)'; $strong++ }
+                if (-not $row.InKpw) { $row.Issues += 'Kein DNS-SRV (_kpasswd._tcp)'; $strong++ }
             }
             else {
                 # Nicht live, aber in anderen Quellen vorhanden -> verwaister DC
@@ -4996,12 +5046,16 @@ function Get-StaleDCObjects {
                 if ($sources.Count) {
                     $row.Issues += "Verwaist, aber in Quellen: $($sources -join ', ')"
                 }
+                $strong = $row.Issues.Count
             }
 
             # Ausgabe
             $detail = "Live:$($row.Live) OU:$($row.InOU) Config:$($row.InConfig) Repl:$($row.InRepl) FSMO:$($row.InFSMO) SRV:$($row.InSRV) DNS:$($row.InDNS) GC:$($row.InGC) KDC:$($row.InKerb) KPW:$($row.InKpw) Sites:$($row.InSites)"
             if ($row.Issues.Count) { $detail += " | " + ($row.Issues -join '; ') }
-            $risk = if ($row.Issues.Count -and $row.Live) { 'CRITICAL' } elseif ($row.Issues.Count -and -not $row.Live) { 'CRITICAL' } elseif ($row.Issues.Count) { 'WARN' } else { 'OK' }
+            $risk = if ($row.Live -and $strong -gt 0) { 'CRITICAL' }
+                    elseif (-not $row.Live -and $row.Issues.Count -gt 0) { 'CRITICAL' }
+                    elseif ($row.Issues.Count -gt 0) { 'WARN' }
+                    else { 'OK' }
 
             $result += [pscustomobject]@{
                 Kind='DC'; Target=$name; Risk=$risk; Detail=$detail
@@ -5016,10 +5070,19 @@ function Get-StaleDCObjects {
         $qNames = @('Live','OU','Config','Repl','FSMO','SRV','DNS','GC','KDC','KPW','Sites')
         $qCounts = @($liveDCs.Count, $ouComputers.Count, $configServers.Count, $replPartners.Count, $fsmo.Count, $srvDCs.Count, $dnsA.Count, $srvGC.Count, $srvKerb.Count, $srvKpw.Count, $siteServers.Count)
         for ($i=0; $i -lt $qNames.Count; $i++) {
+            $qDetail = "Quelle $($qNames[$i]): $($qCounts[$i]) Eintraege"
+            if ($qNames[$i] -eq 'Config' -and -not $configSourceOk) { $qDetail += ' (NTDS-Settings-Quelle nicht lesbar)' }
             $result += [pscustomobject]@{
                 Kind='Quelle'; Target=$qNames[$i]; Risk='OK'
-                Detail="Quelle $($qNames[$i]): $($qCounts[$i]) Eintraege"
+                Detail=$qDetail
                 RowKey="Quelle|$($qNames[$i])"
+            }
+        }
+        if (-not $configSourceOk) {
+            $result += [pscustomobject]@{
+                Kind='Hinweis'; Target='Config-NC'; Risk='INFO'
+                Detail="NTDS-Settings im Config-NC nicht auswertbar (Quelle uebersprungen): $configSourceError"
+                RowKey='Hinweis|ConfigNC'
             }
         }
     } catch {
@@ -5039,9 +5102,16 @@ function Test-Check-StaleDCs {
     if ($dcRows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine DC-Daten' }
     $critical = @($dcRows | Where-Object { $_.Risk -eq 'CRITICAL' })
     $warn = @($dcRows | Where-Object { $_.Risk -eq 'WARN' })
+    $hints = @($data | Where-Object { $_.Kind -eq 'Hinweis' })
+    $hintInfo = @($hints | Where-Object { $_.Risk -eq 'INFO' })
     $findings = @($dcRows | Where-Object { $_.Risk -ne 'OK' } | ForEach-Object { $_.Detail })
-    $status = if ($critical.Count) { 'CRITICAL' } elseif ($warn.Count) { 'WARN' } else { 'OK' }
+    if ($hints.Count -gt 0) { $findings += @($hints | ForEach-Object { $_.Detail }) }
+    $status = if ($critical.Count) { 'CRITICAL' }
+              elseif ($warn.Count) { 'WARN' }
+              elseif ($hintInfo.Count) { 'INFO' }
+              else { 'OK' }
     $summary = "$($dcRows.Count) DCs geprueft: OK $($dcRows.Count - $critical.Count - $warn.Count), WARN $($warn.Count), CRITICAL $($critical.Count)"
+    if ($hintInfo.Count -gt 0) { $summary += " | Config-NC-Quelle nicht lesbar" }
     New-Assessment -OverallStatus $status -Summary $summary -Findings $findings
 }
 

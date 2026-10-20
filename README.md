@@ -133,7 +133,7 @@
 | 29 | **Tombstone Lifetime** | Best Practice ≥180 Tage |
 | 30 | **Forest-/Domain-Level** | Functional Level |
 | 31 | **GPO-Health** | Sysvol/DS-Version-Mismatch |
-| 56 | **Tote DCs & DC-Verfügbarkeit** | Alte, verwaiste oder nie entfernte DC-Namen aus 7 Quellen plus Erreichbarkeit der DCs |
+| 56 | **Tote DCs & DC-Verfügbarkeit** | Alte, verwaiste oder nie entfernte DC-Namen aus 11 Quellen (inkl. `CN=Sites`/Configuration-Partition) plus Erreichbarkeit der DCs |
 | 63 | **AD-Subnetze vs. Reverse-Lookup-Zonen** | Subnetz → Site und passende Reverse-Zone, DNS-Netze ohne AD-Subnetz, Reverse-Zonen ohne Subnetz |
 
 ### 👤 Inaktive Accounts
@@ -519,7 +519,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 29 | **Tombstone Lifetime** | Best practice ≥180 days |
 | 30 | **Forest/Domain Level** | Functional level |
 | 31 | **GPO Health** | SYSVOL/DS version mismatch |
-| 56 | **Dead DCs & DC availability** | Old, orphaned or never removed DC names from 7 sources plus DC reachability |
+| 56 | **Dead DCs & DC availability** | Old, orphaned or never removed DC names from 11 sources (incl. `CN=Sites`/configuration partition) plus DC reachability |
 | 63 | **AD subnets vs. reverse lookup zones** | Subnet → site and matching reverse zone, DNS networks without an AD subnet, reverse zones without a subnet |
 
 ### 👤 Inactive Accounts

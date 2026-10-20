@@ -9,6 +9,20 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [Unreleased]
+
+#### Behoben
+- **Check 56 (Tote DCs & DC-Verfügbarkeit): falsches CRITICAL trotz vorhandener NTDS-Settings**
+  - Die Configuration-Partition wurde aus der eigenen Domäne gebildet (`CN=Configuration,<Domänen-DN>`). In einer Child-Domäne existiert dieser DN nicht, die Abfrage schlug fehl und jeder aktive DC wurde als „NTDS-Settings im Config-NC fehlen" (CRITICAL) gemeldet
+  - Der Pfad kommt jetzt aus dem `configurationNamingContext` des RootDSE (Fallback: Forest-Root)
+  - Statt einer Einzelabfrage je Server werden alle Serverobjekte und alle `nTDSDSA` in je einer Sammelabfrage gelesen; die Zuordnung erfolgt über den Eltern-DN, der Name über `dNSHostName`
+  - Ein Lesefehler wird nicht mehr als fehlendes Objekt gewertet: die Quelle wird als nicht lesbar ausgewiesen (INFO-Hinweiszeile), es gibt dann bewusst keinen Befund je DC
+  - Serverobjekt vorhanden, NTDS-Settings aber nicht gefunden = WARN (statt CRITICAL); CRITICAL nur noch, wenn Serverobjekt **und** NTDS-Settings fehlen
+  - Die Namensauflösung der `CN=Sites`-Quelle nutzt ebenfalls `dNSHostName`; vorher entstanden Phantom-DCs, wenn der RDN vom Hostnamen abwich
+
+#### Hinzugefügt
+- Neues Testskript `test-56-staledcs.ps1` in die Test-Suite aufgenommen (Sammelabfragen, RootDSE-Pfad, „nicht gefunden" vs. „fehlt", Lesefehler ≠ fehlendes Objekt)
+
 ### [2.13] - 2026-10-19
 
 #### Geändert
@@ -308,6 +322,20 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [Unreleased]
+
+#### Fixed
+- **Check 56 (Dead DCs & DC availability): false CRITICAL despite existing NTDS settings**
+  - The configuration partition was built from the local domain (`CN=Configuration,<domain DN>`). In a child domain that DN does not exist, the query failed and every active DC was reported as "NTDS settings missing in the config NC" (CRITICAL)
+  - The path now comes from the RootDSE `configurationNamingContext` (fallback: forest root)
+  - Instead of one query per server, all server objects and all `nTDSDSA` objects are read in one bulk query each; mapping uses the parent DN, the name uses `dNSHostName`
+  - A read error is no longer treated as a missing object: the source is reported as unreadable (INFO notice row) and deliberately no per-DC finding is raised
+  - Server object present but NTDS settings not found = WARN (instead of CRITICAL); CRITICAL only if **both** the server object and the NTDS settings are missing
+  - The `CN=Sites` source also resolves names through `dNSHostName`; previously phantom DCs appeared when the RDN differed from the host name
+
+#### Added
+- New test script `test-56-staledcs.ps1` added to the test suite (bulk queries, RootDSE path, "not found" vs. "missing", read error ≠ missing object)
 
 ### [2.13] - 2026-10-19
 
