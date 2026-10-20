@@ -1,9 +1,9 @@
-﻿# 🛡️ Active Directory Health Check v2.13
+﻿# 🛡️ Active Directory Health Check v2.14
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.13-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.14-brightgreen.svg)]()
 [![Checks](https://img.shields.io/badge/Checks-74-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
@@ -300,7 +300,16 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.13 (aktuell)
+### v2.14 (aktuell)
+- **Behoben (Check 34):** `LastSyncTime` wurde auf deutschen Systemen nie gelesen (Label „Letzte erfolgr. Synchronisierungszeit"). Nutzt der PDC die lokale Uhr, wird die konfigurierte NTP-Gegenstelle jetzt wie mit `w32tm /stripchart` angesprochen; ein Timeout (`0x800705B4`) belegt „antwortet nicht". Peer-Status, letzter Fehlercode und Time-Service-Ereignisse stehen im Befund
+- **Check 34 trennt drei Fälle:** keine NTP-Quelle konfiguriert (CRITICAL) / Quelle konfiguriert, antwortet nicht (CRITICAL) / Quelle antwortet, erster Sync steht aus (WARN). Ein Nicht-PDC ohne Sync erbt die Ursache des PDC (INFO) statt eines zweiten CRITICAL
+- **Behoben (Check 55):** „Kein CSVLK installiert - SRV-Eintrag vermutlich veraltet" war eine unbelegte Vermutung. Neue Spalte `ZielIP` löst das SRV-Ziel auf und gleicht es mit den DC-Adressen ab – zeigt ein alter Name auf einen aktuellen DC, ist der SRV-Eintrag veraltet
+- **Check 55 trennt** „kein CSVLK-Eintrag" (WARN) von „Eintrag vorhanden, Teilkey nicht lesbar" (INFO); eine Hinweiszeile nennt das Windows-Limit von 5 Zeichen
+- **Behoben (Check 56):** Config-NC kommt aus dem RootDSE (Fallback Forest-Root), Sammelabfragen statt einer Abfrage je DC, „nicht gefunden" ist WARN und ein Lesefehler INFO statt CRITICAL
+- Neue Spalten `PeerStatus`, `PeerProbe` und `ZielIP`; neue Testskripte `test-34-timesync.ps1` und `test-56-staledcs.ps1`
+- Version 2.14 (74 nummerierte Checks, zusätzlich die Teilprüfungen 04b, 32a–c und 55b)
+
+### v2.13
 - **Check 55 neu aufgebaut:** KMS-Hosts werden über die DNS-SRV-Einträge `_vlmcs._tcp.<Domain>` und `_vlmcs._tcp.<Site>._sites.<Domain>` gefunden. Je Host: TCP-Erreichbarkeit, Software Protection (`sppsvc`), KMS-Host-Key (CSVLK) und Zähler aus `SoftwareLicensingProduct` – CIM zuerst per WinRM, dann per DCOM
 - **Behoben:** die bisherigen Abfragen liefen ins Leere – falscher Dienstname (`KeyManagementService`), falsche CIM-Klasse für die Zähler und ein Registry-Zugriff, der den lokalen statt des entfernten Rechners gelesen hat. Ein gesperrtes WinRM/DCOM führt jetzt zu INFO statt zu CRITICAL
 - **Neu: Check 55b – AD-basierte Aktivierung (ADBA)** mit Aktivierungsobjekten, CSVLK-Teilkey und Lizenzblob; „nicht eingerichtet" ist INFO
@@ -686,7 +695,16 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.13 (current)
+### v2.14 (current)
+- **Fixed (check 34):** `LastSyncTime` was never read on German systems (label "Letzte erfolgr. Synchronisierungszeit"). If the PDC uses the local clock, the configured NTP peer is now probed like `w32tm /stripchart`; a timeout (`0x800705B4`) proves "does not respond". Peer status, last error code and time service events are part of the finding
+- **Check 34 separates three cases:** no NTP source configured (CRITICAL) / source configured but not answering (CRITICAL) / source answers, first sync pending (WARN). A non-PDC without sync inherits the PDC root cause (INFO) instead of a second CRITICAL
+- **Fixed (check 55):** "No CSVLK installed - SRV record probably stale" was an unproven assumption. The new `ZielIP` column resolves the SRV target and compares it with the DC addresses – if an old name points to a current DC, the SRV record is stale
+- **Check 55 separates** "no CSVLK entry" (WARN) from "entry present, partial key not readable" (INFO); a notice row names the Windows limit of 5 characters
+- **Fixed (check 56):** config NC comes from the RootDSE (fallback forest root), bulk queries instead of one query per DC, "not found" is WARN and a read error is INFO instead of CRITICAL
+- New columns `PeerStatus`, `PeerProbe` and `ZielIP`; new test scripts `test-34-timesync.ps1` and `test-56-staledcs.ps1`
+- Version 2.14 (74 numbered checks, plus sub-checks 04b, 32a–c and 55b)
+
+### v2.13
 - **Check 55 rebuilt:** KMS hosts are discovered via the DNS SRV records `_vlmcs._tcp.<domain>` and `_vlmcs._tcp.<site>._sites.<domain>`. Per host: TCP reachability, Software Protection (`sppsvc`), KMS host key (CSVLK) and counters from `SoftwareLicensingProduct` – CIM via WinRM first, then via DCOM
 - **Fixed:** the previous queries came back empty – wrong service name (`KeyManagementService`), wrong CIM class for the counters, and a registry read that targeted the local instead of the remote machine. Blocked WinRM/DCOM now results in INFO instead of CRITICAL
 - **New: check 55b – Active Directory-based activation (ADBA)** with activation objects, CSVLK partial key and license blob; "not configured" is INFO

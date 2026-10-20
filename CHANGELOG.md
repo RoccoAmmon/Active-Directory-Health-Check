@@ -9,7 +9,7 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
-### [Unreleased]
+### [2.14] - 2026-10-20
 
 #### Behoben
 - **Check 56 (Tote DCs & DC-Verfügbarkeit): falsches CRITICAL trotz vorhandener NTDS-Settings**
@@ -35,6 +35,9 @@ All notable changes to this project are documented here.
 #### Hinzugefügt
 - Neues Testskript `test-56-staledcs.ps1` in die Test-Suite aufgenommen (Sammelabfragen, RootDSE-Pfad, „nicht gefunden" vs. „fehlt", Lesefehler ≠ fehlendes Objekt)
 - Neues Testskript `test-34-timesync.ps1` in die Test-Suite aufgenommen (Peer-Status, NTP-Test, getrennte Fälle, Vererbung beim Nicht-PDC, L10n)
+
+#### Version
+- Version auf 2.14 erhöht (Fix-Release, 74 nummerierte Checks, zusätzlich die Teilprüfungen 04b, 32a–c und 55b); Skript-Header, README und Wiki angeglichen
 
 ### [2.13] - 2026-10-19
 
@@ -336,7 +339,7 @@ All notable changes to this project are documented here.
 
 ## 🇬🇧 English
 
-### [Unreleased]
+### [2.14] - 2026-10-20
 
 #### Fixed
 - **Check 56 (Dead DCs & DC availability): false CRITICAL despite existing NTDS settings**
@@ -362,6 +365,9 @@ All notable changes to this project are documented here.
 #### Added
 - New test script `test-56-staledcs.ps1` added to the test suite (bulk queries, RootDSE path, "not found" vs. "missing", read error ≠ missing object)
 - New test script `test-34-timesync.ps1` added to the test suite (peer status, NTP probe, separated cases, inheritance for non-PDC, L10n)
+
+#### Version
+- Version bumped to 2.14 (fix release, 74 numbered checks, plus sub-checks 04b, 32a–c and 55b); script header, README and wiki aligned
 
 ### [2.13] - 2026-10-19
 
