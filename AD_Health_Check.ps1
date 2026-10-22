@@ -680,6 +680,7 @@ unterstuetzt DES (=>supports DES (
 ermoeglicht Downgrade auf RC4 - nach AES-Migration RC4-Flag entfernen=>allows downgrade to RC4 - remove the RC4 flag after AES migration
 : Downgrade auf RC4 moeglich=>: downgrade to RC4 possible
 (nicht lesbar)=>(not readable)
+Backup-Status nicht lesbar=>Backup status not readable
 ; Aktiv==>; Active=
 Registry-Wert 'SupportedEncryptionTypes' nicht auslesbar=>Registry value 'SupportedEncryptionTypes' not readable
 (kein WinRM)=>(no WinRM)
@@ -3207,11 +3208,83 @@ function Get-TimeSyncStatus {
 }
 
 function Get-ADBackupStatus {
-    $dom = (Get-ADDomain -ErrorAction Stop).DistinguishedName
-    $raw = & repadmin /showbackup $dom 2>&1 | Out-String
-    $lb = $null; if ($raw -match 'dSASignature.*:\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})') { $lb = [datetime]$Matches[1] }
-    $a = if ($lb) { (New-TimeSpan -Start $lb -End (Get-Date)).Days } else { $null }
-    [pscustomobject]@{ LastBackup=$lb; AgeDays=$a; MaxAllowedDays=$Global:BackupMaxAgeDays; BackupOverdue=($a -gt $Global:BackupMaxAgeDays); RawOutput=($raw -split "`n" | Select-Object -First 20) -join "`n" }
+    <#
+    .SYNOPSIS
+        Ermittelt den AD-Backup-Status je Domaincontroller.
+    .DESCRIPTION
+        repadmin /showbackup erwartet einen DC-Hostnamen, keinen Domannen-DN.
+        Fuer jeden aufgeloessten DC wird eine eigene Zeile erzeugt. Ein Lesefehler
+        wird als "nicht lesbar" markiert und nicht als fehlendes Backup gewertet.
+    #>
+    $dcs = @()
+    try {
+        $dcs = @(Get-ADDomainController -Filter * -ErrorAction Stop | ForEach-Object { $_.HostName } | Where-Object { $_ })
+    } catch {
+        try { $dcs = @((Get-ADDomainController -Discover -ErrorAction Stop).HostName | Where-Object { $_ }) } catch {}
+    }
+    $dcs = @($dcs | Sort-Object -Unique)
+    if (-not $dcs) {
+        return @([pscustomobject]@{
+            DCName = '(keine DCs aufgeloesen)'
+            LastBackup = $null
+            AgeDays = $null
+            MaxAllowedDays = $Global:BackupMaxAgeDays
+            BackupOverdue = $false
+            _RepadminError = $true
+            RawOutput = 'Domaincontroller konnten nicht aufgeloesen werden.'
+        })
+    }
+
+    $out = @()
+    foreach ($dc in $dcs) {
+        $raw = ''
+        try {
+            $raw = ((& repadmin.exe /showbackup $dc 2>&1) | ForEach-Object { [string]$_ }) -join "`r`n"
+        } catch {
+            $raw = $_.Exception.Message
+        }
+
+        $rawLines = @($raw -split "`r?`n")
+        $errLine = $rawLines | Where-Object {
+            $_ -match '(?i)^\s*(Fehler|ERROR)[:.]|Win32-Fehler|Fehler gesto|auf folgenden Fehler|could not|failed to|not found|nicht gefunden|nicht aufgel|DSA_NAME'
+        } | Select-Object -First 1
+
+        $dates = @()
+        foreach ($m in [regex]::Matches($raw, '\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}\b')) {
+            try { $dates += [datetime]::ParseExact($m.Value, 'yyyy-MM-ddTHH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture) } catch {
+                try { $dates += [datetime]::ParseExact($m.Value, 'yyyy-MM-dd HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture) } catch {}
+            }
+        }
+        if ($dates.Count -eq 0) {
+            foreach ($m in [regex]::Matches($raw, '\b\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2}\b')) {
+                try { $dates += [datetime]::Parse($m.Value, [System.Globalization.CultureInfo]::CurrentCulture) } catch {}
+            }
+        }
+        $dates = @($dates | Sort-Object)
+
+        # Bei mehreren Partitionen ist dieaelteste Signatur der massgebliche Backup-Zeitpunkt.
+        $lb = if ($dates.Count -gt 0) { $dates[0] } else { $null }
+        $a = if ($lb) { [Math]::Max(0, (New-TimeSpan -Start $lb -End (Get-Date)).Days) } else { $null }
+        $isError = ($null -eq $lb) -and ($errLine -or ($rawLines -match '(?i)^\s*(Fehler|ERROR)[:.]|Win32-Fehler|Fehler gesto|auf folgenden Fehler|could not|failed to|not found|nicht gefunden|nicht aufgel|DSA_NAME'))
+
+        $rawOut = if ($lb) {
+            (@($rawLines | Where-Object { $_ -match '\d{4}-\d{2}-\d{2}|\d{2}\.\d{2}\.\d{4}' } | Select-Object -First 8)) -join "`n"
+        } else {
+            (@($rawLines | Where-Object { $_.Trim() } | Select-Object -First 20)) -join "`n"
+        }
+
+        $out += [pscustomobject]@{
+            DCName = $dc
+            LastBackup = $lb
+            AgeDays = $a
+            MaxAllowedDays = $Global:BackupMaxAgeDays
+            BackupOverdue = ($null -ne $a -and $a -gt $Global:BackupMaxAgeDays)
+            _RepadminError = $isError
+            RawOutput = $rawOut
+        }
+    }
+
+    return $out
 }
 
 function Get-InstalledPrograms {
@@ -8981,11 +9054,51 @@ function Test-Check-TimeSync {
 }
 
 function Test-Check-Backup {
-    param($data); if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
-    if (-not $data.LastBackup) { return New-Assessment -OverallStatus 'CRITICAL' -Summary 'KEIN AD-Backup!' }
-    if ($data.AgeDays -gt $Global:BackupCritAgeDays) { return New-Assessment -OverallStatus 'CRITICAL' -Summary "Backup $($data.AgeDays)d alt" }
-    if ($data.AgeDays -gt $Global:BackupMaxAgeDays)  { return New-Assessment -OverallStatus 'WARN' -Summary "Backup $($data.AgeDays)d alt" }
-    New-Assessment -OverallStatus 'OK' -Summary "Backup $($data.AgeDays)d alt"
+    param($data)
+    $rows = @($data | Where-Object { $_ })
+    if ($rows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+
+    $rf = @{}; $findings = @(); $okCount = 0; $warnCount = 0; $critCount = 0; $unreadCount = 0
+    $ages = @()
+    foreach ($r in $rows) {
+        $id = "$($r.DCName)"
+        if ($r.LastBackup) {
+            $days = [int]$r.AgeDays
+            $ages += $days
+            if ($days -gt $Global:BackupCritAgeDays) {
+                $critCount++
+                $findings += "$($id): Backup $($days)d alt (kritisch)"
+                $rf[$id] = 'CRITICAL'
+            } elseif ($days -gt $Global:BackupMaxAgeDays) {
+                $warnCount++
+                $findings += "$($id): Backup $($days)d alt (ueberfaellig)"
+                $rf[$id] = 'WARN'
+            } else {
+                $okCount++
+                $rf[$id] = 'OK'
+            }
+        } elseif ($r._RepadminError) {
+            $unreadCount++
+            $findings += "$($id): Backup-Status nicht lesbar"
+            $rf[$id] = 'WARN'
+        } else {
+            $critCount++
+            $findings += "$($id): KEIN AD-Backup!"
+            $rf[$id] = 'CRITICAL'
+        }
+    }
+
+    $maxAge = if ($ages.Count -gt 0) { ($ages | Measure-Object -Maximum).Maximum } else { $null }
+    $status = if ($critCount -gt 0) { 'CRITICAL' } elseif ($warnCount -gt 0 -or $unreadCount -gt 0) { 'WARN' } else { 'OK' }
+
+    $parts = @()
+    if ($okCount -gt 0) { $parts += "$okCount DC(s) OK" }
+    if ($unreadCount -gt 0) { $parts += "$unreadCount nicht lesbar" }
+    if ($warnCount -gt 0) { $parts += "$warnCount zu alt" }
+    if ($critCount -gt 0) { $parts += "$critCount kritisch" }
+    $summary = if ($status -eq 'OK' -and $null -ne $maxAge) { "Backup $($maxAge)d alt" } elseif ($parts.Count -gt 0) { $parts -join ' | ' } else { 'Backup-Status unbekannt' }
+
+    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings -RowFlags $rf
 }
 
 function Test-Check-InstalledPrograms {
@@ -9404,7 +9517,7 @@ function Invoke-AllAssessments {
         '32c_PasswordNeverExpires'   = { Test-Check-PasswordNeverExpires    $Global:Results['32c_PasswordNeverExpires'] }
         '33_EventLog'                = { Test-Check-EventLog                $Global:Results['33_EventLog'] }
         '34_TimeSync'                = { Test-Check-TimeSync                $Global:Results['34_TimeSync'] }
-        '35_Backup'                  = { Test-Check-Backup                  ($Global:Results['35_Backup'] | Select-Object -First 1) }
+        '35_Backup'                  = { Test-Check-Backup                  $Global:Results['35_Backup'] }
         '36_InstalledPrograms'       = { Test-Check-InstalledPrograms       $Global:Results['36_InstalledPrograms'] }
         '37_WindowsUpdates'          = { Test-Check-WindowsUpdates          $Global:Results['37_WindowsUpdates'] }
         '38_SPNDuplicates'           = { Test-Check-SPNDuplicates           $Global:Results['38_SPNDuplicates'] }
@@ -9696,6 +9809,7 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                             '23_SecureBoot'              { $row.DCName }
                             '24_Certificates'            { "$($row.DCName)|$($row.Store)|$($row.Thumbprint)" }
                             '31_GPO'                     { "$($row.Id)" }
+                            '35_Backup'                  { $row.DCName }
                             '34_TimeSync'                { $row.DCName }
                             '37_WindowsUpdates'          { "$($row.DCName)|$($row.HotFixID)" }
                             '38_SPNDuplicates'           { "$($row.SPN)|$($row.SamAccount)" }
