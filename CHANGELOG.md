@@ -20,9 +20,8 @@ All notable changes to this project are documented here.
 - **DCDiag-Ausgabe wurde bei 80 Zeichen umgebrochen** – `Out-String` formatierte die dcdiag-Ausgabe und zerriss lange Ergebniszeilen mitten im Satz. Ergebnis: „… hat den Test Connectivity" und „bestanden." landeten in getrennten Zeilen, der Test blieb „unklar". Die Ausgabe wird jetzt unverändert zusammengeführt
 - **„Der Test SystemLog für … ist fehlgeschlagen"** wurde nicht als Fehler erkannt; die deutsche Fehlschlag-Formulierung ist jetzt ein eigenes Muster (der Test heißt dort nicht „Systemlog", sondern „SystemLog")
 - **Einrückung** – `Server wird getestet:`, `Partitionstests werden ausgeführt auf:` und `Unternehmenstests werden ausgeführt auf:` sind eingerückt und wurden deshalb nicht erkannt; Bereich und Partition waren falsch
-- **Eine Zeile pro dcdiag-Test** – Der Detailbereich zeigt je Test eine Zeile mit DC, Test, Bereich, Ergebnis (OK/FAILED/WARN/unklar) und Details; die früheren Rohspalten `Category` und `RawSnippet` entfallen
-- **Jeder dcdiag-Test ist jetzt ein eigener Check** – Übersicht, Dashboard und Report führen je Test eine eigene Zeile (z. B. „DCDiag: SystemLog (DC01)") mit eigenem Status, statt alles unter „DCDiag-Tests (detailliert)" zu sammeln. Partitionstests tragen ihren Bereich im Titel (z. B. „DCDiag: CheckSDRefDom [ForestDnsZones]")
-- **Fehler werden ausgeschrieben, aber nur der erste** – Bei mehreren Fehlern im selben Test steht der erste vollständig (inkl. Ereigniszeichenfolge) und dahinter die Anzahl der übrigen, z. B. „(+2 weitere Fehler)"
+- **Eine Zeile pro dcdiag-Test** – Der DCDiag-Abschnitt zeigt je Test eine kompakte Zeile: DC, Test (bei Partitionstests mit Bereich), Ergebnis und Details. Bei einem Fehler steht der Fehlertext direkt in der Zeile
+- **Fehler werden ausgeschrieben, aber nur der erste** – Bei mehreren Fehlern im selben Test steht der erste vollständig (inkl. Ereigniszeichenfolge) direkt in der Zeile, dahinter die Anzahl der übrigen, z. B. „(+2 weitere Fehler)"
 - **Fehlerdetails gekürzt** – Statt der kompletten dcdiag-Ausgabe in einer Tabellenzelle erscheinen höchstens drei Zeilen mit je 160 Zeichen
 
 #### Aufgeräumt
@@ -388,9 +387,8 @@ All notable changes to this project are documented here.
 - **DCDiag output was wrapped at 80 characters** – `Out-String` formatted the dcdiag output and split long result lines mid-sentence. As a result, "… hat den Test Connectivity" and "bestanden." ended up on separate lines and the test stayed "unclear". The output is now joined without reformatting
 - **"Der Test SystemLog für … ist fehlgeschlagen"** was not recognised as a failure; the German failure wording is now its own pattern (the test is named "SystemLog", not "Systemlog")
 - **Indentation** – `Server wird getestet:`, `Partitionstests werden ausgeführt auf:` and `Unternehmenstests werden ausgeführt auf:` are indented and were therefore missed; scope and partition were wrong
-- **One row per dcdiag test** – The detail section now shows one row per test with DC, test, scope, result (OK/FAILED/WARN/unclear) and details; the former raw columns `Category` and `RawSnippet` are gone
-- **Every dcdiag test is now its own check** – Overview, dashboard and report list one row per test (e.g. "DCDiag: SystemLog (DC01)") with its own status instead of collecting everything under "DCDiag tests (detailed)". Partition tests carry their scope in the title (e.g. "DCDiag: CheckSDRefDom [ForestDnsZones]")
-- **Errors are written out, but only the first one** – If a test has several errors, the first is shown in full (including the event description) followed by the number of remaining ones, e.g. "(+2 more errors)"
+- **One row per dcdiag test** – The DCDiag section shows one compact row per test: DC, test (partition tests include their scope), result and details. If a test fails, the error text is listed directly in that row
+- **Errors are written out, but only the first one** – If a test has several errors, the first is shown in full (including the event description) directly in the row, followed by the number of remaining ones, e.g. "(+2 more errors)"
 - **Shortened details** – Instead of the complete dcdiag output in a single table cell, at most three lines of 160 characters are shown
 
 #### Cleanup

@@ -8541,84 +8541,6 @@ function Test-Check-DCDiag {
     New-Assessment -OverallStatus $s -Summary $summary -Findings $f -RowFlags $rf
 }
 
-function Test-Check-DCDiagRow {
-    <#
-    .SYNOPSIS
-        Bewertet genau einen dcdiag-Test (eine Zeile) fuer die Einzel-Checks.
-        Der Fehlertext wird ausgeschrieben; die Anzahl weiterer Fehler steht im Text.
-    #>
-    param($row)
-    if (-not $row) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
-    $ct=@('Connectivity','Replications','NetLogons','Advertising','Services','Systemlog','RidManager','MachineAccount','KnowsOfRoleHolders','ObjectsReplicated','FsmoCheck','Basic','RecordRegistrations','Delegations','Forwarders','DnsBasic','Intersite')
-    $id="$($row.DCName)|$($row.Category)|$($row.PartitionOrScope)|$($row.TestName)"
-    switch ($row.Result) {
-        'PASSED'  { return New-Assessment -OverallStatus 'OK' -Summary 'OK' -RowFlags @{ $id='OK' } }
-        'FAILED'  {
-            $s = if ($row.TestName -in $ct -or $row.TestName -match 'Dns|DNS') { 'CRITICAL' } else { 'WARN' }
-            $d = if ($row.ErrorDetails) { $row.ErrorDetails } else { 'ohne Detailtext' }
-            return New-Assessment -OverallStatus $s -Summary $d -Findings @("$($row.TestName): $d") -RowFlags @{ $id=$s }
-        }
-        'WARNING' {
-            $d = if ($row.ErrorDetails) { $row.ErrorDetails } else { 'Warnung ohne Detailtext' }
-            return New-Assessment -OverallStatus 'WARN' -Summary $d -Findings @("$($row.TestName): $d") -RowFlags @{ $id='WARN' }
-        }
-        default {
-            return New-Assessment -OverallStatus 'WARN' -Summary 'Ergebnis unklar' -Findings @("$($row.TestName): Ergebnis der dcdiag-Ausgabe nicht erkannt") -RowFlags @{ $id='WARN' }
-        }
-    }
-}
-
-function Expand-DCDiagChecks {
-    <#
-    .SYNOPSIS
-        Loest den Sammel-Check 03_DCDiag in einen eigenen Check pro dcdiag-Test auf.
-        Jeder Test (DC + Bereich + Name) wird eine eigene Zeile in Uebersicht und Report.
-        Wird vor Invoke-AllAssessments aufgerufen und ist idempotent.
-    #>
-    $rows = @($Global:Results['03_DCDiag'] | Where-Object { $_ })
-    if ($rows.Count -eq 0) { return }
-
-    $newKeys = @(); $newTitles = @{}; $newRows = @{}; $seen = @{}
-    foreach ($row in $rows) {
-        $scopePart = if ($row.PartitionOrScope -and $row.PartitionOrScope -ne $row.DCName) { "_$($row.PartitionOrScope)" } else { '' }
-        $base = '03_DCDiag_{0}_{1}{2}' -f $row.DCName, $row.TestName, $scopePart
-        $k = ($base -replace '[^A-Za-z0-9_.-]','-')
-        $n = 2
-        while ($seen.ContainsKey($k)) { $k = (($base -replace '[^A-Za-z0-9_.-]','-') + "_$n"); $n++ }
-        $seen[$k] = $true
-
-        $t = "DCDiag: $($row.TestName)"
-        if ($row.Category -in @('Partition','Forest')) { $t += " [$($row.PartitionOrScope)]" }
-        $t += " ($($row.DCName))"
-        $newTitles[$k] = $t
-        $newRows[$k] = @($row)
-        $newKeys += $k
-    }
-
-    # ReportTitles: 03_DCDiag an seiner Stelle durch die Einzel-Checks ersetzen
-    $titles = [ordered]@{}
-    foreach ($k in $Global:ReportTitles.Keys) {
-        if ($k -eq '03_DCDiag') { foreach ($nk in $newKeys) { $titles[$nk] = $newTitles[$nk] } }
-        else { $titles[$k] = $Global:ReportTitles[$k] }
-    }
-    $Global:ReportTitles = $titles
-
-    # CheckGroups: Einzel-Checks an der Position des Sammel-Checks einsortieren
-    foreach ($cat in @($Global:CheckGroups.Keys)) {
-        $arr = @($Global:CheckGroups[$cat])
-        if ($arr -contains '03_DCDiag') {
-            $out = @()
-            foreach ($x in $arr) { if ($x -eq '03_DCDiag') { $out += $newKeys } else { $out += $x } }
-            $Global:CheckGroups[$cat] = $out
-        }
-    }
-
-    # Ergebnisse und Auswahl: Sammel-Check raus, Einzel-Checks rein
-    $Global:Results.Remove('03_DCDiag')
-    foreach ($nk in $newKeys) { $Global:Results[$nk] = $newRows[$nk] }
-    $Global:SelectedChecks = @(@($Global:SelectedChecks | Where-Object { $_ -ne '03_DCDiag' }) + $newKeys)
-}
-
 function Test-Check-Replication {
     param($data); if (-not $data) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Partner' }
     $f=@(); $rf=@{}; $c=$false
@@ -9418,8 +9340,6 @@ function Test-Check-ProtectedUsers {
 
 function Invoke-AllAssessments {
     Write-Host "`n==== BEST-PRACTICE-BEWERTUNG ====" -ForegroundColor Magenta
-    # DCDiag: jeder Test wird ein eigener Check (eine Zeile pro Test in Uebersicht/Report)
-    Expand-DCDiagChecks
     $map = @{
         '00_SkippedDCs' = {
             $d = $Global:Results['00_SkippedDCs']
@@ -9512,9 +9432,7 @@ function Invoke-AllAssessments {
     }
     foreach ($k in $toAssess) {
         try {
-            $a = if ($k -like '03_DCDiag_*') { Test-Check-DCDiagRow -row (@($Global:Results[$k]) | Select-Object -First 1) }
-                 elseif ($map.Contains($k)) { & $map[$k] }
-                 else { New-Assessment -OverallStatus 'INFO' -Summary 'Keine Bewertung' }
+            $a = if ($map.Contains($k)) { & $map[$k] } else { New-Assessment -OverallStatus 'INFO' -Summary 'Keine Bewertung' }
             $Global:Assessments[$k] = $a
             $ic = switch ($a.OverallStatus) { 'OK'{'[OK] '} 'WARN'{'[!!] '} 'CRITICAL'{'[XX] '} 'INFO'{'[i]  '} 'NODATA'{'[-]  '} }
             $co = switch ($a.OverallStatus) { 'OK'{'Green'} 'WARN'{'Yellow'} 'CRITICAL'{'Red'} 'INFO'{'Cyan'} 'NODATA'{'DarkGray'} }
@@ -9698,18 +9616,31 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                 Write-Host ("  [-] {0,-32} -> leer" -f $k) -ForegroundColor DarkGray
                 continue
             }
+            if ($k -eq '03_DCDiag') {
+                # Kompakt: eine Zeile pro dcdiag-Test, der Fehlertext steht in der Zeile.
+                # Erster Fehler wird ausgeschrieben, weitere gezaehlt ("(+N weitere Fehler)").
+                [void]$sb.AppendLine("<table><thead><tr><th>$(Format-L10n -Text 'DCName')</th><th>$(Format-L10n -Text 'TestName')</th><th>$(Format-L10n -Text 'Result')</th><th>$(Format-L10n -Text 'ErrorDetails')</th></tr></thead><tbody>")
+                foreach ($row in @($items)) {
+                    $rid = "$($row.DCName)|$($row.Category)|$($row.PartitionOrScope)|$($row.TestName)"
+                    $cls = ''
+                    if ($a.RowFlags -and $a.RowFlags.ContainsKey($rid)) { $cls = switch ($a.RowFlags[$rid]) { 'CRITICAL'{'row-crit'} 'WARN'{'row-warn'} default{''} } }
+                    $test = "$($row.TestName)"
+                    if ($row.Category -in @('Partition','Forest')) { $test += " [$($row.PartitionOrScope)]" }
+                    $res = switch ("$($row.Result)") { 'PASSED' { Format-L10n -Text 'OK' } 'FAILED' { 'FAILED' } 'WARNING' { 'WARN' } default { Format-L10n -Text 'unklar' } }
+                    $err = "$($row.ErrorDetails)" -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;'
+                    [void]$sb.AppendLine("<tr class='$cls'><td>$($row.DCName)</td><td>$test</td><td>$res</td><td>$err</td></tr>")
+                }
+                [void]$sb.AppendLine("</tbody></table>")
+                Write-Host ("  [+] {0,-32} -> {1,4} Tests (Status: {2})" -f $k, @($items).Count, $a.OverallStatus) -ForegroundColor Green
+                continue
+            }
             try {
                 if ($a.RowFlags -and $a.RowFlags.Count -gt 0) {
                     # Spalten-Reihenfolge aus erstem Objekt uebernehmen + '_'-Felder ausblenden
                     $firstItem = @($items) | Select-Object -First 1
-                    if ($k -like '03_DCDiag*') {
-                        # Eine Zeile pro dcdiag-Test, nur die lesbaren Spalten
-                        $props = @('DCName','TestName','PartitionOrScope','Result','ErrorDetails')
-                    } else {
-                        $props = $firstItem.PSObject.Properties |
-                                    Where-Object { $_.Name -notlike '_*' } |
-                                    Select-Object -ExpandProperty Name
-                    }
+                    $props = $firstItem.PSObject.Properties |
+                                Where-Object { $_.Name -notlike '_*' } |
+                                Select-Object -ExpandProperty Name
 
                     [void]$sb.AppendLine("<table><thead><tr>")
                     foreach ($p in $props) { [void]$sb.AppendLine("<th>$(Format-L10n -Text $p)</th>") }
@@ -9717,10 +9648,7 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
 
                     foreach ($row in $items) {
                         # Row-ID je nach Check-Typ ermitteln (fuer Zeilenfaerbung)
-                        $rid = if ($k -like '03_DCDiag*') {
-                            "$($row.DCName)|$($row.Category)|$($row.PartitionOrScope)|$($row.TestName)"
-                        } else {
-                        switch ($k) {
+                        $rid = switch ($k) {
                             '02_Services'                { "$($row.DCName)|$($row.Service)" }
                             '03_DCDiag'                  { "$($row.DCName)|$($row.Category)|$($row.PartitionOrScope)|$($row.TestName)" }
                             '04_Replication'             { "$($row.Server)|$($row.Partner)" }
@@ -9771,7 +9699,6 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                             '74_CloudInventory'          { $row.Detail }
                             default                      { '' }
                         }
-                        }
                         $cls = ''
                         if ($a.RowFlags.ContainsKey($rid)) {
                             $cls = switch ($a.RowFlags[$rid]) { 'CRITICAL'{'row-crit'} 'WARN'{'row-warn'} default{''} }
@@ -9779,9 +9706,6 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                         [void]$sb.AppendLine("<tr class='$cls'>")
                         foreach ($p in $props) {
                             $v = $row.$p
-                            if ($k -like '03_DCDiag*' -and $p -eq 'Result') {
-                                $v = switch ("$v") { 'PASSED' { 'OK' } 'FAILED' { 'FAILED' } 'WARNING' { 'WARN' } default { 'unklar' } }
-                            }
                             if ($v -is [datetime]) { $v = $v.ToString('yyyy-MM-dd HH:mm:ss') }
                             $v = Format-L10n -Text $v
                             $ve = "$v" -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;'
@@ -9793,13 +9717,9 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                 } else {
                     # Fallback: ConvertTo-Html aber '_'-Felder rausfiltern
                     $firstItem = @($items) | Select-Object -First 1
-                    if ($k -like '03_DCDiag*') {
-                        $props = @('DCName','TestName','PartitionOrScope','Result','ErrorDetails')
-                    } else {
-                        $props = $firstItem.PSObject.Properties |
-                                    Where-Object { $_.Name -notlike '_*' } |
-                                    Select-Object -ExpandProperty Name
-                    }
+                    $props = $firstItem.PSObject.Properties |
+                                Where-Object { $_.Name -notlike '_*' } |
+                                Select-Object -ExpandProperty Name
                     $localized = foreach ($row in $items) {
                         $h = [ordered]@{}
                         foreach ($p in $props) { $h[(Format-L10n -Text $p)] = (Format-L10n -Text $row.$p) }
