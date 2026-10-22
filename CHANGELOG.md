@@ -21,6 +21,8 @@ All notable changes to this project are documented here.
 - **„Der Test SystemLog für … ist fehlgeschlagen"** wurde nicht als Fehler erkannt; die deutsche Fehlschlag-Formulierung ist jetzt ein eigenes Muster (der Test heißt dort nicht „Systemlog", sondern „SystemLog")
 - **Einrückung** – `Server wird getestet:`, `Partitionstests werden ausgeführt auf:` und `Unternehmenstests werden ausgeführt auf:` sind eingerückt und wurden deshalb nicht erkannt; Bereich und Partition waren falsch
 - **Eine Zeile pro dcdiag-Test** – Der DCDiag-Abschnitt zeigt je Test eine kompakte Zeile: DC, Test (bei Partitionstests mit Bereich), Ergebnis und Details. Bei einem Fehler steht der Fehlertext direkt in der Zeile
+- **Ergebniswörter werden auch ohne Punkteliste erkannt** – Kommt die Ergebniszeile ohne „....."-Präfix an, wertet der Parser „bestanden", „nicht bestanden" bzw. „ist fehlgeschlagen" dennoch dem laufenden Test zu; Formulierungen wie „bestanden wurde" lösen keinen Befund aus
+- **Rohausgabe bei unklaren Zeilen** – Bleibt ein dcdiag-Test trotzdem unklar, legt das Skript die Original-dcdiag-Ausgabe als `Dcdiag_Rohausgabe_<DC>_<Zeit>.txt` im Reportordner ab – saubere Läufe bleiben ohne Datei
 - **Fehler werden ausgeschrieben, aber nur der erste** – Bei mehreren Fehlern im selben Test steht der erste vollständig (inkl. Ereigniszeichenfolge) direkt in der Zeile, dahinter die Anzahl der übrigen, z. B. „(+2 weitere Fehler)"
 - **Fehlerdetails gekürzt** – Statt der kompletten dcdiag-Ausgabe in einer Tabellenzelle erscheinen höchstens drei Zeilen mit je 160 Zeichen
 
@@ -388,6 +390,8 @@ All notable changes to this project are documented here.
 - **"Der Test SystemLog für … ist fehlgeschlagen"** was not recognised as a failure; the German failure wording is now its own pattern (the test is named "SystemLog", not "Systemlog")
 - **Indentation** – `Server wird getestet:`, `Partitionstests werden ausgeführt auf:` and `Unternehmenstests werden ausgeführt auf:` are indented and were therefore missed; scope and partition were wrong
 - **One row per dcdiag test** – The DCDiag section shows one compact row per test: DC, test (partition tests include their scope), result and details. If a test fails, the error text is listed directly in that row
+- **Result words are recognized without the dot list too** – If the result line arrives without the "....." prefix, the parser still assigns "bestanden" (passed), "nicht bestanden" (not passed) or "ist fehlgeschlagen" (failed) to the running test; wording such as "bestanden wurde" triggers no finding
+- **Raw output on unclear rows** – If a dcdiag test remains unclear, the script saves the original dcdiag output as `Dcdiag_Rohausgabe_<DC>_<time>.txt` in the report folder – clean runs stay file-free
 - **Errors are written out, but only the first one** – If a test has several errors, the first is shown in full (including the event description) directly in the row, followed by the number of remaining ones, e.g. "(+2 more errors)"
 - **Shortened details** – Instead of the complete dcdiag output in a single table cell, at most three lines of 160 characters are shown
 

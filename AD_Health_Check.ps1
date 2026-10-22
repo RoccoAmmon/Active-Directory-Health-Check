@@ -2799,26 +2799,44 @@ function Invoke-DCDiag {
             $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$n; PartitionOrScope=$curScope; Result='PASSED'; ErrorDetails=''; RawSnippet='' }
             $curTest=$null; $curErr=@(); $curDns=$false; continue
         }
-        # Fallback fuer Zeilen, in denen der Testname nicht sauber extrahierbar ist:
-        # Ergebnis gilt dann fuer den laufenden Test.
-        if ($curTest -and $line -match '^\s*\.{3,}.*\bbestanden\b') {
-            $res = if ($line -match 'nicht\s+bestanden') { 'FAILED' } else { 'PASSED' }
-            $e = if ($res -eq 'FAILED') { & $errorText $curErr 'Fehler' } else { '' }
-            if (-not $e -and $res -eq 'FAILED') { $e = $line.Trim() }
-            $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result=$res; ErrorDetails=$e; RawSnippet=$line.Trim() }
+        # DNS-Zusammenfassung ("Bestanden : <Subtest>") ist spezifischer als der
+        # allgemeine Fallback und muss deshalb zuerst kommen.
+        if ($line -match '^\s*(Passed|Bestanden)\s*:\s*(\S+)') { $results += [pscustomobject]@{ DCName=$DC; Category='DNS'; TestName=$Matches[2]; PartitionOrScope=$curScope; Result='PASSED'; ErrorDetails=''; RawSnippet='' }; $curTest=$null; $curErr=@(); $curDns=$false; continue }
+        # Fallback: Ergebniswort erkannt, Testname aber nicht extrahierbar (bei der
+        # Umgebungsausgabe kann die Punkteliste verloren gehen). Das Ergebnis gilt
+        # fuer den laufenden Test.
+        if ($curTest -and $line -notmatch $rxSkip -and $line -match '\bnicht\s+bestanden\b|\bist\s+fehlgeschlagen\b|\bfailed\s+test\b') {
+            $e = & $errorText $curErr 'Fehler'; if (-not $e) { $e = $line.Trim() }
+            $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='FAILED'; ErrorDetails=$e; RawSnippet=$line.Trim() }
+            $curTest=$null; $curErr=@(); $curDns=$false; continue
+        }
+        if ($curTest -and $line -notmatch $rxSkip -and $line -notmatch '\bbestanden\s+wurde\b' -and $line -match '\bbestanden\b') {
+            $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='PASSED'; ErrorDetails=''; RawSnippet=$line.Trim() }
             $curTest=$null; $curErr=@(); $curDns=$false; continue
         }
         if ($line -match '^\s*TEST\s*:\s*(.+?)\s*$') {
             $results += & $flushUnknown
             $curTest=($Matches[1] -replace '\s*\([^)]*\)\s*$','').Trim(); $curErr=@(); $curDns=$true; $curCat='DNS'; continue
         }
-        if ($line -match '^\s*(Passed|Bestanden)\s*:\s*(\S+)') { $results += [pscustomobject]@{ DCName=$DC; Category='DNS'; TestName=$Matches[2]; PartitionOrScope=$curScope; Result='PASSED'; ErrorDetails=''; RawSnippet='' }; $curTest=$null; $curErr=@(); $curDns=$false; continue }
         if ($line -match '^\s*(Warning|Warnung)\s*:\s*(.+)' -and $curTest) { $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='WARNING'; ErrorDetails=$Matches[2].Trim(); RawSnippet=$line.Trim() }; $curTest=$null; $curErr=@(); $curDns=$false; continue }
         if ($line -match $rxSkip) { continue }
         if ($curTest -and $line.Trim() -and $line -notmatch '^\s*\.{3,}\s*$') { $curErr += $line.TrimEnd() }
     }
     $results += & $flushUnknown
     if (@($results).Count -eq 0) { $results += [pscustomobject]@{ DCName=$DC; Category='ALL'; TestName='(parsed=0)'; PartitionOrScope='-'; Result='UNKNOWN'; ErrorDetails='Nicht parsebar'; RawSnippet=$raw.Substring(0,[math]::Min(500,$raw.Length)) } }
+    # Bei unklaren Zeilen die Original-Ausgabe ablegen, damit die Muster korrigiert
+    # werden koennen. Nur dann wird eine Datei angelegt - saubere Laeufe bleiben ohne.
+    if (@($results | Where-Object { $_.Result -eq 'UNKNOWN' }).Count -gt 0) {
+        try {
+            $dbgDir = if ($Global:ReportDirectory) { $Global:ReportDirectory } else { $Global:LogDirectory }
+            if ($dbgDir) {
+                if (-not (Test-Path -LiteralPath $dbgDir)) { New-Item -Path $dbgDir -ItemType Directory -Force -ErrorAction Stop | Out-Null }
+                $dbgFile = Join-Path $dbgDir ("Dcdiag_Rohausgabe_{0}_{1}.txt" -f ($DC -replace '[\\/:\*?"<>|]', '_'), $Global:Timestamp)
+                $raw | Out-File -FilePath $dbgFile -Encoding UTF8 -ErrorAction Stop
+                Write-Host ("    [!] Unklare dcdiag-Ergebnisse - Rohausgabe: {0}" -f $dbgFile) -ForegroundColor Yellow
+            }
+        } catch { Write-Host "    [!] Rohausgabe konnte nicht gespeichert werden: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+    }
     $results
 }
 
