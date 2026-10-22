@@ -9,6 +9,17 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [Unreleased]
+
+#### Behoben
+- **HTML-Report: „Could not find a part of the path" bei eigenem Ausgabepfad aus der GUI**
+  - Wurde im Auswahlfenster ein anderer Ausgabepfad gewählt, wurden die Verzeichnisse nur unter dem Standardpfad angelegt. Der Lauf-Ordner unter dem neuen Pfad fehlte, und der Report brach mit „Could not find a part of the path … AD_HealthCheck_Report_&lt;Zeitstempel&gt;.html" ab – der Rest des Laufs war verloren
+  - Nach der Pfadübernahme werden die Verzeichnisse jetzt erneut angelegt. Schlägt das fehl (Rechte, nicht vorhandenes Laufwerk, OneDrive-Sperre), wird auf `C:\AD_Health_Check_Log` zurückgefallen und der Grund ausgegeben
+  - `New-HtmlReport` und der CSV-Export stellen ihren Zielordner zusätzlich selbst sicher und melden Schreibfehler mit Zielpfad und Hinweis statt nur mit der Exception
+
+#### Hinzugefügt
+- Neues Testskript `test-reportpfad.ps1` in die Test-Suite aufgenommen (verschachtelter Pfad mit Leerzeichen, Pfadwechsel nach dem Start, Schreibbarkeit von Report und CSV)
+
 ### [2.14] - 2026-10-20
 
 #### Behoben
@@ -338,6 +349,17 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [Unreleased]
+
+#### Fixed
+- **HTML report: "Could not find a part of the path" when using a custom output path from the GUI**
+  - If a different output path was selected in the GUI, the directories were only created under the default path. The run folder below the new path was missing and the report failed with "Could not find a part of the path … AD_HealthCheck_Report_&lt;timestamp&gt;.html" – the whole run was wasted
+  - The directories are now created again after the path is applied. If that fails (permissions, missing drive, OneDrive lock), the script falls back to `C:\AD_Health_Check_Log` and prints the reason
+  - `New-HtmlReport` and the CSV export additionally ensure their target folder themselves and report write errors with the target path and a hint instead of the bare exception
+
+#### Added
+- New test script `test-reportpfad.ps1` added to the test suite (nested path with spaces, path switch after start, write access for report and CSV)
 
 ### [2.14] - 2026-10-20
 

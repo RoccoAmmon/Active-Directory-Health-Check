@@ -1101,6 +1101,11 @@ Kein CSVLK-Eintrag auf diesem Host - er nimmt keine KMS-Aktivierungen an=>No CSV
 CSVLK-Eintrag vorhanden, Teilkey aber nicht auslesbar=>CSVLK entry present, but partial key not readable
 CSVLK wird von Windows nur als Teilkey (letzte 5 Zeichen) ausgeliefert - der vollstaendige Key ist nicht auslesbar=>Windows only provides the CSVLK as a partial key (last 5 characters) - the full key cannot be read
 CSVLK-Teilkey =>CSVLK partial key 
+Ausgabepfad nicht nutzbar: =>Output path not usable: 
+Es wird der Standardpfad verwendet: =>The default path is used: 
+HTML-Report nicht geschrieben: =>HTML report not written: 
+Schreibrechte und Pfad pruefen (Laufwerk vorhanden, OneDrive synchronisiert).=>Check write permissions and path (drive present, OneDrive synced).
+CSV-Ordner nicht anlegbar: =>CSV folder cannot be created: 
 '@
 
 # --- Tabelle + Regex aufbauen -------------------------------------------------
@@ -9765,6 +9770,14 @@ function Invoke-AllAssessments {
 
 function Export-ResultsToCsv {
     Write-Host "`n==== CSV-EXPORT ====" -ForegroundColor Magenta
+    # Zielordner sicherstellen (Pfad kann aus der GUI stammen)
+    if (-not (Test-Path -LiteralPath $Global:CsvDirectory)) {
+        try { New-Item -Path $Global:CsvDirectory -ItemType Directory -Force -ErrorAction Stop | Out-Null }
+        catch {
+            Write-Host (Format-L10n -Text "  [X] CSV-Ordner nicht anlegbar: $Global:CsvDirectory - $_") -ForegroundColor Red
+            return
+        }
+    }
     foreach ($k in Get-ReportKeys) {
         try {
             $d = $Global:Results[$k]
@@ -10027,9 +10040,19 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
 
         [void]$sb.AppendLine((Format-L10n -Text "<div class='footer'>Erzeugt von <b>$Global:ScriptName v$Global:ScriptVersion</b> &nbsp;|&nbsp; $(Get-Date -Format 'dd.MM.yyyy HH:mm:ss') &nbsp;|&nbsp; Laufzeit: $((New-TimeSpan -Start $Global:ProgressStats.StartTime -End (Get-Date)).ToString('hh\:mm\:ss'))</div>"))
         [void]$sb.AppendLine("</body></html>")
-        $sb.ToString() | Out-File -FilePath $Global:HtmlReport -Encoding UTF8
+        # Zielordner sicherstellen: Der Pfad kann aus der GUI kommen und damit erst
+        # nach dem ersten Initialize-LogEnvironment gesetzt worden sein. Fehlt er,
+        # bricht Out-File mit "Could not find a part of the path" ab.
+        if (-not (Test-Path -LiteralPath $Global:ReportDirectory)) {
+            New-Item -Path $Global:ReportDirectory -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        }
+        $sb.ToString() | Out-File -FilePath $Global:HtmlReport -Encoding UTF8 -ErrorAction Stop
         Write-Log "HTML-Report erstellt: $Global:HtmlReport" -Level OK
-    } catch { Write-Log "HTML-Report Fehler: $_" -Level ERROR }
+    } catch {
+        Write-Log "HTML-Report Fehler: $_ (Ziel: $Global:HtmlReport)" -Level ERROR
+        Write-Host (Format-L10n -Text "  [X] HTML-Report nicht geschrieben: $Global:HtmlReport") -ForegroundColor Red
+        Write-Host (Format-L10n -Text '  [i] Schreibrechte und Pfad pruefen (Laufwerk vorhanden, OneDrive synchronisiert).') -ForegroundColor Yellow
+    }
 }
 
 #endregion
@@ -10186,6 +10209,23 @@ function Start-ADHealthCheck {
                 $Global:LogFile         = Join-Path $Global:LogDirectory "$Global:ScriptName`_$Global:Timestamp.log"
                 $Global:HtmlReport      = Join-Path $Global:ReportDirectory "AD_HealthCheck_Report_$Global:Timestamp.html"
                 $Global:CsvDirectory    = Join-Path $Global:ReportDirectory "CSV"
+                # Der Pfad kommt erst jetzt von der GUI - Initialize-LogEnvironment lief
+                # oben bereits mit dem Standardpfad. Ohne diesen zweiten Aufruf fehlt der
+                # Lauf-Ordner und der HTML-Report scheitert mit "Could not find a part of
+                # the path". Schlaegt das Anlegen fehl, wird auf den Standardpfad
+                # zurueckgefallen, damit ein fertiger Lauf nicht ohne Report endet.
+                try {
+                    Initialize-LogEnvironment
+                } catch {
+                    Write-Host (Format-L10n -Text "  [!] Ausgabepfad nicht nutzbar: $($guiResult.OutputPath) - $_") -ForegroundColor Red
+                    Write-Host (Format-L10n -Text '  [i] Es wird der Standardpfad verwendet: C:\AD_Health_Check_Log') -ForegroundColor Yellow
+                    $Global:LogDirectory    = 'C:\AD_Health_Check_Log'
+                    $Global:ReportDirectory = Join-Path $Global:LogDirectory "AD_HealthCheck_$Global:Timestamp"
+                    $Global:LogFile         = Join-Path $Global:LogDirectory "$Global:ScriptName`_$Global:Timestamp.log"
+                    $Global:HtmlReport      = Join-Path $Global:ReportDirectory "AD_HealthCheck_Report_$Global:Timestamp.html"
+                    $Global:CsvDirectory    = Join-Path $Global:ReportDirectory "CSV"
+                    Initialize-LogEnvironment
+                }
             }
         }
 
