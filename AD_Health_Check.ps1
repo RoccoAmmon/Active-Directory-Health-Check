@@ -947,6 +947,7 @@ Duplikat=>Duplicate
 Auffaellig=>Conspicuous
 VeroeffentlichteCAs=>Published on CAs
 GueltigkeitTage=>Validity in days
+Nr.=>No.
 Bereich=>Area
 Bezug=>Reference
 Endpunkt=>Endpoint
@@ -2714,7 +2715,9 @@ function Invoke-DCDiag {
     # Kein Out-String: das formatiert auf 80 Zeichen und bricht lange Ergebniszeilen
     # mitten im Text um ("... hat den Test Connectivity" / "bestanden."). Die
     # Zeilen werden stattdessen unveraendert zusammengefuegt.
-    try { $raw = ((& dcdiag.exe /s:$DC /v /test:DNS /DnsBasic /DnsForwarders /DnsDelegation /DnsDynamicUpdate /DnsRecordRegistration 2>&1) | ForEach-Object { [string]$_ }) -join "`n" }
+    # /c fuehrt alle dcdiag-Tests aus (Primär-, Partition-, Unternehmens- und DNS-Tests).
+    # Nur so entstehen die vollstaendigen Einzelzeilen im Report.
+    try { $raw = ((& dcdiag.exe /s:$DC /c 2>&1) | ForEach-Object { [string]$_ }) -join "`n" }
     catch { return @([pscustomobject]@{ DCName=$DC; Category='ALL'; TestName='dcdiag.exe'; PartitionOrScope='-'; Result='ERROR'; ErrorDetails="$_"; RawSnippet='-' }) }
     if ([string]::IsNullOrWhiteSpace($raw)) { return @([pscustomobject]@{ DCName=$DC; Category='ALL'; TestName='dcdiag.exe'; PartitionOrScope='-'; Result='ERROR'; ErrorDetails='Keine Ausgabe'; RawSnippet='-' }) }
     $lines = $raw -split "`r?`n"; $results = @()
@@ -9559,6 +9562,8 @@ tr:nth-child(even){background:#fafafa;}
 .findings ul{margin:5px 0 5px 20px;}
 tr.row-warn{background:#fff3cd !important;}
 tr.row-crit{background:#f8d7da !important;}
+.dcdiag-checks th:first-child,.dcdiag-checks td:first-child{width:42px;text-align:center;}
+.dcdiag-checks td:nth-child(3),.dcdiag-checks th:nth-child(3){width:110px;}
 .group-banner{background:#003366;color:#fff;padding:10px 12px;margin-top:30px;border-radius:6px;font-size:16px;font-weight:bold;}
 tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
 .overview tbody tr:hover { background:#8ecdfa; cursor:pointer; }
@@ -9635,21 +9640,25 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                 continue
             }
             if ($k -eq '03_DCDiag') {
-                # Kompakt: eine Zeile pro dcdiag-Test, der Fehlertext steht in der Zeile.
-                # Erster Fehler wird ausgeschrieben, weitere gezaehlt ("(+N weitere Fehler)").
-                [void]$sb.AppendLine("<table><thead><tr><th>$(Format-L10n -Text 'DCName')</th><th>$(Format-L10n -Text 'TestName')</th><th>$(Format-L10n -Text 'Result')</th><th>$(Format-L10n -Text 'ErrorDetails')</th></tr></thead><tbody>")
+                # Genau wie die Auswertungstabelle: ein Check pro Zeile mit Nummer,
+                # Bereich, Test, Ergebnis und Details. Erster Fehler wird ausgeschrieben,
+                # weitere gezaehlt ("(+N weitere Fehler)").
+                [void]$sb.AppendLine("<table class='dcdiag-checks'><thead><tr><th>$(Format-L10n -Text 'Nr.')</th><th>$(Format-L10n -Text 'DCName')</th><th>$(Format-L10n -Text 'Bereich')</th><th>$(Format-L10n -Text 'TestName')</th><th>$(Format-L10n -Text 'Result')</th><th>$(Format-L10n -Text 'ErrorDetails')</th></tr></thead><tbody>")
+                $checkNr = 0
                 foreach ($row in @($items)) {
+                    $checkNr++
                     $rid = "$($row.DCName)|$($row.Category)|$($row.PartitionOrScope)|$($row.TestName)"
                     $cls = ''
                     if ($a.RowFlags -and $a.RowFlags.ContainsKey($rid)) { $cls = switch ($a.RowFlags[$rid]) { 'CRITICAL'{'row-crit'} 'WARN'{'row-warn'} default{''} } }
+                    $bereich = "$($row.Category)"
                     $test = "$($row.TestName)"
-                    if ($row.Category -in @('Partition','Forest')) { $test += " [$($row.PartitionOrScope)]" }
+                    if ($row.Category -in @('Partition','Forest') -and $row.PartitionOrScope) { $test += " [$($row.PartitionOrScope)]" }
                     $res = switch ("$($row.Result)") { 'PASSED' { Format-L10n -Text 'OK' } 'FAILED' { 'FAILED' } 'WARNING' { 'WARN' } default { Format-L10n -Text 'unklar' } }
                     $err = "$($row.ErrorDetails)" -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;'
-                    [void]$sb.AppendLine("<tr class='$cls'><td>$($row.DCName)</td><td>$test</td><td>$res</td><td>$err</td></tr>")
+                    [void]$sb.AppendLine("<tr class='$cls'><td class='td-num'>$checkNr</td><td>$($row.DCName)</td><td>$bereich</td><td>$test</td><td>$res</td><td>$err</td></tr>")
                 }
                 [void]$sb.AppendLine("</tbody></table>")
-                Write-Host ("  [+] {0,-32} -> {1,4} Tests (Status: {2})" -f $k, @($items).Count, $a.OverallStatus) -ForegroundColor Green
+                Write-Host ("  [+] {0,-32} -> {1,4} Checks (Status: {2})" -f $k, @($items).Count, $a.OverallStatus) -ForegroundColor Green
                 continue
             }
             try {
