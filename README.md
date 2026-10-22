@@ -48,7 +48,7 @@
 - 📊 **CSV-Export** aller Check-Ergebnisse
 - 🖥️ **Interaktives Startmenü** als Fallback für Konsolen-Betrieb
 - ⚡ **Parameter-basierte Ausführung** für Scheduled Tasks / Automatisierung
-- 🆕 **Update-Anzeige gegen GitLab-Releases** – beim Start wird das neueste Release geprüft (Timeout 3 s): klickbares Badge neben der Versionsnummer („Update verfügbar: v2.10"), in der Konsole/Skript eine Infozeile; unterdrückbar per `-NoUpdateCheck`
+- 🆕 **Update-Anzeige gegen GitLab-Releases** – beim Start wird das neueste Release geprüft (Timeout 3 s): klickbares Badge neben der Versionsnummer („Update verfügbar: v2.10"), in der Konsole/Skript eine Infozeile. Ein Klick installiert die neue Fassung direkt (Download, SHA-256-/Syntaxprüfung, Backup, Neustart); in der Konsole fragt das Skript nach. Unterdrückbar per `-NoUpdateCheck` (keine Abfrage) bzw. `-NoSelfUpdate` (kein Austausch)
 - 📁 **Frei wählbarer Ausgabepfad** per GUI oder `-OutputPath` Parameter
 - 🔍 **DCDiag mit Einzeltest-Parsing** (DE/EN sprachunabhängig)
 - 🔄 **Loopback-Erkennung** für lokale DCs (nutzt `localhost` statt FQDN)
@@ -303,7 +303,8 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 ### v2.14.1 (aktuell)
 - **Behoben:** Wurde im Auswahlfenster ein eigener Ausgabepfad gewählt, wurden die Verzeichnisse nur unter dem Standardpfad angelegt – der HTML-Report brach mit „Could not find a part of the path" ab. Die Ordner werden jetzt nach der Pfadübernahme angelegt; scheitert das (Rechte, Laufwerk, OneDrive), wird auf `C:\AD_Health_Check_Log` zurückgefallen und der Grund ausgegeben
 - `New-HtmlReport` und der CSV-Export stellen ihren Zielordner zusätzlich selbst sicher und melden Schreibfehler mit Zielpfad statt nur mit der Exception
-- Neues Testskript `test-reportpfad.ps1`; Version 2.14.1 (74 nummerierte Checks, zusätzlich die Teilprüfungen 04b, 32a–c und 55b)
+- **Neu – Selbst-Update per Klick:** Badge in der GUI bzw. Rückfrage in der Konsole lädt die neue Version, prüft Größe, SHA-256, Syntax und Versionsnummer, legt `AD_Health_Check.ps1.bak-<alteVersion>` an, ersetzt die Datei über einen Helferprozess und startet mit denselben Parametern neu. Nur nach ausdrücklicher Bestätigung; `-NoSelfUpdate` verbietet den Austausch, ein Fehlschlag lässt die alte Datei unverändert (der Helfer spielt das Backup zurück)
+- Neue Testskripte `test-reportpfad.ps1` und `test-selfupdate.ps1`; Version 2.14.1 (74 nummerierte Checks, zusätzlich die Teilprüfungen 04b, 32a-c und 55b)
 
 ### v2.14
 - **Behoben (Check 34):** `LastSyncTime` wurde auf deutschen Systemen nie gelesen (Label „Letzte erfolgr. Synchronisierungszeit"). Nutzt der PDC die lokale Uhr, wird die konfigurierte NTP-Gegenstelle jetzt wie mit `w32tm /stripchart` angesprochen; ein Timeout (`0x800705B4`) belegt „antwortet nicht". Peer-Status, letzter Fehlercode und Time-Service-Ereignisse stehen im Befund
@@ -448,7 +449,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 - 📊 **CSV export** of all check results
 - 🖥️ **Interactive start menu** as a fallback for console operation
 - ⚡ **Parameter-based execution** for scheduled tasks / automation
-- 🆕 **Update check against GitLab releases** – the latest release is queried at startup (3 s timeout): clickable badge next to the version number (“Update available: v2.10”), an info line in console/script mode; can be suppressed with `-NoUpdateCheck`
+- 🆕 **Update check against GitLab releases** – the latest release is queried at startup (3 s timeout): clickable badge next to the version number (“Update available: v2.10”), an info line in console/script mode. A click installs the new version directly (download, SHA-256/syntax check, backup, restart); in the console the script asks first. Can be suppressed with `-NoUpdateCheck` (no query) or `-NoSelfUpdate` (no replacement)
 - 📁 **Freely selectable output path** via the GUI or the `-OutputPath` parameter
 - 🔍 **DCDiag with per-test parsing** (language-independent, DE/EN)
 - 🔄 **Loopback detection** for local DCs (uses `localhost` instead of the FQDN)
@@ -703,7 +704,8 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 ### v2.14.1 (current)
 - **Fixed:** If a custom output path was selected in the GUI, the directories were only created under the default path and the HTML report failed with "Could not find a part of the path". The folders are now created after the path is applied; if that fails (permissions, drive, OneDrive), the script falls back to `C:\AD_Health_Check_Log` and prints the reason
 - `New-HtmlReport` and the CSV export additionally ensure their target folder themselves and report write errors with the target path instead of the bare exception
-- New test script `test-reportpfad.ps1`; version 2.14.1 (74 numbered checks, plus sub-checks 04b, 32a–c and 55b)
+- **New – self-update with one click:** the badge in the GUI or the prompt in the console downloads the new version, checks size, SHA-256, syntax and version, creates `AD_Health_Check.ps1.bak-<oldVersion>`, replaces the file via a helper process and restarts with the same parameters. Only after explicit confirmation; `-NoSelfUpdate` disables the replacement, a failure leaves the old file untouched (the helper restores the backup)
+- New test scripts `test-reportpfad.ps1` and `test-selfupdate.ps1`; version 2.14.1 (74 numbered checks, plus sub-checks 04b, 32a-c and 55b)
 
 ### v2.14
 - **Fixed (check 34):** `LastSyncTime` was never read on German systems (label "Letzte erfolgr. Synchronisierungszeit"). If the PDC uses the local clock, the configured NTP peer is now probed like `w32tm /stripchart`; a timeout (`0x800705B4`) proves "does not respond". Peer status, last error code and time service events are part of the finding

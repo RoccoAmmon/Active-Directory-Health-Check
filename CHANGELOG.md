@@ -18,10 +18,14 @@ All notable changes to this project are documented here.
   - `New-HtmlReport` und der CSV-Export stellen ihren Zielordner zusätzlich selbst sicher und melden Schreibfehler mit Zielpfad und Hinweis statt nur mit der Exception
 
 #### Hinzugefügt
+- **Selbst-Update per Klick** – Die Update-Anzeige (GUI) bzw. die Infozeile mit Rückfrage (Konsole) installiert die neue Version jetzt direkt: Download über die GitLab-Files-API, Prüfung von Größe und SHA-256, Syntaxprüfung, Versionsvergleich, Backup als `AD_Health_Check.ps1.bak-<alteVersion>`, Austausch durch einen Helferprozess und automatischer Neustart mit denselben Parametern
+  - Austausch nur auf ausdrückliche Bestätigung (Dialog bzw. `j/n`), nie still im Hintergrund; der neue Schalter `-NoSelfUpdate` verbietet ihn vollständig
+  - Ist der Zielordner nicht beschreibbar oder schlägt eine Prüfung fehl, bleibt die alte Datei unverändert; der Helfer spielt im Fehlerfall das Backup zurück
 - Neues Testskript `test-reportpfad.ps1` in die Test-Suite aufgenommen (verschachtelter Pfad mit Leerzeichen, Pfadwechsel nach dem Start, Schreibbarkeit von Report und CSV)
+- Neues Testskript `test-selfupdate.ps1` (Hash-, Größen-, Syntax- und Versionsprüfung, Rollback im Helfer, echter Download gegen das Release)
 
 #### Version
-- Version auf 2.14.1 erhöht (Bugfix-Release); Skript-Header, README und Wiki angeglichen
+- Version auf 2.14.1 erhöht (Bugfix und Self-Update); Skript-Header, README und Wiki angeglichen
 
 ### [2.14] - 2026-10-20
 
@@ -362,10 +366,14 @@ All notable changes to this project are documented here.
   - `New-HtmlReport` and the CSV export additionally ensure their target folder themselves and report write errors with the target path and a hint instead of the bare exception
 
 #### Added
+- **Self-update with one click** – The update badge (GUI) and the info line with a prompt (console) now install the new version directly: download via the GitLab Files API, checks for size and SHA-256, syntax check, version comparison, backup as `AD_Health_Check.ps1.bak-<oldVersion>`, replacement by a helper process and automatic restart with the same parameters
+  - Replacement only after explicit confirmation (dialog or `y/n`), never silently in the background; the new switch `-NoSelfUpdate` disables it completely
+  - If the target folder is not writable or a check fails, the old file stays untouched; the helper restores the backup on failure
 - New test script `test-reportpfad.ps1` added to the test suite (nested path with spaces, path switch after start, write access for report and CSV)
+- New test script `test-selfupdate.ps1` (hash, size, syntax and version checks, rollback in the helper, real download against the release)
 
 #### Version
-- Version bumped to 2.14.1 (bugfix release); script header, README and wiki aligned
+- Version bumped to 2.14.1 (bugfix and self-update); script header, README and wiki aligned
 
 ### [2.14] - 2026-10-20
 

@@ -11,8 +11,12 @@
     umschalten (GUI, Konsolen-Ausgabe und HTML-Report folgen der Auswahl).
     Beim Start wird das neueste GitLab-Release abgefragt (Timeout 3 s). Ist eine
     neuere Version veroeffentlicht, erscheint eine klickbare Update-Anzeige neben
-    der Versionsnummer in der GUI bzw. eine Info-Zeile in der Konsole. Ohne
-    Internet, hinter Proxy-Sperren oder per -NoUpdateCheck bleibt die Anzeige aus.
+    der Versionsnummer in der GUI bzw. eine Info-Zeile mit Rueckfrage in der
+    Konsole. Ein Klick laedt die neue Fassung, prueft Groesse, SHA-256, Syntax und
+    Version, legt ein Backup neben dem Skript an und ersetzt die Datei ueber einen
+    Helferprozess, der das Skript anschliessend neu startet. Ohne Internet, hinter
+    Proxy-Sperren, per -NoUpdateCheck (kein Hinweis) oder per -NoSelfUpdate (kein
+    Austausch) bleibt es beim bisherigen Verhalten.
 .PARAMETER FullRun
     Fuehrt alle Checks ohne Menue aus (fuer Scheduled Tasks).
 .PARAMETER OnlyChecks
@@ -20,13 +24,17 @@
 .PARAMETER NoInteractive
     Ueberspringt das Menue (= Full Run).
 .PARAMETER OutputPath
-    Zielordner fuer Log, CSV-Exporte und HTML-Report (Standard: C:\ScriptLog).
+    Zielordner fuer Log, CSV-Exporte und HTML-Report (Standard: C:\AD_Health_Check_Log).
 .PARAMETER Language
     Ausgabesprache 'de' oder 'en'. Standard: automatische Erkennung aus der
     Betriebssystemsprache (englische Windows-Oberflaeche => en, sonst de).
 .PARAMETER NoUpdateCheck
     Unterdrueckt den Update-Check gegen die GitLab-Releases-API
     (fuer Luftschacht-/Airgap-Umgebungen oder streng firewalled Server).
+.PARAMETER NoSelfUpdate
+    Verbietet das Selbst-Update (Download, Ersetzen der Skriptdatei, Neustart).
+    Der Update-Hinweis bleibt sichtbar, es wird aber nichts installiert.
+    Sinnvoll, wenn die Datei zentral verteilt oder per GPO bereitgestellt wird.
 .NOTES
     Autor   : Rocco Ammon
     Version : 2.14.1 (74 Checks + Teilpruefung 55b, Internationalisierung DE/EN, Update-Anzeige GitLab)
@@ -51,6 +59,8 @@ param(
     [string]$Language = '',
     # Update-Check gegen die GitLab-Releases-API unterdruecken (Airgap/Offline)
     [switch]$NoUpdateCheck,
+    # Selbst-Update verbieten (Datei wird zentral verteilt / per GPO bereitgestellt)
+    [switch]$NoSelfUpdate,
     # Kein automatischer Neustart mit Administratorrechten.
     # Ohne diese Rechte lehnt Windows die DNS-/WMI-Abfragen ab (z.B. root\MicrosoftDNS).
     [switch]$NoElevate
@@ -61,6 +71,9 @@ param(
 $Global:ScriptName      = "AD_Health_Check"
 $Global:ScriptVersion   = "2.14.1"
 $Global:NoUpdateCheck   = [bool]$NoUpdateCheck
+$Global:NoSelfUpdate    = [bool]$NoSelfUpdate
+# Startparameter fuer einen Neustart nach dem Selbst-Update (gleiche Checks/Pfade/Sprache)
+$Global:LaunchParameters = $PSBoundParameters
 $Global:Timestamp       = Get-Date -Format "yyyyMMdd_HHmmss"
 $Global:LogDirectory    = if ($OutputPath) { $OutputPath } else { "C:\AD_Health_Check_Log" }
 $Global:ReportDirectory = Join-Path $Global:LogDirectory "AD_HealthCheck_$Global:Timestamp"
@@ -359,6 +372,16 @@ Hinweis=>Notice
 Sprache:=>Language:
 Abbrechen=>Cancel
 Update verfügbar: =>Update available: 
+Klicken: Update installieren. Rechtsklick: Release-Seite oeffnen.=>Click: install update. Right click: open release page.
+Das Selbst-Update ist deaktiviert (-NoSelfUpdate).=>Self-update is disabled (-NoSelfUpdate).
+Update installieren? Die laufende Datei wird ersetzt (Backup neben dem Skript) und das Programm startet neu.=>Install update? The running file will be replaced (backup next to the script) and the program will restart.
+Update wird installiert ...=>Installing update ...
+Das Update ist vorbereitet. Das Programm startet in wenigen Sekunden neu; bitte die Auswahl erneut treffen.=>The update is prepared. The program will restart in a few seconds; please select the checks again.
+Update nicht moeglich:=>Update not possible:
+Update jetzt installieren? Die laufende Datei wird ersetzt und das Programm startet neu. (j/n)=>Install update now? The running file will be replaced and the program will restart. (y/n)
+Update wird geladen und geprueft ...=>Downloading and verifying update ...
+Update vorbereitet - das Programm startet in wenigen Sekunden neu.=>Update prepared - the program will restart in a few seconds.
+Release-Seite: =>Release page: 
  (aktuell => (currently 
 Oeffnet die Release-Seite dieses Projekts.=>Opens the release page of this project.
 Keine=>No
@@ -1341,6 +1364,275 @@ function Start-UpdateCheckAsync {
 
 #endregion
 
+#region ============= SELF-UPDATE (Download / Ersetzen / Neustart) ============
+
+# Basis-URL der Skriptdatei in der GitLab-Files-API. Die Metadaten-Antwort enthaelt
+# size und content_sha256 - damit laesst sich der Download pruefen, bevor irgendetwas
+# ersetzt wird.
+$Global:GitLabFileApi = "https://gitlab.com/api/v4/projects/$($Global:GitLabProjectId)/repository/files/AD_Health_Check.ps1"
+$Global:SelfUpdateLog = Join-Path $env:TEMP 'AD_Health_Check_Update.log'
+
+# Helferprozess: wartet auf das Ende der laufenden Instanz, ersetzt die Datei,
+# prueft den Hash und startet das Skript neu. Als here-string, damit er ohne
+# weitere Abhaengigkeiten in %TEMP% geschrieben werden kann.
+$Global:SelfUpdateHelperScript = @'
+param([Parameter(Mandatory)][string]$Job)
+
+$ErrorActionPreference = 'Stop'
+
+# Wird der Helfer aus PowerShell 7 heraus gestartet, erbt Windows PowerShell 5.1
+# dessen PSModulePath und findet die eigenen Module nicht. Pfad daher zuruecksetzen.
+if ($PSVersionTable.PSVersion.Major -le 5) {
+    $env:PSModulePath = (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules') + ';' +
+                        (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules')
+}
+
+$j = Import-Clixml -LiteralPath $Job
+function Write-UpdateLog([string]$m) {
+    try { Add-Content -LiteralPath $j.Log -Value ("[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m) -ErrorAction Stop } catch { }
+}
+function Get-FileSha256([string]$Path) {
+    # Bewusst .NET statt Get-FileHash: unabhaengig von Modul-Autoloading
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $fs = [System.IO.File]::OpenRead($Path)
+        try { return ([System.BitConverter]::ToString($sha.ComputeHash($fs)) -replace '-', '').ToLowerInvariant() }
+        finally { $fs.Dispose() }
+    } finally { $sha.Dispose() }
+}
+
+Write-UpdateLog ("Helfer gestartet (PID {0}); warte auf PID {1}" -f $PID, $j.Pid)
+
+# Erst wenn die aufrufende Instanz beendet ist, ist die Zieldatei sicher frei.
+if ($j.Pid -gt 0) {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt 60) {
+        if (-not (Get-Process -Id $j.Pid -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Milliseconds 300
+    }
+    Start-Sleep -Milliseconds 400
+}
+
+# Kopieren mit Wiederholung: Virenscanner und OneDrive sperren Dateien kurzzeitig.
+$copied = $false
+for ($i = 1; $i -le 10; $i++) {
+    try {
+        Copy-Item -LiteralPath $j.Source -Destination $j.Target -Force -ErrorAction Stop
+        $hash = Get-FileSha256 $j.Target
+        if ($hash -eq $j.Sha256.ToLowerInvariant()) { $copied = $true; break }
+        Write-UpdateLog ("Hash nach Kopie weicht ab (Versuch {0})" -f $i)
+    } catch {
+        Write-UpdateLog ("Kopierversuch {0} fehlgeschlagen: {1}" -f $i, $_.Exception.Message)
+    }
+    Start-Sleep -Milliseconds 700
+}
+
+if (-not $copied) {
+    Write-UpdateLog 'Update fehlgeschlagen - Backup wird zurueckgespielt.'
+    try {
+        if ($j.Backup -and (Test-Path -LiteralPath $j.Backup)) {
+            Copy-Item -LiteralPath $j.Backup -Destination $j.Target -Force -ErrorAction Stop
+            Write-UpdateLog 'Backup wiederhergestellt.'
+        }
+    } catch { Write-UpdateLog ("Rollback fehlgeschlagen: {0}" -f $_.Exception.Message) }
+    exit 1
+}
+Write-UpdateLog ("Datei ersetzt: {0}" -f $j.Target)
+
+if ($j.Restart) {
+    try {
+        Start-Process -FilePath $j.Exe -ArgumentList $j.Arguments -WorkingDirectory (Split-Path -Parent $j.Target) -ErrorAction Stop
+        Write-UpdateLog ("Neustart gestartet: {0} {1}" -f $j.Exe, $j.Arguments)
+    } catch {
+        Write-UpdateLog ("Neustart fehlgeschlagen: {0}" -f $_.Exception.Message)
+        exit 2
+    }
+}
+
+Remove-Item -LiteralPath $Job -Force -ErrorAction SilentlyContinue
+exit 0
+'@
+
+function Get-UpdatePackageInfo {
+    <#
+    .SYNOPSIS
+        Holt Groesse und SHA-256 der Skriptdatei eines Tags aus der GitLab-Files-API.
+    #>
+    param([Parameter(Mandatory)][string]$Tag)
+    $u = "$($Global:GitLabFileApi)?ref=$([uri]::EscapeDataString($Tag))"
+    $m = Invoke-RestMethod -Uri $u -TimeoutSec 15 -ErrorAction Stop
+    [pscustomobject]@{
+        Size   = [int64]$m.size
+        Sha256 = ([string]$m.content_sha256).ToLowerInvariant()
+        Commit = [string]$m.last_commit_id
+    }
+}
+
+function Save-UpdatePackage {
+    <#
+    .SYNOPSIS
+        Laedt die Skriptdatei eines Tags nach $Path (ohne Ausfuehrung).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Tag,
+        [Parameter(Mandatory)][string]$Path
+    )
+    $u = "$($Global:GitLabFileApi)/raw?ref=$([uri]::EscapeDataString($Tag))"
+    $old = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    try {
+        Invoke-WebRequest -Uri $u -OutFile $Path -TimeoutSec 60 -UseBasicParsing -ErrorAction Stop
+    } finally { $ProgressPreference = $old }
+    return $Path
+}
+
+function Test-UpdatePackage {
+    <#
+    .SYNOPSIS
+        Prueft ein heruntergeladenes Paket, ohne es zu starten.
+    .DESCRIPTION
+        Reihenfolge: Datei vorhanden -> Groesse -> SHA-256 -> Syntax -> Version.
+        Jede Stufe liefert bei einem Problem einen sprechenden Grund zurueck.
+    .OUTPUTS
+        PSCustomObject: Ok, Reason, Version, Sha256
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string]$ExpectedSha256 = '',
+        [int64]$ExpectedSize = 0,
+        [string]$CurrentVersion = $Global:ScriptVersion
+    )
+    $r = [pscustomobject]@{ Ok = $false; Reason = ''; Version = ''; Sha256 = '' }
+    if (-not (Test-Path -LiteralPath $Path)) { $r.Reason = 'Datei fehlt'; return $r }
+    $fi = Get-Item -LiteralPath $Path
+    if ($fi.Length -le 0) { $r.Reason = 'Datei ist leer'; return $r }
+    if ($ExpectedSize -gt 0 -and $fi.Length -ne $ExpectedSize) {
+        $r.Reason = "Groesse weicht ab (erwartet $ExpectedSize, erhalten $($fi.Length))"; return $r
+    }
+    $sha = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    $r.Sha256 = $sha
+    if ($ExpectedSha256 -and $sha -ne $ExpectedSha256.ToLowerInvariant()) {
+        $r.Reason = 'SHA-256 weicht ab'; return $r
+    }
+    $errs = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$null, [ref]$errs)
+    if ($errs -and $errs.Count -gt 0) {
+        $r.Reason = "Syntaxfehler ($($errs.Count)): $($errs[0].Message)"; return $r
+    }
+    $txt = [System.IO.File]::ReadAllText($Path)
+    $m = [regex]::Match($txt, '\$Global:ScriptVersion\s*=\s*"([0-9][0-9\.]*)"')
+    if (-not $m.Success) { $r.Reason = 'Versionsangabe nicht gefunden'; return $r }
+    $r.Version = $m.Groups[1].Value
+    if (-not ($r.Version -as [version])) { $r.Reason = 'Versionsangabe unlesbar'; return $r }
+    if ([version]$r.Version -le [version]$CurrentVersion) {
+        $r.Reason = "Version $($r.Version) ist nicht neuer als $CurrentVersion"; return $r
+    }
+    $r.Ok = $true
+    return $r
+}
+
+function Install-SelfUpdate {
+    <#
+    .SYNOPSIS
+        Laedt die angegebene Version, prueft sie, ersetzt die laufende Datei und startet neu.
+    .DESCRIPTION
+        Es wird nichts ersetzt, bevor Download, SHA-256, Syntax und Version geprueft
+        sind. Vor dem Austausch entsteht ein Backup neben dem Skript. Der Austausch
+        selbst laeuft in einem Helferprozess, weil eine laufende Datei nicht
+        zuverlaessig ueberschrieben werden kann.
+    .OUTPUTS
+        PSCustomObject: Started, Reason, Target, Backup, Version
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Tag,
+        [hashtable]$BoundParameters = @{},
+        [switch]$NoRestart
+    )
+    $res = [pscustomobject]@{ Started = $false; Reason = ''; Target = ''; Backup = ''; Version = '' }
+    if ($Global:NoSelfUpdate) { $res.Reason = 'Self-Update ist deaktiviert (-NoSelfUpdate)'; return $res }
+    $target = $PSCommandPath
+    if (-not $target) { $res.Reason = 'Skriptpfad nicht ermittelbar'; return $res }
+    $target = [System.IO.Path]::GetFullPath($target)
+    $res.Target = $target
+    $dir = Split-Path -Parent $target
+
+    # Schreibrechte vorher pruefen - lieber sauber abbrechen als halb ersetzen.
+    try {
+        $probe = Join-Path $dir (".adhealthcheck_write_{0}.tmp" -f [guid]::NewGuid().ToString('N').Substring(0, 6))
+        Set-Content -LiteralPath $probe -Value 'probe' -ErrorAction Stop
+        Remove-Item -LiteralPath $probe -Force -ErrorAction Stop
+    } catch {
+        $res.Reason = "Zielordner nicht beschreibbar: $dir"; return $res
+    }
+
+    # 1) Metadaten + Download
+    $temp = Join-Path $env:TEMP ("AD_Health_Check_Update_{0}.ps1" -f $Tag)
+    try {
+        $meta = Get-UpdatePackageInfo -Tag $Tag
+        [void](Save-UpdatePackage -Tag $Tag -Path $temp)
+    } catch {
+        $res.Reason = "Download fehlgeschlagen: $($_.Exception.Message)"; return $res
+    }
+
+    # 2) Paket pruefen (Hash, Syntax, Version)
+    $chk = Test-UpdatePackage -Path $temp -ExpectedSha256 $meta.Sha256 -ExpectedSize $meta.Size
+    if (-not $chk.Ok) { $res.Reason = "Paket abgelehnt: $($chk.Reason)"; return $res }
+    $res.Version = $chk.Version
+
+    # 3) Backup der laufenden Datei
+    $backup = "$target.bak-$($Global:ScriptVersion)"
+    try {
+        Copy-Item -LiteralPath $target -Destination $backup -Force -ErrorAction Stop
+        $res.Backup = $backup
+    } catch {
+        $res.Reason = "Backup fehlgeschlagen: $($_.Exception.Message)"; return $res
+    }
+
+    # 4) Helferprozess vorbereiten
+    $exe = $null
+    try { $exe = (Get-Process -Id $PID).Path } catch { }
+    if (-not $exe -or $exe -match '(?i)powershell_ise|Code\.exe|WindowsTerminal|openconsole') {
+        $exe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    }
+    if (-not (Test-Path -LiteralPath $exe)) { $exe = 'powershell.exe' }
+    $restartArgs = ''
+    if (-not $NoRestart) {
+        $restartArgs = ((Get-ElevationCommand -BoundParameters $BoundParameters -ScriptPath $target).Arguments -join ' ')
+    }
+    $jobPath    = Join-Path $env:TEMP ("AD_Health_Check_Update_{0}.job.xml" -f $Tag)
+    $helperPath = Join-Path $env:TEMP ("AD_Health_Check_Update_{0}.helper.ps1" -f $Tag)
+    $job = [pscustomobject]@{
+        Pid       = $PID
+        Source    = $temp
+        Target    = $target
+        Sha256    = $chk.Sha256
+        Backup    = $backup
+        Exe       = $exe
+        Arguments = $restartArgs
+        Restart   = (-not $NoRestart)
+        Log       = $Global:SelfUpdateLog
+    }
+    try {
+        $job | Export-Clixml -LiteralPath $jobPath -ErrorAction Stop
+        Set-Content -LiteralPath $helperPath -Value $Global:SelfUpdateHelperScript -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        $res.Reason = "Helfer konnte nicht vorbereitet werden: $($_.Exception.Message)"; return $res
+    }
+
+    # 5) Helfer starten - er wartet auf das Ende dieser Instanz
+    $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+                '-File', ('"{0}"' -f $helperPath), '-Job', ('"{0}"' -f $jobPath))
+    try {
+        Start-Process -FilePath $exe -ArgumentList $psArgs -WindowStyle Hidden -ErrorAction Stop
+    } catch {
+        $res.Reason = "Helfer konnte nicht gestartet werden: $($_.Exception.Message)"; return $res
+    }
+    $res.Started = $true
+    return $res
+}
+
+#endregion
+
 #region ============= INTERAKTIVES MENUE / GUI ================================
 
 function Show-HealthCheckGUI {
@@ -1868,7 +2160,7 @@ function Show-HealthCheckGUI {
 
     # === Update-Anzeige: asynchron pruefen, Badge nur bei neuerer Version einblenden ===
     # Shared State (wie $state) - Hashtable-Zugriffe funktionieren zuverlaessig in Event-Handlern
-    $updState = @{ Task = $null; Timer = $null; Url = $null }
+    $updState = @{ Task = $null; Timer = $null; Url = $null; Tag = $null }
     if (-not $Global:NoUpdateCheck) {
         $updState.Task  = Start-UpdateCheckAsync
         $updState.Timer = New-Object System.Windows.Threading.DispatcherTimer
@@ -1883,14 +2175,43 @@ function Show-HealthCheckGUI {
             $updState.Task = $null
             if ($info -and $info.UpdateAvailable) {
                 $updState.Url         = $info.Url
+                $updState.Tag         = $info.LatestTag
                 $lblUpdate.Text       = (Format-L10n -Text ('Update verfügbar: ' + $info.LatestTag))
-                $brdUpdate.ToolTip    = (Format-L10n -Text 'Oeffnet die Release-Seite dieses Projekts.')
+                $brdUpdate.ToolTip    = (Format-L10n -Text 'Klicken: Update installieren. Rechtsklick: Release-Seite oeffnen.')
                 $brdUpdate.Visibility = 'Visible'
             }
         })
         $updState.Timer.Start()
-        # Klick auf das Badge oeffnet die Release-Seite im Browser
-        $brdUpdate.Add_MouseLeftButtonDown({ if ($updState.Url) { Start-Process $updState.Url } })
+        # Einklick-Update: Download, Pruefung, Austausch und Neustart in einem Schritt.
+        # Rechtsklick oeffnet weiterhin die Release-Seite (z. B. fuer Release-Notes).
+        $brdUpdate.Add_MouseLeftButtonDown({
+            $tag = $updState.Tag
+            if (-not $tag) { if ($updState.Url) { Start-Process $updState.Url }; return }
+            if ($Global:NoSelfUpdate) {
+                [void][System.Windows.MessageBox]::Show(
+                    (Format-L10n -Text 'Das Selbst-Update ist deaktiviert (-NoSelfUpdate).'),
+                    'AD Health Check', 'OK', 'Information')
+                return
+            }
+            $msg = (Format-L10n -Text 'Update installieren? Die laufende Datei wird ersetzt (Backup neben dem Skript) und das Programm startet neu.') + "`n`n" + $tag
+            $answer = [System.Windows.MessageBox]::Show($msg, 'AD Health Check', 'YesNo', 'Question')
+            if ($answer -ne 'Yes') { return }
+            $brdUpdate.IsEnabled = $false
+            $lblUpdate.Text = (Format-L10n -Text 'Update wird installiert ...')
+            $res = Install-SelfUpdate -Tag $tag -BoundParameters $Global:LaunchParameters
+            if ($res.Started) {
+                [void][System.Windows.MessageBox]::Show(
+                    (Format-L10n -Text 'Das Update ist vorbereitet. Das Programm startet in wenigen Sekunden neu; bitte die Auswahl erneut treffen.'),
+                    'AD Health Check', 'OK', 'Information')
+                [Environment]::Exit(0)
+            }
+            [void][System.Windows.MessageBox]::Show(
+                ((Format-L10n -Text 'Update nicht moeglich:') + "`n`n" + $res.Reason),
+                'AD Health Check', 'OK', 'Warning')
+            $brdUpdate.IsEnabled = $true
+            $lblUpdate.Text = (Format-L10n -Text ('Update verfügbar: ' + $tag))
+        })
+        $brdUpdate.Add_MouseRightButtonUp({ if ($updState.Url) { Start-Process $updState.Url } })
     }
 
     # === Window anzeigen ===
@@ -10160,6 +10481,22 @@ function Start-ADHealthCheck {
             $upd = Get-RemoteReleaseInfo
             if ($upd.UpdateAvailable) {
                 Write-Host "  [i] Update verfügbar: $($upd.LatestTag) (aktuell v$Global:ScriptVersion) - $($upd.Url)" -ForegroundColor Yellow
+                # Self-Update nur auf ausdrueckliche Bestaetigung und nur in einer
+                # interaktiven Sitzung - nie still im Hintergrund.
+                if (-not $NoInteractive -and [Environment]::UserInteractive -and -not $Global:NoSelfUpdate) {
+                    $a = Read-Host (Format-L10n -Text 'Update jetzt installieren? Die laufende Datei wird ersetzt und das Programm startet neu. (j/n)')
+                    if ($a -match '^(j|ja|y|yes)$') {
+                        Write-Host (Format-L10n -Text '  [i] Update wird geladen und geprueft ...') -ForegroundColor Cyan
+                        $res = Install-SelfUpdate -Tag $upd.LatestTag -BoundParameters $Global:LaunchParameters
+                        if ($res.Started) {
+                            Write-Host (Format-L10n -Text '  [OK] Update vorbereitet - das Programm startet in wenigen Sekunden neu.') -ForegroundColor Green
+                            Start-Sleep -Seconds 2
+                            [Environment]::Exit(0)
+                        }
+                        Write-Host ("  [!] " + (Format-L10n -Text 'Update nicht moeglich:') + " $($res.Reason)") -ForegroundColor Red
+                        Write-Host ((Format-L10n -Text '  [i] Release-Seite: ') + $upd.Url) -ForegroundColor Yellow
+                    }
+                }
             }
         }
 
