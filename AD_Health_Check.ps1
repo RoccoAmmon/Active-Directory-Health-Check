@@ -865,6 +865,7 @@ Aktiviert=>Enabled
 aktiviert=>enabled
 deaktiviert=>disabled
 unbekannt=>unknown
+unklar=>unclear
 nicht konfiguriert=>not configured
 inaktive=>inactive
 inaktiven=>inactive
@@ -2714,33 +2715,59 @@ function Invoke-DCDiag {
     catch { return @([pscustomobject]@{ DCName=$DC; Category='ALL'; TestName='dcdiag.exe'; PartitionOrScope='-'; Result='ERROR'; ErrorDetails="$_"; RawSnippet='-' }) }
     if ([string]::IsNullOrWhiteSpace($raw)) { return @([pscustomobject]@{ DCName=$DC; Category='ALL'; TestName='dcdiag.exe'; PartitionOrScope='-'; Result='ERROR'; ErrorDetails='Keine Ausgabe'; RawSnippet='-' }) }
     $lines = $raw -split "`r?`n"; $results = @()
-    $curCat='Server'; $curScope=$DC; $curTest=$null; $curErr=@()
-    $rxStart='^\s*(?:Starting test|Starttest)\s*:\s*(\S+)'
-    $rxPass='(?:passed test|bestandener Test|Test.*bestanden)\s+(\S+)'
-    $rxFail='(?:failed test|fehlgeschlagener Test|Test.*fehlgeschlagen)\s+(\S+)'
-    $rxPart='(?:Running partition tests on|Partitionstests)\s*:\s*(\S+)'
-    $rxFor='(?:Running enterprise tests on|Unternehmenstests)\s*:\s*(\S+)'
-    $rxSrv='(?:Testing server|Server wird getestet)\s*:\s*(\S+)'
+    $curCat='Server'; $curScope=$DC; $curTest=$null; $curErr=@(); $curDns=$false
+    # Ergebniszeilen kommen in beiden Sprachen und in zwei Reihenfolgen vor:
+    #   EN: ......................... DC1 passed test Connectivity
+    #   DE: ......................... DC1 hat den Test Connectivity bestanden.
+    #   DE: ......................... DC1 hat den Test Connectivity nicht bestanden.
+    # Der Testname steht im Deutschen VOR "bestanden" - deshalb eigene Muster.
+    $rxStart='^\s*(?:Starting test|Starttest)\s*:\s*"?([^"]+?)"?\s*$'
+    $rxFail='hat\s+den\s+Test\s+"?([^\s"]+?)"?\s+nicht\s+bestanden|(?:failed test|fehlgeschlagener Test)\s+"?([^\s"]+)'
+    $rxPass='hat\s+den\s+Test\s+"?([^\s"]+?)"?\s+bestanden|passed test\s+"?([^\s"]+)|bestandener Test\s+"?([^\s"]+)'
+    $rxPart='^(?:Running partition tests on|Partitionstests?)\b.*?:\s*(\S+)\s*$'
+    $rxFor='^(?:Running enterprise tests on|Unternehmenstests?)\b.*?:\s*(\S+)\s*$'
+    $rxSrv='^(?:Testing server|Server wird getestet)\s*:\s*(\S+)'
+    # dcdiag ueberspringt Tests auf Anforderung (/test:DNS). Diese Zeilen gehoeren
+    # nicht zum laufenden Test und duerfen den Fehlerpuffer nicht fuellen.
+    $rxSkip='Test durch Benutzeranforderung ausgelassen|skipped by user request'
+
+    # Ein Test ohne Ergebniszeile ist nur dann ein Befund, wenn er nicht zur
+    # DNS-Detailausgabe gehoert - deren Ergebnis steckt im Gesamttest "DNS".
+    $flushUnknown = {
+        if ($curTest -and -not $curDns) {
+            [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='UNKNOWN'; ErrorDetails=($curErr -join "`n").Trim(); RawSnippet='-' }
+        }
+    }
+
     foreach ($line in $lines) {
         if ($line -match $rxSrv)  { $curCat='Server';    $curScope=$Matches[1]; continue }
         if ($line -match $rxPart) { $curCat='Partition'; $curScope=$Matches[1]; continue }
         if ($line -match $rxFor)  { $curCat='Forest';    $curScope=$Matches[1]; continue }
         if ($line -match $rxStart) {
-            if ($curTest) { $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='UNKNOWN'; ErrorDetails=($curErr -join "`n").Trim(); RawSnippet='-' } }
-            $curTest=$Matches[1]; $curErr=@(); continue
+            $results += & $flushUnknown
+            $curTest=($Matches[1] -replace '\s*\([^)]*\)\s*$','').Trim(); $curErr=@(); $curDns=$false; continue
         }
-        if ($line -match $rxPass) { $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$Matches[1]; PartitionOrScope=$curScope; Result='PASSED'; ErrorDetails=''; RawSnippet='' }; $curTest=$null; $curErr=@(); continue }
         if ($line -match $rxFail) {
-            $n=$Matches[1]; $e=($curErr | Where-Object { $_.Trim() } | Select-Object -First 20) -join "`n"; if (-not $e) { $e=$line.Trim() }
+            $n=@($Matches[1],$Matches[2]) | Where-Object { $_ } | Select-Object -First 1
+            $e=($curErr | Where-Object { $_.Trim() } | Select-Object -First 20) -join "`n"; if (-not $e) { $e=$line.Trim() }
             $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$n; PartitionOrScope=$curScope; Result='FAILED'; ErrorDetails=$e.Trim(); RawSnippet=$line.Trim() }
-            $curTest=$null; $curErr=@(); continue
+            $curTest=$null; $curErr=@(); $curDns=$false; continue
         }
-        if ($line -match '^\s*TEST\s*:\s*(\S+)') { $curTest=$Matches[1]; $curErr=@(); $curCat='DNS'; continue }
-        if ($line -match '^\s*(Passed|Bestanden)\s*:\s*(\S+)') { $results += [pscustomobject]@{ DCName=$DC; Category='DNS'; TestName=$Matches[2]; PartitionOrScope=$curScope; Result='PASSED'; ErrorDetails=''; RawSnippet='' }; $curTest=$null; $curErr=@(); continue }
-        if ($line -match '^\s*(Warning|Warnung)\s*:\s*(.+)' -and $curTest) { $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='WARNING'; ErrorDetails=$Matches[2].Trim(); RawSnippet=$line.Trim() }; $curTest=$null; $curErr=@(); continue }
+        if ($line -match $rxPass) {
+            $n=@($Matches[1],$Matches[2],$Matches[3]) | Where-Object { $_ } | Select-Object -First 1
+            $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$n; PartitionOrScope=$curScope; Result='PASSED'; ErrorDetails=''; RawSnippet='' }
+            $curTest=$null; $curErr=@(); $curDns=$false; continue
+        }
+        if ($line -match '^\s*TEST\s*:\s*(.+?)\s*$') {
+            $results += & $flushUnknown
+            $curTest=($Matches[1] -replace '\s*\([^)]*\)\s*$','').Trim(); $curErr=@(); $curDns=$true; $curCat='DNS'; continue
+        }
+        if ($line -match '^\s*(Passed|Bestanden)\s*:\s*(\S+)') { $results += [pscustomobject]@{ DCName=$DC; Category='DNS'; TestName=$Matches[2]; PartitionOrScope=$curScope; Result='PASSED'; ErrorDetails=''; RawSnippet='' }; $curTest=$null; $curErr=@(); $curDns=$false; continue }
+        if ($line -match '^\s*(Warning|Warnung)\s*:\s*(.+)' -and $curTest) { $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='WARNING'; ErrorDetails=$Matches[2].Trim(); RawSnippet=$line.Trim() }; $curTest=$null; $curErr=@(); $curDns=$false; continue }
+        if ($line -match $rxSkip) { continue }
         if ($curTest -and $line.Trim() -and $line -notmatch '^\s*\.{3,}\s*$') { $curErr += $line.TrimEnd() }
     }
-    if ($curTest) { $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='UNKNOWN'; ErrorDetails=($curErr -join "`n").Trim(); RawSnippet='-' } }
+    $results += & $flushUnknown
     if (@($results).Count -eq 0) { $results += [pscustomobject]@{ DCName=$DC; Category='ALL'; TestName='(parsed=0)'; PartitionOrScope='-'; Result='UNKNOWN'; ErrorDetails='Nicht parsebar'; RawSnippet=$raw.Substring(0,[math]::Min(500,$raw.Length)) } }
     $results
 }
@@ -3155,734 +3182,6 @@ function Get-WindowsUpdates {
 }
 
 #endregion
-#region ====================== HELPER ========================================
-
-function Get-SortedResultKeys {
-    # Reihenfolge direkt aus $Global:ReportTitles (= thematisch)
-    return @($Global:ReportTitles.Keys | Where-Object { $Global:Results.Contains($_) })
-}
-
-function Get-ReportKeys {
-    <#
-    .SYNOPSIS
-        Liefert die Keys, die im Report erscheinen sollen.
-    #>
-    $out = @()
-    foreach ($k in $Global:ReportTitles.Keys) {
-        if ($k -eq '00_SkippedDCs') {
-            if ($Global:Results[$k] -and @($Global:Results[$k]).Count -gt 0) { $out += $k }
-            continue
-        }
-        if ($Global:SelectedChecks -contains $k) { $out += $k }
-    }
-    return $out
-}
-
-function Initialize-ResultKeys {
-    foreach ($k in $Global:ReportTitles.Keys) { $Global:Results[$k] = @() }
-}
-
-function Import-RequiredModules {
-    foreach ($mod in 'ActiveDirectory','GroupPolicy','DnsServer') {
-        try {
-            if (-not (Get-Module -Name $mod)) {
-                Import-Module $mod -ErrorAction Stop
-                Write-Log "Modul '$mod' geladen." -Level OK
-            }
-        } catch { Write-Log "Modul '$mod' nicht ladbar: $_" -Level WARN }
-    }
-}
-
-#endregion
-
-#region ======================= CONNECTIVITY ==================================
-
-function Test-IsLocalComputer {
-    <#
-    .SYNOPSIS
-        Prueft, ob ein Computername den lokalen Rechner bezeichnet.
-    .NOTES
-        Erkennt den lokalen Rechner in NetBIOS-Form, FQDN-Form, IP-Form und 'localhost'.
-        Fuer FQDN (z.B. 'DC1.contoso.local') wird der Kurzname vor dem ersten Punkt
-        mit $env:COMPUTERNAME verglichen.
-    #>
-    param([Parameter(Mandatory)][string]$ComputerName)
-    try {
-        if (-not $Global:LocalIdentifiers) {
-            $local = @('localhost','127.0.0.1','::1',$env:COMPUTERNAME)
-            try { $fqdn = [System.Net.Dns]::GetHostByName($env:COMPUTERNAME).HostName; if ($fqdn) { $local += $fqdn } } catch {}
-            try { $local += Get-NetIPAddress -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -and $_.AddressState -eq 'Preferred' } | Select-Object -ExpandProperty IPAddress } catch {}
-            $Global:LocalIdentifiers = $local | Select-Object -Unique
-        }
-        # Exakter Vergleich (NetBIOS, FQDN, IP, localhost)
-        foreach ($id in $Global:LocalIdentifiers) { if ($ComputerName -ieq $id) { return $true } }
-        # FQDN-Erkennung: Kurzname vor erstem Punkt gegen $env:COMPUTERNAME
-        if ($ComputerName -match '\.') {
-            $short = $ComputerName.Substring(0, $ComputerName.IndexOf('.'))
-            if ($short -ieq $env:COMPUTERNAME) { return $true }
-        }
-        return $false
-    } catch { return $false }
-}
-
-function Get-DnsServerTargets {
-    <#
-    .SYNOPSIS
-        Liefert die zu versuchenden Ziel-Parameter fuer DnsServer-Cmdlets.
-    .NOTES
-        Problem: DnsServer-Cmdlets mit -ComputerName <lokaler DC> erzwingen CIM/WMI-Remoting
-        ueber sich selbst. Bei gesperrtem WinRM-Loopback/DCOM schlaegt das fehl,
-        obwohl DNS lokal installiert ist. Check 42 war nie betroffen, da er ohne
-        -ComputerName abfragt.
-        Loesung: Pruefreihenfolge fuer lokalen DC:
-          1. @{}                    -> in-process (kein -ComputerName)
-          2. @{ComputerName='localhost'} -> CIM gegen localhost
-          3. @{ComputerName=$ComputerName} -> CIM gegen uebergebenen Namen
-        Fuer remote DCs: nur @{ComputerName=$ComputerName}
-    #>
-    param([Parameter(Mandatory)][string]$ComputerName)
-    $isLocal = Test-IsLocalComputer -ComputerName $ComputerName
-    if ($isLocal) {
-        # Lokal: erst in-process, dann localhost, dann uebergebener Name
-        @(@{}, @{ComputerName='localhost'}, @{ComputerName=$ComputerName})
-    }
-    else {
-        # Remote: nur uebergebener Name
-        @(@{ComputerName=$ComputerName})
-    }
-}
-
-function Test-DCPing {
-    param([Parameter(Mandatory)][string]$DCName)
-    if (Test-IsLocalComputer -ComputerName $DCName) { return $true }
-    try {
-        for ($i=1; $i -le $Global:PingCount; $i++) {
-            try { if (Test-Connection -ComputerName $DCName -Count 1 -Quiet -ErrorAction Stop) { return $true } }
-            catch { Start-Sleep -Milliseconds 500 }
-        }
-        return $false
-    } catch { return $false }
-}
-
-function Test-DCConnectivity {
-    param([Parameter(Mandatory)][string]$DCName)
-    $isLocal = Test-IsLocalComputer -ComputerName $DCName
-    $result = [pscustomobject]@{
-        DCName=$DCName; IsLocalComputer=$isLocal; EffectiveTarget=$DCName
-        Ping=$false; WinRM=$false; WinRM_Loopback=$false; CIM_DCOM=$false; WMI=$false
-        Method='None'; Reachable=$false; SkipReason=''; ErrorMsg=''
-    }
-    if ($isLocal) { $result.Ping = $true } else { $result.Ping = Test-DCPing -DCName $DCName }
-    if (-not $result.Ping -and -not $Global:TryWinRMIfNoPing) { $result.SkipReason="Kein Ping"; return $result }
-    try { $null = Test-WSMan -ComputerName $DCName -ErrorAction Stop; $result.WinRM=$true; $result.Method='WinRM'; $result.Reachable=$true; return $result } catch {}
-    if ($isLocal) {
-        try { $null = Test-WSMan -ComputerName 'localhost' -ErrorAction Stop; $result.WinRM=$true; $result.WinRM_Loopback=$true; $result.Method='WinRM_Loopback'; $result.EffectiveTarget='localhost'; $result.Reachable=$true; return $result } catch {}
-    }
-    try {
-        $t = if ($isLocal) { 'localhost' } else { $DCName }
-        $opt = New-CimSessionOption -Protocol Dcom
-        $cim = New-CimSession -ComputerName $t -SessionOption $opt -OperationTimeoutSec $Global:WinRMTimeoutSec -ErrorAction Stop
-        Remove-CimSession $cim
-        $result.CIM_DCOM=$true; $result.Method='CIM_DCOM'; $result.EffectiveTarget=$t; $result.Reachable=$true
-        return $result
-    } catch {}
-    try {
-        $t = if ($isLocal) { '.' } else { $DCName }
-        $null = Get-WmiObject -Class Win32_OperatingSystem -ComputerName $t -ErrorAction Stop
-        $result.WMI=$true; $result.Method='WMI'; $result.EffectiveTarget=$t; $result.Reachable=$true; return $result
-    } catch { $result.ErrorMsg="Alle Methoden fehlgeschlagen: $_" }
-    $result.SkipReason = if (-not $result.Ping) { "Kein Ping UND kein WinRM/CIM/WMI" } else { "WinRM/CIM/WMI alle fehlgeschlagen" }
-    return $result
-}
-
-function Invoke-RemoteCommand {
-    param(
-        [Parameter(Mandatory)][string]$ComputerName,
-        [Parameter(Mandatory)][scriptblock]$ScriptBlock,
-        [object[]]$ArgumentList
-    )
-    $conn = $Global:DCConnectivity[$ComputerName]
-    if (-not $conn) { $conn = Test-DCConnectivity -DCName $ComputerName }
-    $isLocal = $conn.IsLocalComputer
-    $target  = if ($conn.EffectiveTarget) { $conn.EffectiveTarget } else { $ComputerName }
-    try {
-        if ($isLocal) { if ($ArgumentList) { return & $ScriptBlock @ArgumentList } else { return & $ScriptBlock } }
-        if ($conn.WinRM) { return Invoke-Command -ComputerName $target -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList -ErrorAction Stop }
-        return $null
-    } catch {
-        if ($isLocal) { try { if ($ArgumentList) { return & $ScriptBlock @ArgumentList } else { return & $ScriptBlock } } catch { return $null } }
-        Write-Log "Invoke-RemoteCommand '$ComputerName': $_" -Level ERROR -NoConsole
-        return $null
-    }
-}
-
-function Get-RemoteCimData {
-    param(
-        [Parameter(Mandatory)][string]$ComputerName,
-        [Parameter(Mandatory)][string]$ClassName,
-        [string]$Filter,
-        [string]$Namespace='root\cimv2'
-    )
-    $isLocal = Test-IsLocalComputer -ComputerName $ComputerName
-    if ($isLocal) {
-        try {
-            if ($Filter) { return Get-CimInstance -ClassName $ClassName -Namespace $Namespace -Filter $Filter -ErrorAction Stop }
-            else         { return Get-CimInstance -ClassName $ClassName -Namespace $Namespace -ErrorAction Stop }
-        } catch { return $null }
-    }
-    $sess = $null
-    try { $opt = New-CimSessionOption -Protocol Wsman; $sess = New-CimSession -ComputerName $ComputerName -SessionOption $opt -OperationTimeoutSec $Global:WinRMTimeoutSec -ErrorAction Stop }
-    catch {
-        try { $opt = New-CimSessionOption -Protocol Dcom; $sess = New-CimSession -ComputerName $ComputerName -SessionOption $opt -OperationTimeoutSec $Global:WinRMTimeoutSec -ErrorAction Stop }
-        catch { return $null }
-    }
-    try {
-        if ($Filter) { return Get-CimInstance -CimSession $sess -ClassName $ClassName -Namespace $Namespace -Filter $Filter -ErrorAction Stop }
-        else         { return Get-CimInstance -CimSession $sess -ClassName $ClassName -Namespace $Namespace -ErrorAction Stop }
-    } catch { return $null }
-      finally { if ($sess) { Remove-CimSession $sess -ErrorAction SilentlyContinue } }
-}
-
-#endregion
-
-#region ============= DATENSAMMEL-FUNKTIONEN (BESTEHEND) =====================
-
-function Get-DCSystemInfo {
-    param([Parameter(Mandatory)][string]$DC)
-    $os=Get-RemoteCimData -ComputerName $DC -ClassName Win32_OperatingSystem
-    $cs=Get-RemoteCimData -ComputerName $DC -ClassName Win32_ComputerSystem
-    $bio=Get-RemoteCimData -ComputerName $DC -ClassName Win32_BIOS
-    [pscustomobject]@{
-        DCName=$DC; OS=$os.Caption; OSVersion=$os.Version; OSBuild=$os.BuildNumber
-        InstallDate=$os.InstallDate; LastBoot=$os.LastBootUpTime
-        Manufacturer=$cs.Manufacturer; Model=$cs.Model
-        TotalRAM_GB=[math]::Round(($cs.TotalPhysicalMemory/1GB),2)
-        LogicalProcessors=$cs.NumberOfLogicalProcessors
-        BIOSVersion=$bio.SMBIOSBIOSVersion; Domain=$cs.Domain
-    }
-}
-
-function Get-DCServiceStatus {
-    param([Parameter(Mandatory)][string]$DC)
-    $sb = {
-        param($map)
-        $rows = @()
-        # Alle Dienste in EINER CIM-Abfrage holen (ueber WinRM - kein RPC noetig)
-        $all = @(Get-CimInstance -ClassName Win32_Service -ErrorAction SilentlyContinue)
-        if ($all.Count -eq 0) {
-            # Fallback: Get-Service in der Remoting-Session
-            $all = @(Get-Service -ErrorAction SilentlyContinue |
-                Select-Object Name, DisplayName, @{n='State';e={ "$($_.Status)" }}, @{n='StartMode';e={ "$($_.StartType)" }})
-        }
-        foreach ($svc in $map.Keys) {
-            $cfg = $map[$svc]
-            $names = @($cfg.Names); $displays = @($cfg.DisplayNames); $patterns = @($cfg.Patterns)
-            # Stufe 1: Matching per Service-Name (sprachunabhaengig) ODER Display-Name (DE/EN)
-            $found = $all | Where-Object { $names -contains $_.Name -or $displays -contains $_.DisplayName } | Select-Object -First 1
-            # Stufe 2: ASCII-sichere Prefix/Regex-Muster (unabhaengig von Datei-Encoding und OS-Sprache)
-            if (-not $found -and $patterns.Count -gt 0) {
-                $found = $all | Where-Object {
-                    $dn = "$($_.DisplayName)"; $nm = "$($_.Name)"
-                    @($patterns | Where-Object { $dn -match $_ -or $nm -match $_ }).Count -gt 0
-                } | Select-Object -First 1
-            }
-            # Stufe 3: Direkte CIM-Einzelabfrage per Name-Filter (umgeht jegliches Listen-Matching)
-            if (-not $found) {
-                foreach ($n in $names) {
-                    try {
-                        $found = Get-CimInstance -ClassName Win32_Service -Filter "Name='$n'" -ErrorAction SilentlyContinue | Select-Object -First 1
-                        if ($found) { break }
-                    } catch {}
-                }
-            }
-            # Stufe 4: Lokaler Get-Service in der Session (funktioniert auch, wenn CIM eingeschraenkt ist)
-            if (-not $found) {
-                foreach ($n in $names) {
-                    try {
-                        $s = Get-Service -Name $n -ErrorAction Stop
-                        $found = [pscustomobject]@{ Name=$s.Name; DisplayName=$s.DisplayName; State="$($s.Status)"; StartMode="$($s.StartType)" }
-                        break
-                    } catch {}
-                }
-            }
-            if ($found) {
-                $st = "$($found.State)"; $sm = "$($found.StartMode)"
-                if ($sm -eq 'Auto') { $sm = 'Automatic' }
-                $rows += [pscustomobject]@{
-                    Service=$svc; Description=$cfg.Description; RealName=$found.Name
-                    DisplayName=$found.DisplayName; Status=$st; StartType=$sm
-                }
-            } else {
-                $rows += [pscustomobject]@{ Service=$svc; Description=$cfg.Description; RealName='N/A'; DisplayName='-'; Status='NotFound'; StartType='N/A' }
-            }
-        }
-        $rows
-    }
-    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb -ArgumentList @($Global:ServiceMap)
-    if (-not $data) {
-        # Letzter Fallback: Get-Service ueber RPC (alter Ansatz)
-        $res = @()
-        foreach ($svc in $Global:ServiceMap.Keys) {
-            $cfg = $Global:ServiceMap[$svc]; $ok = $false
-            foreach ($n in $cfg.Names) {
-                try {
-                    $s = Get-Service -ComputerName $DC -Name $n -ErrorAction Stop
-                    $res += [pscustomobject]@{ DCName=$DC; Service=$svc; Description=$cfg.Description; RealName=$s.Name; DisplayName=$s.DisplayName; Status="$($s.Status)"; StartType="$($s.StartType)" }
-                    $ok=$true; break
-                } catch {}
-            }
-            if (-not $ok) { $res += [pscustomobject]@{ DCName=$DC; Service=$svc; Description=$cfg.Description; RealName='N/A'; DisplayName='-'; Status='NotFound'; StartType='N/A' } }
-        }
-        return $res
-    }
-    $data | ForEach-Object { $_ | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force }
-}
-
-function Invoke-DCDiag {
-    param([Parameter(Mandatory)][string]$DC)
-    try { $raw = & dcdiag.exe /s:$DC /v /test:DNS /DnsBasic /DnsForwarders /DnsDelegation /DnsDynamicUpdate /DnsRecordRegistration 2>&1 | Out-String }
-    catch { return @([pscustomobject]@{ DCName=$DC; Category='ALL'; TestName='dcdiag.exe'; PartitionOrScope='-'; Result='ERROR'; ErrorDetails="$_"; RawSnippet='-' }) }
-    if ([string]::IsNullOrWhiteSpace($raw)) { return @([pscustomobject]@{ DCName=$DC; Category='ALL'; TestName='dcdiag.exe'; PartitionOrScope='-'; Result='ERROR'; ErrorDetails='Keine Ausgabe'; RawSnippet='-' }) }
-    $lines = $raw -split "`r?`n"; $results = @()
-    $curCat='Server'; $curScope=$DC; $curTest=$null; $curErr=@()
-    $rxStart='^\s*(?:Starting test|Starttest)\s*:\s*(\S+)'
-    $rxPass='(?:passed test|bestandener Test|Test.*bestanden)\s+(\S+)'
-    $rxFail='(?:failed test|fehlgeschlagener Test|Test.*fehlgeschlagen)\s+(\S+)'
-    $rxPart='(?:Running partition tests on|Partitionstests)\s*:\s*(\S+)'
-    $rxFor='(?:Running enterprise tests on|Unternehmenstests)\s*:\s*(\S+)'
-    $rxSrv='(?:Testing server|Server wird getestet)\s*:\s*(\S+)'
-    foreach ($line in $lines) {
-        if ($line -match $rxSrv)  { $curCat='Server';    $curScope=$Matches[1]; continue }
-        if ($line -match $rxPart) { $curCat='Partition'; $curScope=$Matches[1]; continue }
-        if ($line -match $rxFor)  { $curCat='Forest';    $curScope=$Matches[1]; continue }
-        if ($line -match $rxStart) {
-            if ($curTest) { $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='UNKNOWN'; ErrorDetails=($curErr -join "`n").Trim(); RawSnippet='-' } }
-            $curTest=$Matches[1]; $curErr=@(); continue
-        }
-        if ($line -match $rxPass) { $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$Matches[1]; PartitionOrScope=$curScope; Result='PASSED'; ErrorDetails=''; RawSnippet='' }; $curTest=$null; $curErr=@(); continue }
-        if ($line -match $rxFail) {
-            $n=$Matches[1]; $e=($curErr | Where-Object { $_.Trim() } | Select-Object -First 20) -join "`n"; if (-not $e) { $e=$line.Trim() }
-            $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$n; PartitionOrScope=$curScope; Result='FAILED'; ErrorDetails=$e.Trim(); RawSnippet=$line.Trim() }
-            $curTest=$null; $curErr=@(); continue
-        }
-        if ($line -match '^\s*TEST\s*:\s*(\S+)') { $curTest=$Matches[1]; $curErr=@(); $curCat='DNS'; continue }
-        if ($line -match '^\s*(Passed|Bestanden)\s*:\s*(\S+)') { $results += [pscustomobject]@{ DCName=$DC; Category='DNS'; TestName=$Matches[2]; PartitionOrScope=$curScope; Result='PASSED'; ErrorDetails=''; RawSnippet='' }; $curTest=$null; $curErr=@(); continue }
-        if ($line -match '^\s*(Warning|Warnung)\s*:\s*(.+)' -and $curTest) { $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='WARNING'; ErrorDetails=$Matches[2].Trim(); RawSnippet=$line.Trim() }; $curTest=$null; $curErr=@(); continue }
-        if ($curTest -and $line.Trim() -and $line -notmatch '^\s*\.{3,}\s*$') { $curErr += $line.TrimEnd() }
-    }
-    if ($curTest) { $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='UNKNOWN'; ErrorDetails=($curErr -join "`n").Trim(); RawSnippet='-' } }
-    if (@($results).Count -eq 0) { $results += [pscustomobject]@{ DCName=$DC; Category='ALL'; TestName='(parsed=0)'; PartitionOrScope='-'; Result='UNKNOWN'; ErrorDetails='Nicht parsebar'; RawSnippet=$raw.Substring(0,[math]::Min(500,$raw.Length)) } }
-    $results
-}
-
-function Get-ReplicationPartners {
-    param([Parameter(Mandatory)][string]$DC)
-    Get-ADReplicationPartnerMetadata -Target $DC -Scope Server -ErrorAction Stop |
-        Select-Object Server, Partner, LastReplicationSuccess, LastReplicationResult, ConsecutiveReplicationFailures
-}
-
-function Get-ReplicationFailures {
-    $failures = @()
-    try { $fn = (Get-ADForest -ErrorAction Stop).Name; $failures = Get-ADReplicationFailure -Target $fn -Scope Forest -ErrorAction Stop }
-    catch { try { foreach ($dc in (Get-ADDomainController -Filter * -ErrorAction Stop)) { try { $f = Get-ADReplicationFailure -Target $dc.HostName -Scope Server -ErrorAction Stop; if ($f) { $failures += $f } } catch {} } } catch {} }
-    $failures
-}
-
-function Get-FSMORoles {
-    $f=Get-ADForest -ErrorAction Stop; $d=Get-ADDomain -ErrorAction Stop
-    [pscustomobject]@{ SchemaMaster=$f.SchemaMaster; DomainNamingMaster=$f.DomainNamingMaster; PDCEmulator=$d.PDCEmulator; RIDMaster=$d.RIDMaster; InfrastructureMaster=$d.InfrastructureMaster }
-}
-
-function Get-DNSConfiguration {
-    param([Parameter(Mandatory)][string]$DC)
-    $result = @()
-    foreach ($t in (Get-DnsServerTargets -ComputerName $DC)) {
-        try {
-            $result += @(Get-DnsServerZone @t -ErrorAction Stop |
-                Select-Object @{n='DCName';e={$DC}}, ZoneName, ZoneType, IsDsIntegrated, IsReverseLookupZone, DynamicUpdate)
-            break
-        } catch {}
-    }
-    return $result
-}
-
-function Get-SysvolStatus {
-    param([Parameter(Mandatory)][string]$DC)
-    [pscustomobject]@{ DCName=$DC; SYSVOL_Accessible=Test-Path "\\$DC\SYSVOL"; NETLOGON_Accessible=Test-Path "\\$DC\NETLOGON"; SYSVOL_Path="\\$DC\SYSVOL"; NETLOGON_Path="\\$DC\NETLOGON" }
-}
-
-function Get-NTDSDatabase {
-    param([Parameter(Mandatory)][string]$DC)
-    $sb = {
-        $p = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters' -ErrorAction Stop).'DSA Database file'
-        if (-not $p) { return $null }
-        $f = Get-Item $p -ErrorAction SilentlyContinue
-        if ($f) {
-            $d = Get-PSDrive ($f.PSDrive.Name)
-            [pscustomobject]@{ DBPath=$f.FullName; DBSize_MB=[math]::Round(($f.Length/1MB),2); DriveFree_GB=[math]::Round(($d.Free/1GB),2); DriveUsed_GB=[math]::Round(($d.Used/1GB),2) }
-        }
-    }
-    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
-    if ($data) { $data | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force }
-}
-
-function Get-TLSConfiguration {
-    param([Parameter(Mandatory)][string]$DC)
-    $sb = {
-        $base = 'HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols'
-        $protos = 'SSL 2.0','SSL 3.0','TLS 1.0','TLS 1.1','TLS 1.2','TLS 1.3'
-        $out = @()
-        foreach ($p in $protos) {
-            foreach ($side in 'Client','Server') {
-                $key = Join-Path $base "$p\$side"
-                $ex = Test-Path $key
-                $e = $null; $d = $null; $st = 'NotConfigured'
-                if ($ex) {
-                    $e = (Get-ItemProperty $key -Name Enabled -ErrorAction SilentlyContinue).Enabled
-                    $d = (Get-ItemProperty $key -Name DisabledByDefault -ErrorAction SilentlyContinue).DisabledByDefault
-                    if ($e -eq 0) { $st='Disabled' } elseif ($e -eq 1) { $st='Enabled' } elseif ($d -eq 1) { $st='DisabledByDefault' } else { $st='EnabledByDefault' }
-                }
-                $out += [pscustomobject]@{ Protocol=$p; Side=$side; RegistryKeyExists=$ex; Enabled=$e; DisabledByDefault=$d; State=$st }
-            }
-        }
-        $out
-    }
-    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
-    if ($data) { $data | ForEach-Object { $_ | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force } }
-}
-
-function Get-CipherConfiguration {
-    param([Parameter(Mandatory)][string]$DC)
-    $sb = {
-        $base = 'HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers'
-        if (-not (Test-Path $base)) { return @() }
-        Get-ChildItem $base -ErrorAction SilentlyContinue | ForEach-Object {
-            $p = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
-            [pscustomobject]@{ Cipher=$_.PSChildName; Enabled=$p.Enabled }
-        }
-    }
-    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
-    if ($data) { $data | ForEach-Object { $_ | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force } }
-}
-
-function Get-LDAPSecurity {
-    param([Parameter(Mandatory)][string]$DC)
-    $sb = {
-        $r = [ordered]@{}
-        $n = 'HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters'
-        $si = $null; try { $si = (Get-ItemProperty $n -Name LDAPServerIntegrity -ErrorAction Stop).LDAPServerIntegrity } catch {}
-        $r.LDAPServerIntegrity = $si
-        $r.LDAPServerIntegrity_Meaning = switch ($si) { 0{'None (unsicher!)'} 1{'Negotiate'} 2{'Require - Best Practice'} $null{'NICHT KONFIGURIERT'} default{"Unbekannt ($si)"} }
-        $cb = $null; try { $cb = (Get-ItemProperty $n -Name LdapEnforceChannelBinding -ErrorAction Stop).LdapEnforceChannelBinding } catch {}
-        $r.LdapEnforceChannelBinding = $cb
-        $r.LdapEnforceChannelBinding_Meaning = switch ($cb) { 0{'Disabled (unsicher!)'} 1{'When Supported'} 2{'Always - Best Practice'} $null{'NICHT KONFIGURIERT'} default{"Unbekannt ($cb)"} }
-        $r.LDAPSPortOpen = $null
-        try { $r.LDAPSPortOpen = Test-NetConnection -ComputerName 'localhost' -Port 636 -WarningAction SilentlyContinue -InformationLevel Quiet } catch {}
-        $r.UnsignedLDAPBinds_7d = 0
-        try { $r.UnsignedLDAPBinds_7d = @(Get-WinEvent -FilterHashtable @{ LogName='Directory Service'; ID=2889; StartTime=(Get-Date).AddDays(-7) } -ErrorAction SilentlyContinue).Count } catch {}
-        [pscustomobject]$r
-    }
-    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
-    if (-not $data) { return @([pscustomobject]@{ DCName=$DC; LDAPServerIntegrity=$null; LDAPServerIntegrity_Meaning='(Abfrage fehlgeschlagen)'; LdapEnforceChannelBinding=$null; LdapEnforceChannelBinding_Meaning='-'; LDAPSPortOpen=$null; UnsignedLDAPBinds_7d=$null }) }
-    $data | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force
-}
-
-function Get-PrivilegedAccounts {
-    $result = @()
-    try { $dSid = (Get-ADDomain -ErrorAction Stop).DomainSID.Value } catch { return $result }
-    $g = @(
-        [pscustomobject]@{ DisplayName='Domain Admins'; SID="$dSid-512" }
-        [pscustomobject]@{ DisplayName='Enterprise Admins'; SID="$dSid-519" }
-        [pscustomobject]@{ DisplayName='Schema Admins'; SID="$dSid-518" }
-        [pscustomobject]@{ DisplayName='Group Policy Creator Owners'; SID="$dSid-520" }
-        [pscustomobject]@{ DisplayName='DnsAdmins'; SID=$null; FallbackName='DnsAdmins' }
-        [pscustomobject]@{ DisplayName='Administrators'; SID='S-1-5-32-544' }
-        [pscustomobject]@{ DisplayName='Account Operators'; SID='S-1-5-32-548' }
-        [pscustomobject]@{ DisplayName='Server Operators'; SID='S-1-5-32-549' }
-        [pscustomobject]@{ DisplayName='Print Operators'; SID='S-1-5-32-550' }
-        [pscustomobject]@{ DisplayName='Backup Operators'; SID='S-1-5-32-551' }
-    )
-    foreach ($x in $g) {
-        try {
-            $grp = $null
-            if ($x.SID) { try { $grp = Get-ADGroup -Identity $x.SID -ErrorAction Stop } catch {} }
-            if (-not $grp -and $x.FallbackName) { try { $grp = Get-ADGroup -Identity $x.FallbackName -ErrorAction Stop } catch {} }
-            if (-not $grp) { continue }
-            $mem = @()
-            try { $mem = Get-ADGroupMember -Identity $grp -Recursive -ErrorAction Stop }
-            catch { try { $mem = Get-ADGroupMember -Identity $grp -ErrorAction Stop } catch { continue } }
-            if (@($mem).Count -eq 0) {
-                $result += [pscustomobject]@{ Group=$x.DisplayName; LocalizedName=$grp.Name; MemberName='<leer>'; SamAccountName='-'; ObjectClass='-'; DistinguishedName='-' }
-                continue
-            }
-            foreach ($m in $mem) {
-                $result += [pscustomobject]@{ Group=$x.DisplayName; LocalizedName=$grp.Name; MemberName=$m.Name; SamAccountName=$m.SamAccountName; ObjectClass=$m.objectClass; DistinguishedName=$m.DistinguishedName }
-            }
-        } catch {}
-    }
-    return $result
-}
-
-function Get-PasswordPolicy {
-    $def = Get-ADDefaultDomainPasswordPolicy -ErrorAction Stop
-    $r = @([pscustomobject]@{ Type='Default Domain Policy'; Name='Default'; MinPasswordLength=$def.MinPasswordLength; PasswordHistoryCount=$def.PasswordHistoryCount; MaxPasswordAge=$def.MaxPasswordAge; MinPasswordAge=$def.MinPasswordAge; LockoutThreshold=$def.LockoutThreshold; LockoutDuration=$def.LockoutDuration; ComplexityEnabled=$def.ComplexityEnabled })
-    try {
-        Get-ADFineGrainedPasswordPolicy -Filter * -ErrorAction Stop | ForEach-Object {
-            $r += [pscustomobject]@{ Type='Fine-Grained Policy'; Name=$_.Name; MinPasswordLength=$_.MinPasswordLength; PasswordHistoryCount=$_.PasswordHistoryCount; MaxPasswordAge=$_.MaxPasswordAge; MinPasswordAge=$null; LockoutThreshold=$null; LockoutDuration=$null; ComplexityEnabled=$null }
-        }
-    } catch {}
-    $r
-}
-
-function Get-KerberosInfo {
-    $k = Get-ADUser -Identity krbtgt -Properties PasswordLastSet,PasswordNeverExpires,Enabled -ErrorAction Stop
-    $a = if ($k.PasswordLastSet) { (New-TimeSpan -Start $k.PasswordLastSet -End (Get-Date)).Days } else { $null }
-    [pscustomobject]@{ Account='krbtgt'; PasswordLastSet=$k.PasswordLastSet; PasswordAgeDays=$a; MaxAllowedDays=$Global:KrbtgtMaxAgeDays; NeedsReset=($a -gt $Global:KrbtgtMaxAgeDays); Enabled=$k.Enabled }
-}
-
-function Get-SecureBootStatus {
-    param([Parameter(Mandatory)][string]$DC)
-    $sb = {
-        $fw = 'Unknown'
-        try { $f = (Get-ComputerInfo -Property BiosFirmwareType -ErrorAction Stop).BiosFirmwareType; if ($f) { $fw="$f" } }
-        catch { $ef = [System.Environment]::GetEnvironmentVariable('firmware_type'); if ($ef) { $fw=$ef } }
-        $sbEn = 'Unknown'
-        try { $sbEn = if (Confirm-SecureBootUEFI -ErrorAction Stop) { 'Enabled' } else { 'Disabled' } }
-        catch { if ($_.Exception.Message -match 'not supported|nicht unterstuetzt|Cmdlet wird') { $sbEn='NotSupported' } else { $sbEn='Error' } }
-        $regBase = 'HKLM:\SYSTEM\CurrentControlSet\Control\SecureBoot'
-        $au=$null; $auSet=$false
-        try { $p = Get-ItemProperty $regBase -Name AvailableUpdates -ErrorAction Stop; $au=$p.AvailableUpdates; $auSet=$true } catch {}
-        $auHex = if ($null -ne $au) { ('0x{0:X}' -f $au) } else { '(nicht gesetzt)' }
-        $wc=$null; $us=$null; $ue=$null
-        try {
-            $s = Get-ItemProperty (Join-Path $regBase 'Servicing') -ErrorAction Stop
-            if ($s.PSObject.Properties.Name -contains 'WindowsUEFICA2023Capable') { $wc = [int]$s.WindowsUEFICA2023Capable }
-            if ($s.PSObject.Properties.Name -contains 'UEFICA2023Status') { $us = "$($s.UEFICA2023Status)" }
-            if ($s.PSObject.Properties.Name -contains 'UEFICA2023Error')  { $ue = $s.UEFICA2023Error }
-        } catch {}
-        if (-not $us) { $us = '(nicht gesetzt)' }
-        $h2023=$false; $k2023=$false
-        try { $db = Get-SecureBootUEFI -Name db -ErrorAction Stop; if ($db -and $db.bytes) { $h2023 = [System.Text.Encoding]::ASCII.GetString($db.bytes) -match 'Windows UEFI CA 2023' } } catch {}
-        try { $kek = Get-SecureBootUEFI -Name KEK -ErrorAction Stop; if ($kek -and $kek.bytes) { $k2023 = [System.Text.Encoding]::ASCII.GetString($kek.bytes) -match 'Microsoft Corporation KEK (2K )?CA 2023' } } catch {}
-        $lastSucc=$null; $lastFail=$null; $lastFailMsg=''
-        try {
-            $ev = Get-WinEvent -FilterHashtable @{ LogName='System'; ProviderName='Microsoft-Windows-TPM-WMI'; Id=1796,1798,1801,1808 } -MaxEvents 10 -ErrorAction SilentlyContinue
-            foreach ($e in $ev) {
-                if ($e.Id -in 1796,1798,1808) { if (-not $lastSucc -or $e.TimeCreated -gt $lastSucc) { $lastSucc=$e.TimeCreated } }
-                if ($e.Id -eq 1801)           { if (-not $lastFail -or $e.TimeCreated -gt $lastFail) { $lastFail=$e.TimeCreated; $lastFailMsg=($e.Message -split "`n")[0] } }
-            }
-        } catch {}
-        $status='UNKNOWN'; $detail=''
-        if ($sbEn -match 'Disabled|NotSupported') { $status='NOT_APPLICABLE'; $detail='Secure Boot nicht aktiv' }
-        elseif ($us -match 'Updated' -or ($h2023 -and $k2023)) { $status='SUCCESS'; $detail = if ($lastSucc) { "Erfolgreich am $lastSucc (UEFI CA 2023 + KEK CA 2023)" } else { "UEFI CA 2023 in DB/KEK vorhanden" } }
-        elseif ($us -match 'In Progress|InProgress') { $status='IN_PROGRESS'; $detail="Update laeuft" }
-        elseif ($lastFail -and -not $h2023) { $status='FAILED'; $detail="Letzter Versuch $lastFail fehlgeschlagen: $lastFailMsg" }
-        elseif (($null -ne $ue) -and ($ue -ne 0) -and -not $h2023) { $status='FAILED'; $detail=("Registry-Fehler UEFICA2023Error=0x{0:X}" -f $ue) }
-        elseif ($auSet -and $au -gt 0) { $status='PENDING'; $detail="AvailableUpdates=$auHex gesetzt - wartet auf Reboot" }
-        elseif ($us -match 'Not Started|NotStarted' -or ($wc -eq 1 -and -not $auSet)) { $status='NOT_STARTED'; $detail="Registry 'AvailableUpdates' nicht gesetzt" }
-        elseif ($wc -eq 0) { $status='NOT_CAPABLE'; $detail="Geraet NICHT faehig - Firmware-Update pruefen" }
-        else { $status='UNKNOWN'; $detail="Capable=$wc, Status='$us', AU=$auHex, DB2023=$h2023, KEK2023=$k2023" }
-        $residual = ''
-        if ($status -eq 'SUCCESS' -and $auSet -and $au -gt 0) {
-            $bits = @()
-            if ($au -band 0x10) { $bits += 'BootMgr' }; if ($au -band 0x40) { $bits += 'DB' }; if ($au -band 0x100) { $bits += 'DBX' }
-            if ($au -band 0x400) { $bits += 'KEK' }; if ($au -band 0x1000) { $bits += 'PCA2011-Revoke' }
-            if ($au -band 0x2000) { $bits += 'BootMgr-Revoke' }; if ($au -band 0x4000) { $bits += 'DBX-SVN' }
-            $residual = $bits -join ','
-            $detail += " | Hinweis: Registry-Bit(s) [$residual] noch offen - Reboot empfohlen"
-        }
-        [pscustomobject]@{
-            SecureBoot=$sbEn; UpdateStatus=$status; Registry_AvailableUpdates=$auHex
-            Registry_UEFICA2023Status=$us; Detail=$detail
-            _Firmware=$fw; _ResidualBits=$residual
-        }
-    }
-    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
-    if (-not $data) { return @([pscustomobject]@{ DCName=$DC; UpdateStatus='UNKNOWN'; SecureBoot='-'; Registry_AvailableUpdates='-'; Registry_UEFICA2023Status='-'; Detail='Abfrage fehlgeschlagen' }) }
-    [pscustomobject]@{
-        DCName=$DC; UpdateStatus=$data.UpdateStatus; SecureBoot=$data.SecureBoot
-        Registry_AvailableUpdates=$data.Registry_AvailableUpdates
-        Registry_UEFICA2023Status=$data.Registry_UEFICA2023Status; Detail=$data.Detail
-        _Firmware=$data._Firmware; _ResidualBits=$data._ResidualBits
-    }
-}
-
-function Get-DCCertificates {
-    param([Parameter(Mandatory)][string]$DC)
-    $sb = {
-        param($wd)
-        $out = @()
-        foreach ($st in 'Cert:\LocalMachine\My','Cert:\LocalMachine\WebHosting') {
-            try {
-                foreach ($c in (Get-ChildItem -Path $st -ErrorAction SilentlyContinue)) {
-                    $out += [pscustomobject]@{ Store=$st; Subject=$c.Subject; Issuer=$c.Issuer; Thumbprint=$c.Thumbprint; NotBefore=$c.NotBefore; NotAfter=$c.NotAfter; DaysToExpiry=[int]($c.NotAfter - (Get-Date)).TotalDays; IsExpiringSoon=($c.NotAfter - (Get-Date)).TotalDays -le $wd; HasPrivateKey=$c.HasPrivateKey; EnhancedKeyUsage=($c.EnhancedKeyUsageList | ForEach-Object { $_.FriendlyName }) -join '; ' }
-                }
-            } catch {}
-        }
-        if (@($out).Count -eq 0) { $out += [pscustomobject]@{ Store='Cert:\LocalMachine\My'; Subject='(keine Zertifikate)'; Issuer='-'; Thumbprint='-'; NotBefore=$null; NotAfter=$null; DaysToExpiry=$null; IsExpiringSoon=$false; HasPrivateKey=$false; EnhancedKeyUsage='-' } }
-        $out
-    }
-    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb -ArgumentList $Global:CertExpiryWarnDays
-    if (-not $data) { $data = @([pscustomobject]@{ Store='N/A'; Subject='(Abfrage fehlgeschlagen)'; Issuer='-'; Thumbprint='-'; NotBefore=$null; NotAfter=$null; DaysToExpiry=$null; IsExpiringSoon=$false; HasPrivateKey=$false; EnhancedKeyUsage='-' }) }
-    $data | ForEach-Object { $_ | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force }
-}
-
-function Get-ADSitesInfo { Get-ADReplicationSite -Filter * -Properties * -ErrorAction Stop | Select-Object Name, Description, Location, whenCreated, whenChanged }
-function Get-ADSubnetsInfo { Get-ADReplicationSubnet -Filter * -Properties * -ErrorAction Stop | Select-Object Name, Site, Description, Location, whenCreated }
-function Get-ADTrusts { Get-ADTrust -Filter * -ErrorAction Stop | Select-Object Name, Source, Target, Direction, TrustType, ForestTransitive, IntraForest, whenCreated }
-
-function Get-ADLevels {
-    $f=Get-ADForest -ErrorAction Stop; $d=Get-ADDomain -ErrorAction Stop
-    [pscustomobject]@{ ForestName=$f.Name; ForestMode=$f.ForestMode; DomainName=$d.DNSRoot; DomainMode=$d.DomainMode; SchemaMaster=$f.SchemaMaster; DomainController=($d.ReplicaDirectoryServers -join ', ') }
-}
-
-function Get-GPOHealth {
-    Get-GPO -All -ErrorAction Stop | ForEach-Object {
-        [pscustomobject]@{ DisplayName=$_.DisplayName; Id=$_.Id; GpoStatus=$_.GpoStatus; CreationTime=$_.CreationTime; ModificationTime=$_.ModificationTime; Owner=$_.Owner; UserVersion_DS=$_.User.DSVersion; UserVersion_Sys=$_.User.SysvolVersion; CompVersion_DS=$_.Computer.DSVersion; CompVersion_Sys=$_.Computer.SysvolVersion }
-    }
-}
-
-function Get-InactiveAccounts {
-    $d = [ordered]@{ InactiveUsers=@(); InactiveComputers=@(); PasswordNeverExpires=@() }
-    $cu=(Get-Date).AddDays(-$Global:InactiveDaysUser); $cc=(Get-Date).AddDays(-$Global:InactiveDaysComputer)
-    try { $d.InactiveUsers = @(Get-ADUser -Filter { LastLogonDate -lt $cu -and Enabled -eq $true } -Properties LastLogonDate,PasswordLastSet -ErrorAction Stop | Select-Object SamAccountName,Name,Enabled,LastLogonDate,PasswordLastSet,DistinguishedName) } catch {}
-    try { $d.InactiveComputers = @(Get-ADComputer -Filter { LastLogonDate -lt $cc -and Enabled -eq $true } -Properties LastLogonDate,OperatingSystem -ErrorAction Stop | Select-Object Name,Enabled,LastLogonDate,OperatingSystem,DistinguishedName) } catch {}
-    try { $d.PasswordNeverExpires = @(Get-ADUser -Filter { PasswordNeverExpires -eq $true -and Enabled -eq $true } -Properties PasswordNeverExpires,PasswordLastSet -ErrorAction Stop | Select-Object SamAccountName,Name,PasswordLastSet,DistinguishedName) } catch {}
-    [pscustomobject]$d
-}
-
-function Get-DCEventLog {
-    param([Parameter(Mandatory)][string]$DC)
-    $since = (Get-Date).AddHours(-$Global:EventLogHours)
-    $all = @()
-    foreach ($log in 'System','Directory Service','DNS Server') {
-        try {
-            $ev = Get-WinEvent -ComputerName $DC -FilterHashtable @{ LogName=$log; Level=1,2; StartTime=$since } -MaxEvents 50 -ErrorAction Stop
-            foreach ($e in $ev) {
-                $all += [pscustomobject]@{ DCName=$DC; LogName=$log; TimeCreated=$e.TimeCreated; Level=$e.LevelDisplayName; EventID=$e.Id; Provider=$e.ProviderName; Message=($e.Message -split "`n")[0] }
-            }
-        } catch {}
-    }
-    $all
-}
-
-function Get-TimeSyncStatus {
-    param([Parameter(Mandatory)][string]$DC, [string]$PDCEmulator='')
-    $sb = {
-        $sR = & w32tm /query /status /verbose 2>&1 | Out-String
-        $cR = & w32tm /query /configuration  2>&1 | Out-String
-        $srcR = & w32tm /query /source 2>&1 | Out-String
-        $src = ($srcR -split "`r?`n" | Where-Object { $_.Trim() -and $_ -notmatch '^Die Abfrage|^The following|^$' } | Select-Object -First 1).Trim()
-        $strat=$null; if ($sR -match 'Stratum\s*:\s*(\d+)') { $strat=[int]$Matches[1] }
-        $ls=$null; $m=[regex]::Match($sR,'(?:Last Successful Sync Time|Letzte erfolgr\.? Synchronisierungszeit|Letzte erfolgreiche Synchronisierungszeit)\s*:\s*(.+)'); if ($m.Success) { $ls=$m.Groups[1].Value.Trim() }
-        $type=$null; $m=[regex]::Match($cR,'(?:^|\s)Type:\s*([^\r\n]+)'); if ($m.Success) { $type=$m.Groups[1].Value.Trim() }
-        $ntp=$null; $m=[regex]::Match($cR,'NtpServer:\s*([^\r\n]+)'); if ($m.Success) { $ntp=$m.Groups[1].Value.Trim() }
-
-        # Referenz-ID: "LOCL" heisst lokale Uhr, alles andere ist eine echte Referenz
-        # (deutsche Ausgabe: 0x4C4F434C (Quellname:  "LOCL"))
-        $refId=$null
-        $m=[regex]::Match($sR,'(?:Reference ID|Referenz-ID)\s*:\s*(0x[0-9A-Fa-f]+)(?:\s*\(([^)]*)\))?')
-        if ($m.Success) {
-            $raw = $m.Groups[2].Value.Trim()
-            $q = [regex]::Match($raw,'"([^"]+)"')
-            if ($q.Success) { $refId = $q.Groups[1].Value }
-            elseif ($raw)   { $refId = $raw }
-            else            { $refId = $m.Groups[1].Value }
-        }
-
-        # 0 = kein Fehler, 1 = keine Zeitdaten verfuegbar, 2.. = Peer-/Zugriffsfehler
-        $lsErr=$null
-        $m=[regex]::Match($sR,'(?:Last Sync Error|Letzter Synchronisierungsfehler)\s*:\s*(\d+)')
-        if ($m.Success) { $lsErr=[int]$m.Groups[1].Value }
-
-        # Peer-Liste: Aktiv/Active = Peer antwortet, Ausstehend/Pending = keine Antwort
-        $pR = & w32tm /query /peers 2>&1 | Out-String
-        $peer=$null;        $m=[regex]::Match($pR,'(?m)^\s*Peer:\s*(\S+)');   if ($m.Success) { $peer=$m.Groups[1].Value.Trim() }
-        $peerStatus=$null;  $m=[regex]::Match($pR,'(?m)^\s*Status:\s*([^\r\n]+)'); if ($m.Success) { $peerStatus=$m.Groups[1].Value.Trim() }
-
-        # Nur im Fehlerfall: NTP-Peer direkt ansprechen (wie w32tm /stripchart) und die
-        # letzten Time-Service-Ereignisse mitnehmen. Ein Timeout belegt, dass der Peer
-        # nicht antwortet - dann ist die lokale Uhr die Ursache, nicht die Konfiguration.
-        $probe='-'; $evIds=''
-        if ($src -match 'Local CMOS Clock|Lokale CMOS-Uhr|Free-running') {
-            $peerHost = if ($peer) { ($peer -split ',')[0].Trim() }
-                        elseif ($ntp) { (($ntp -split ',')[0] -split '\s+')[0].Trim() }
-                        else { '' }
-            if ($peerHost) {
-                $scR = & w32tm /stripchart /computer:$peerHost /samples:1 /dataonly 2>&1 | Out-String
-                if ($scR -match '0x([0-9A-Fa-f]{8})') { $probe = "Fehler 0x$($Matches[1])" }
-                elseif ($scR -match ',\s*d:\s*[+-]?\d') { $probe = 'Antwort' }
-                else { $probe = 'keine Antwort' }
-            }
-            try {
-                $ev = @(Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Time-Service'; StartTime=(Get-Date).AddDays(-3)} -MaxEvents 10 -ErrorAction Stop)
-                $evIds = (@($ev | ForEach-Object { $_.Id }) | Sort-Object -Unique) -join ','
-            } catch { $evIds = 'nicht lesbar' }
-        }
-
-        [pscustomobject]@{ Source=$src; Stratum=$strat; LastSyncTime=$ls; ConfiguredType=$type; ConfiguredNtpSrv=$ntp
-            RefId=$refId; LastSyncError=$lsErr; Peer=$peer; PeerStatus=$peerStatus; PeerProbe=$probe; TimeEvents=$evIds }
-    }
-    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
-    if (-not $data) { return }
-    $isPDC = ($DC -ieq $PDCEmulator -or $DC -ilike "$PDCEmulator*" -or $PDCEmulator -ilike "$DC*")
-    $sk='Unknown'
-    if     ($data.Source -match 'Local CMOS Clock|Lokale CMOS-Uhr') { $sk='LocalClock' }
-    elseif ($data.Source -match 'Free-running') { $sk='FreeRunning' }
-    elseif ($data.Source -match 'VM IC Time Provider') { $sk='HyperVHost' }
-    elseif ($data.Source -match '^[\w\.\-]+$') { $sk='Server' }
-    # Felder mit "_" werden im Report nicht als Spalte angezeigt, stehen aber der Bewertung zur Verfuegung
-    [pscustomobject]@{ DCName=$DC; IsPDCEmulator=$isPDC; Source=$data.Source; SourceKind=$sk; Stratum=$data.Stratum
-        LastSyncTime=$data.LastSyncTime; ConfiguredType=$data.ConfiguredType; ConfiguredNtpSrv=$data.ConfiguredNtpSrv
-        PeerStatus=$data.PeerStatus; PeerProbe=$data.PeerProbe
-        _Peer=$data.Peer; _RefId=$data.RefId; _LastSyncError=$data.LastSyncError; _TimeEvents=$data.TimeEvents }
-}
-
-function Get-ADBackupStatus {
-    $dom = (Get-ADDomain -ErrorAction Stop).DistinguishedName
-    $raw = & repadmin /showbackup $dom 2>&1 | Out-String
-    $lb = $null; if ($raw -match 'dSASignature.*:\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})') { $lb = [datetime]$Matches[1] }
-    $a = if ($lb) { (New-TimeSpan -Start $lb -End (Get-Date)).Days } else { $null }
-    [pscustomobject]@{ LastBackup=$lb; AgeDays=$a; MaxAllowedDays=$Global:BackupMaxAgeDays; BackupOverdue=($a -gt $Global:BackupMaxAgeDays); RawOutput=($raw -split "`n" | Select-Object -First 20) -join "`n" }
-}
-
-function Get-InstalledPrograms {
-    param([Parameter(Mandatory)][string]$DC)
-    $sb = {
-        $keys = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')
-        $out = @()
-        foreach ($k in $keys) {
-            try {
-                Get-ItemProperty -Path $k -ErrorAction SilentlyContinue | ForEach-Object {
-                    if ($_.DisplayName) {
-                        $id = $null
-                        if ($_.InstallDate -and $_.InstallDate -match '^\d{8}$') { try { $id = [datetime]::ParseExact($_.InstallDate,'yyyyMMdd',$null) } catch {} }
-                        $out += [pscustomobject]@{ DisplayName=$_.DisplayName; DisplayVersion=$_.DisplayVersion; Publisher=$_.Publisher; InstallDate=$id; InstallLocation=$_.InstallLocation; EstimatedSizeMB=if ($_.EstimatedSize) { [math]::Round(($_.EstimatedSize/1024),2) } else { $null }; Architecture=if ($k -match 'Wow6432Node') { 'x86' } else { 'x64' } }
-                    }
-                }
-            } catch {}
-        }
-        $out | Sort-Object -Property InstallDate -Descending
-    }
-    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
-    if ($data) { $data | ForEach-Object { $_ | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force } }
-}
-
-function Get-WindowsUpdates {
-    param([Parameter(Mandatory)][string]$DC)
-    $sb = {
-        try {
-            Get-HotFix -ErrorAction Stop | Where-Object { $_.InstalledOn } | Sort-Object InstalledOn -Descending | Select-Object -First 20 |
-                Select-Object HotFixID, Description, InstalledOn, InstalledBy, @{n='DaysAgo';e={ [int](New-TimeSpan -Start $_.InstalledOn -End (Get-Date)).TotalDays }}
-        } catch {
-            Get-CimInstance -ClassName Win32_QuickFixEngineering -ErrorAction SilentlyContinue | Where-Object { $_.InstalledOn } | Sort-Object InstalledOn -Descending | Select-Object -First 20 |
-                Select-Object @{n='HotFixID';e={$_.HotFixID}}, Description, InstalledOn, InstalledBy, @{n='DaysAgo';e={ [int](New-TimeSpan -Start $_.InstalledOn -End (Get-Date)).TotalDays }}
-        }
-    }
-    $data = Invoke-RemoteCommand -ComputerName $DC -ScriptBlock $sb
-    if (-not $data) { return @([pscustomobject]@{ DCName=$DC; HotFixID='(keine Daten)'; Description='-'; InstalledOn=$null; InstalledBy='-'; DaysAgo=$null }) }
-    $data | ForEach-Object { $_ | Add-Member -NotePropertyName DCName -NotePropertyValue $DC -PassThru -Force }
-}
 
 function Get-WindowsFeatures {
     <#
@@ -9163,7 +8462,7 @@ function Test-Check-Services {
 function Test-Check-DCDiag {
     param($data); if (-not $data -or @($data).Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
     $ct=@('Connectivity','Replications','NetLogons','Advertising','Services','Systemlog','RidManager','MachineAccount','KnowsOfRoleHolders','ObjectsReplicated','FsmoCheck','Basic','RecordRegistrations','Delegations','Forwarders','DnsBasic','Intersite')
-    $f=@(); $rf=@{}; $c=$false; $w=$false; $p=0; $fl=0
+    $f=@(); $rf=@{}; $c=$false; $w=$false; $p=0; $fl=0; $wr=0; $un=0
     foreach ($r in $data) {
         $id="$($r.DCName)|$($r.Category)|$($r.PartitionOrScope)|$($r.TestName)"
         switch ($r.Result) {
@@ -9174,13 +8473,22 @@ function Test-Check-DCDiag {
                 if ($r.TestName -in $ct -or $r.TestName -match 'Dns|DNS') { $f += "[$($r.DCName)] KRIT: $($r.TestName) FAILED -> $es"; $rf[$id]='CRITICAL'; $c=$true }
                 else { $f += "[$($r.DCName)] WARN: $($r.TestName) -> $es"; $rf[$id]='WARN'; $w=$true }
             }
-            'WARNING' { $rf[$id]='WARN'; $w=$true; $f += "[$($r.DCName)] Warnung $($r.TestName)" }
-            'UNKNOWN' { $rf[$id]='WARN' }
-            default   { $rf[$id]='WARN' }
+            'WARNING' { $wr++; $rf[$id]='WARN'; $w=$true; $f += "[$($r.DCName)] WARN: $($r.TestName) -> $($r.ErrorDetails)" }
+            'UNKNOWN' { $un++; $rf[$id]='WARN'; $w=$true; $f += "[$($r.DCName)] WARN: $($r.TestName) - $($r.ErrorDetails)" }
+            default   { $un++; $rf[$id]='WARN'; $w=$true }
         }
     }
     $s = if ($c) { 'CRITICAL' } elseif ($w) { 'WARN' } else { 'OK' }
-    New-Assessment -OverallStatus $s -Summary $(if($s -eq 'OK'){"Alle $p Tests OK"}else{"$p OK | $fl FAILED"}) -Findings $f -RowFlags $rf
+    # Die Zusammenfassung muss auch Warnungen und unklare Zeilen nennen - sonst
+    # steht bei einem reinen Warnlauf "0 OK | 0 FAILED" im Report.
+    $summary = if ($s -eq 'OK') { "Alle $p Tests OK" } else {
+        $parts = @("$p OK")
+        if ($fl) { $parts += "$fl FAILED" }
+        if ($wr) { $parts += "$wr WARN" }
+        if ($un) { $parts += "$un unklar" }
+        $parts -join ' | '
+    }
+    New-Assessment -OverallStatus $s -Summary $summary -Findings $f -RowFlags $rf
 }
 
 function Test-Check-Replication {

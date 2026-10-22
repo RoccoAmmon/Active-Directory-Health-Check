@@ -9,6 +9,19 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [Unreleased]
+
+#### Behoben
+- **DCDiag-Ergebnisse auf deutschen Systemen falsch bewertet** – Die Ergebniszeile lautet dort „… hat den Test Connectivity bestanden", der Parser erwartete den Testnamen aber hinter „bestanden". Folge: Connectivity, DNS und DNS-Detailtests erschienen als Warnung, die Zusammenfassung zeigte „0 OK | 0 FAILED", obwohl dcdiag alles bestanden hatte
+  - Neue Muster für „hat den Test X bestanden" / „… nicht bestanden" sowie für die englischen Varianten
+  - „Test durch Benutzeranforderung ausgelassen: …" landet nicht mehr im Fehlertext
+  - DNS-Detailtests (`TEST: …`) ohne eigenes Ergebnis werden nicht mehr als Warnung geführt; ihr Ergebnis steckt im Gesamttest „DNS"
+  - Die Zusammenfassung nennt jetzt Warnungen und unklare Zeilen, statt nur „x OK | y FAILED" zu zeigen
+
+#### Aufgeräumt
+- Der komplette HELPER-Block (39 Funktionen, u. a. `Invoke-DCDiag` und `Get-TimeSyncStatus`) lag doppelt in der Datei; die zweite Kopie wurde entfernt, `Get-WindowsFeatures` daraus bleibt erhalten
+- Neues Testskript `test-03-dcdiag.ps1` (deutsche und englische Ausgabe, Warnungen, abgebrochene Tests, Zusammenfassung, Duplikatprüfung)
+
 ### [2.14.1] - 2026-10-22
 
 #### Behoben
@@ -356,6 +369,19 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [Unreleased]
+
+#### Fixed
+- **DCDiag results were misjudged on German systems** – the result line reads "… hat den Test Connectivity bestanden", but the parser expected the test name after "bestanden". As a result, Connectivity, DNS and the DNS sub-tests were reported as warnings and the summary showed "0 OK | 0 FAILED" although dcdiag had passed everything
+  - New patterns for "hat den Test X bestanden" / "… nicht bestanden" and the English variants
+  - "Test durch Benutzeranforderung ausgelassen: …" no longer ends up in the error text
+  - DNS sub-tests (`TEST: …`) without their own result are no longer reported as warnings; their result is covered by the overall "DNS" test
+  - The summary now lists warnings and unclear rows instead of only "x OK | y FAILED"
+
+#### Cleanup
+- The entire HELPER block (39 functions, including `Invoke-DCDiag` and `Get-TimeSyncStatus`) existed twice in the file; the second copy was removed, `Get-WindowsFeatures` from it is preserved
+- New test script `test-03-dcdiag.ps1` (German and English output, warnings, aborted tests, summary, duplicate check)
 
 ### [2.14.1] - 2026-10-22
 
