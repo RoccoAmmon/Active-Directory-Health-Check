@@ -1,9 +1,9 @@
-﻿# 🛡️ Active Directory Health Check v2.14
+﻿# 🛡️ Active Directory Health Check v2.14.1
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.14-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.14.1-brightgreen.svg)]()
 [![Checks](https://img.shields.io/badge/Checks-74-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
@@ -300,7 +300,12 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.14 (aktuell)
+### v2.14.1 (aktuell)
+- **Behoben:** Wurde im Auswahlfenster ein eigener Ausgabepfad gewählt, wurden die Verzeichnisse nur unter dem Standardpfad angelegt – der HTML-Report brach mit „Could not find a part of the path" ab. Die Ordner werden jetzt nach der Pfadübernahme angelegt; scheitert das (Rechte, Laufwerk, OneDrive), wird auf `C:\AD_Health_Check_Log` zurückgefallen und der Grund ausgegeben
+- `New-HtmlReport` und der CSV-Export stellen ihren Zielordner zusätzlich selbst sicher und melden Schreibfehler mit Zielpfad statt nur mit der Exception
+- Neues Testskript `test-reportpfad.ps1`; Version 2.14.1 (74 nummerierte Checks, zusätzlich die Teilprüfungen 04b, 32a–c und 55b)
+
+### v2.14
 - **Behoben (Check 34):** `LastSyncTime` wurde auf deutschen Systemen nie gelesen (Label „Letzte erfolgr. Synchronisierungszeit"). Nutzt der PDC die lokale Uhr, wird die konfigurierte NTP-Gegenstelle jetzt wie mit `w32tm /stripchart` angesprochen; ein Timeout (`0x800705B4`) belegt „antwortet nicht". Peer-Status, letzter Fehlercode und Time-Service-Ereignisse stehen im Befund
 - **Check 34 trennt drei Fälle:** keine NTP-Quelle konfiguriert (CRITICAL) / Quelle konfiguriert, antwortet nicht (CRITICAL) / Quelle antwortet, erster Sync steht aus (WARN). Ein Nicht-PDC ohne Sync erbt die Ursache des PDC (INFO) statt eines zweiten CRITICAL
 - **Behoben (Check 55):** „Kein CSVLK installiert - SRV-Eintrag vermutlich veraltet" war eine unbelegte Vermutung. Neue Spalte `ZielIP` löst das SRV-Ziel auf und gleicht es mit den DC-Adressen ab – zeigt ein alter Name auf einen aktuellen DC, ist der SRV-Eintrag veraltet
@@ -695,7 +700,12 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.14 (current)
+### v2.14.1 (current)
+- **Fixed:** If a custom output path was selected in the GUI, the directories were only created under the default path and the HTML report failed with "Could not find a part of the path". The folders are now created after the path is applied; if that fails (permissions, drive, OneDrive), the script falls back to `C:\AD_Health_Check_Log` and prints the reason
+- `New-HtmlReport` and the CSV export additionally ensure their target folder themselves and report write errors with the target path instead of the bare exception
+- New test script `test-reportpfad.ps1`; version 2.14.1 (74 numbered checks, plus sub-checks 04b, 32a–c and 55b)
+
+### v2.14
 - **Fixed (check 34):** `LastSyncTime` was never read on German systems (label "Letzte erfolgr. Synchronisierungszeit"). If the PDC uses the local clock, the configured NTP peer is now probed like `w32tm /stripchart`; a timeout (`0x800705B4`) proves "does not respond". Peer status, last error code and time service events are part of the finding
 - **Check 34 separates three cases:** no NTP source configured (CRITICAL) / source configured but not answering (CRITICAL) / source answers, first sync pending (WARN). A non-PDC without sync inherits the PDC root cause (INFO) instead of a second CRITICAL
 - **Fixed (check 55):** "No CSVLK installed - SRV record probably stale" was an unproven assumption. The new `ZielIP` column resolves the SRV target and compares it with the DC addresses – if an old name points to a current DC, the SRV record is stale

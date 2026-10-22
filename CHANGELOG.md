@@ -9,7 +9,7 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
-### [Unreleased]
+### [2.14.1] - 2026-10-22
 
 #### Behoben
 - **HTML-Report: „Could not find a part of the path" bei eigenem Ausgabepfad aus der GUI**
@@ -19,6 +19,9 @@ All notable changes to this project are documented here.
 
 #### Hinzugefügt
 - Neues Testskript `test-reportpfad.ps1` in die Test-Suite aufgenommen (verschachtelter Pfad mit Leerzeichen, Pfadwechsel nach dem Start, Schreibbarkeit von Report und CSV)
+
+#### Version
+- Version auf 2.14.1 erhöht (Bugfix-Release); Skript-Header, README und Wiki angeglichen
 
 ### [2.14] - 2026-10-20
 
@@ -350,7 +353,7 @@ All notable changes to this project are documented here.
 
 ## 🇬🇧 English
 
-### [Unreleased]
+### [2.14.1] - 2026-10-22
 
 #### Fixed
 - **HTML report: "Could not find a part of the path" when using a custom output path from the GUI**
@@ -360,6 +363,9 @@ All notable changes to this project are documented here.
 
 #### Added
 - New test script `test-reportpfad.ps1` added to the test suite (nested path with spaces, path switch after start, write access for report and CSV)
+
+#### Version
+- Version bumped to 2.14.1 (bugfix release); script header, README and wiki aligned
 
 ### [2.14] - 2026-10-20
 
