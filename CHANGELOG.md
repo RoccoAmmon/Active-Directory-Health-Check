@@ -17,6 +17,11 @@ All notable changes to this project are documented here.
   - „Test durch Benutzeranforderung ausgelassen: …" landet nicht mehr im Fehlertext
   - DNS-Detailtests (`TEST: …`) ohne eigenes Ergebnis werden nicht mehr als Warnung geführt; ihr Ergebnis steckt im Gesamttest „DNS"
   - Die Zusammenfassung nennt jetzt Warnungen und unklare Zeilen, statt nur „x OK | y FAILED" zu zeigen
+- **DCDiag-Ausgabe wurde bei 80 Zeichen umgebrochen** – `Out-String` formatierte die dcdiag-Ausgabe und zerriss lange Ergebniszeilen mitten im Satz. Ergebnis: „… hat den Test Connectivity" und „bestanden." landeten in getrennten Zeilen, der Test blieb „unklar". Die Ausgabe wird jetzt unverändert zusammengeführt
+- **„Der Test SystemLog für … ist fehlgeschlagen"** wurde nicht als Fehler erkannt; die deutsche Fehlschlag-Formulierung ist jetzt ein eigenes Muster (der Test heißt dort nicht „Systemlog", sondern „SystemLog")
+- **Einrückung** – `Server wird getestet:`, `Partitionstests werden ausgeführt auf:` und `Unternehmenstests werden ausgeführt auf:` sind eingerückt und wurden deshalb nicht erkannt; Bereich und Partition waren falsch
+- **Eine Zeile pro dcdiag-Test** – Der Detailbereich zeigt je Test eine Zeile mit DC, Test, Bereich, Ergebnis (OK/FAILED/WARN/unklar) und Details; die früheren Rohspalten `Category` und `RawSnippet` entfallen
+- **Fehlerdetails gekürzt** – Statt der kompletten dcdiag-Ausgabe in einer Tabellenzelle erscheinen höchstens drei Zeilen mit je 160 Zeichen
 
 #### Aufgeräumt
 - Der komplette HELPER-Block (39 Funktionen, u. a. `Invoke-DCDiag` und `Get-TimeSyncStatus`) lag doppelt in der Datei; die zweite Kopie wurde entfernt, `Get-WindowsFeatures` daraus bleibt erhalten
@@ -378,6 +383,11 @@ All notable changes to this project are documented here.
   - "Test durch Benutzeranforderung ausgelassen: …" no longer ends up in the error text
   - DNS sub-tests (`TEST: …`) without their own result are no longer reported as warnings; their result is covered by the overall "DNS" test
   - The summary now lists warnings and unclear rows instead of only "x OK | y FAILED"
+- **DCDiag output was wrapped at 80 characters** – `Out-String` formatted the dcdiag output and split long result lines mid-sentence. As a result, "… hat den Test Connectivity" and "bestanden." ended up on separate lines and the test stayed "unclear". The output is now joined without reformatting
+- **"Der Test SystemLog für … ist fehlgeschlagen"** was not recognised as a failure; the German failure wording is now its own pattern (the test is named "SystemLog", not "Systemlog")
+- **Indentation** – `Server wird getestet:`, `Partitionstests werden ausgeführt auf:` and `Unternehmenstests werden ausgeführt auf:` are indented and were therefore missed; scope and partition were wrong
+- **One row per dcdiag test** – The detail section now shows one row per test with DC, test, scope, result (OK/FAILED/WARN/unclear) and details; the former raw columns `Category` and `RawSnippet` are gone
+- **Shortened details** – Instead of the complete dcdiag output in a single table cell, at most three lines of 160 characters are shown
 
 #### Cleanup
 - The entire HELPER block (39 functions, including `Invoke-DCDiag` and `Get-TimeSyncStatus`) existed twice in the file; the second copy was removed, `Get-WindowsFeatures` from it is preserved

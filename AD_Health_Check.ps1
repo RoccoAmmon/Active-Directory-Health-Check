@@ -2711,7 +2711,10 @@ function Get-DCServiceStatus {
 
 function Invoke-DCDiag {
     param([Parameter(Mandatory)][string]$DC)
-    try { $raw = & dcdiag.exe /s:$DC /v /test:DNS /DnsBasic /DnsForwarders /DnsDelegation /DnsDynamicUpdate /DnsRecordRegistration 2>&1 | Out-String }
+    # Kein Out-String: das formatiert auf 80 Zeichen und bricht lange Ergebniszeilen
+    # mitten im Text um ("... hat den Test Connectivity" / "bestanden."). Die
+    # Zeilen werden stattdessen unveraendert zusammengefuegt.
+    try { $raw = ((& dcdiag.exe /s:$DC /v /test:DNS /DnsBasic /DnsForwarders /DnsDelegation /DnsDynamicUpdate /DnsRecordRegistration 2>&1) | ForEach-Object { [string]$_ }) -join "`n" }
     catch { return @([pscustomobject]@{ DCName=$DC; Category='ALL'; TestName='dcdiag.exe'; PartitionOrScope='-'; Result='ERROR'; ErrorDetails="$_"; RawSnippet='-' }) }
     if ([string]::IsNullOrWhiteSpace($raw)) { return @([pscustomobject]@{ DCName=$DC; Category='ALL'; TestName='dcdiag.exe'; PartitionOrScope='-'; Result='ERROR'; ErrorDetails='Keine Ausgabe'; RawSnippet='-' }) }
     $lines = $raw -split "`r?`n"; $results = @()
@@ -2720,22 +2723,37 @@ function Invoke-DCDiag {
     #   EN: ......................... DC1 passed test Connectivity
     #   DE: ......................... DC1 hat den Test Connectivity bestanden.
     #   DE: ......................... DC1 hat den Test Connectivity nicht bestanden.
+    #   DE: ......................... Der Test SystemLog fuer DC1 ist fehlgeschlagen.
     # Der Testname steht im Deutschen VOR "bestanden" - deshalb eigene Muster.
     $rxStart='^\s*(?:Starting test|Starttest)\s*:\s*"?([^"]+?)"?\s*$'
-    $rxFail='hat\s+den\s+Test\s+"?([^\s"]+?)"?\s+nicht\s+bestanden|(?:failed test|fehlgeschlagener Test)\s+"?([^\s"]+)'
+    $rxFail='hat\s+den\s+Test\s+"?([^\s"]+?)"?\s+nicht\s+bestanden|\bDer\s+Test\s+(\S+)\b.*?ist\s+fehlgeschlagen|(?:failed test|fehlgeschlagener Test)\s+"?([^\s"]+)'
     $rxPass='hat\s+den\s+Test\s+"?([^\s"]+?)"?\s+bestanden|passed test\s+"?([^\s"]+)|bestandener Test\s+"?([^\s"]+)'
-    $rxPart='^(?:Running partition tests on|Partitionstests?)\b.*?:\s*(\S+)\s*$'
-    $rxFor='^(?:Running enterprise tests on|Unternehmenstests?)\b.*?:\s*(\S+)\s*$'
-    $rxSrv='^(?:Testing server|Server wird getestet)\s*:\s*(\S+)'
+    $rxPart='^\s*(?:Running partition tests on|Partitionstests?)\b.*?:\s*(\S+)\s*$'
+    $rxFor='^\s*(?:Running enterprise tests on|Unternehmenstests?)\b.*?:\s*(\S+)\s*$'
+    $rxSrv='^\s*(?:Testing server|Server wird getestet)\s*:\s*(\S+)'
     # dcdiag ueberspringt Tests auf Anforderung (/test:DNS). Diese Zeilen gehoeren
     # nicht zum laufenden Test und duerfen den Fehlerpuffer nicht fuellen.
     $rxSkip='Test durch Benutzeranforderung ausgelassen|skipped by user request'
+
+    # Detailtext fuer eine Tabellenzeile: maximal drei Zeilen, je 160 Zeichen.
+    # Sonst landet die komplette dcdiag-Ausgabe in einer einzigen Tabellenzelle.
+    $shortText = {
+        param($lines)
+        $out = @()
+        foreach ($l in @($lines)) {
+            $t = "$l".Trim(); if (-not $t) { continue }
+            if ($t.Length -gt 160) { $t = $t.Substring(0,160) + '...' }
+            $out += $t
+            if ($out.Count -ge 3) { break }
+        }
+        ($out -join ' | ')
+    }
 
     # Ein Test ohne Ergebniszeile ist nur dann ein Befund, wenn er nicht zur
     # DNS-Detailausgabe gehoert - deren Ergebnis steckt im Gesamttest "DNS".
     $flushUnknown = {
         if ($curTest -and -not $curDns) {
-            [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='UNKNOWN'; ErrorDetails=($curErr -join "`n").Trim(); RawSnippet='-' }
+            [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result='UNKNOWN'; ErrorDetails=(& $shortText $curErr); RawSnippet='-' }
         }
     }
 
@@ -2748,14 +2766,23 @@ function Invoke-DCDiag {
             $curTest=($Matches[1] -replace '\s*\([^)]*\)\s*$','').Trim(); $curErr=@(); $curDns=$false; continue
         }
         if ($line -match $rxFail) {
-            $n=@($Matches[1],$Matches[2]) | Where-Object { $_ } | Select-Object -First 1
-            $e=($curErr | Where-Object { $_.Trim() } | Select-Object -First 20) -join "`n"; if (-not $e) { $e=$line.Trim() }
+            $n=@($Matches[1],$Matches[2],$Matches[3]) | Where-Object { $_ } | Select-Object -First 1
+            $e=& $shortText $curErr; if (-not $e) { $e=$line.Trim() }
             $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$n; PartitionOrScope=$curScope; Result='FAILED'; ErrorDetails=$e.Trim(); RawSnippet=$line.Trim() }
             $curTest=$null; $curErr=@(); $curDns=$false; continue
         }
         if ($line -match $rxPass) {
             $n=@($Matches[1],$Matches[2],$Matches[3]) | Where-Object { $_ } | Select-Object -First 1
             $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$n; PartitionOrScope=$curScope; Result='PASSED'; ErrorDetails=''; RawSnippet='' }
+            $curTest=$null; $curErr=@(); $curDns=$false; continue
+        }
+        # Fallback fuer Zeilen, in denen der Testname nicht sauber extrahierbar ist:
+        # Ergebnis gilt dann fuer den laufenden Test.
+        if ($curTest -and $line -match '^\s*\.{3,}.*\bbestanden\b') {
+            $res = if ($line -match 'nicht\s+bestanden') { 'FAILED' } else { 'PASSED' }
+            $e = if ($res -eq 'FAILED') { & $shortText $curErr } else { '' }
+            if (-not $e -and $res -eq 'FAILED') { $e = $line.Trim() }
+            $results += [pscustomobject]@{ DCName=$DC; Category=$curCat; TestName=$curTest; PartitionOrScope=$curScope; Result=$res; ErrorDetails=$e; RawSnippet=$line.Trim() }
             $curTest=$null; $curErr=@(); $curDns=$false; continue
         }
         if ($line -match '^\s*TEST\s*:\s*(.+?)\s*$') {
@@ -9570,9 +9597,14 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                 if ($a.RowFlags -and $a.RowFlags.Count -gt 0) {
                     # Spalten-Reihenfolge aus erstem Objekt uebernehmen + '_'-Felder ausblenden
                     $firstItem = @($items) | Select-Object -First 1
-                    $props = $firstItem.PSObject.Properties |
-                                Where-Object { $_.Name -notlike '_*' } |
-                                Select-Object -ExpandProperty Name
+                    if ($k -eq '03_DCDiag') {
+                        # Eine Zeile pro dcdiag-Test, nur die lesbaren Spalten
+                        $props = @('DCName','TestName','PartitionOrScope','Result','ErrorDetails')
+                    } else {
+                        $props = $firstItem.PSObject.Properties |
+                                    Where-Object { $_.Name -notlike '_*' } |
+                                    Select-Object -ExpandProperty Name
+                    }
 
                     [void]$sb.AppendLine("<table><thead><tr>")
                     foreach ($p in $props) { [void]$sb.AppendLine("<th>$(Format-L10n -Text $p)</th>") }
@@ -9638,6 +9670,9 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                         [void]$sb.AppendLine("<tr class='$cls'>")
                         foreach ($p in $props) {
                             $v = $row.$p
+                            if ($k -eq '03_DCDiag' -and $p -eq 'Result') {
+                                $v = switch ("$v") { 'PASSED' { 'OK' } 'FAILED' { 'FAILED' } 'WARNING' { 'WARN' } default { 'unklar' } }
+                            }
                             if ($v -is [datetime]) { $v = $v.ToString('yyyy-MM-dd HH:mm:ss') }
                             $v = Format-L10n -Text $v
                             $ve = "$v" -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;'
@@ -9649,9 +9684,13 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                 } else {
                     # Fallback: ConvertTo-Html aber '_'-Felder rausfiltern
                     $firstItem = @($items) | Select-Object -First 1
-                    $props = $firstItem.PSObject.Properties |
-                                Where-Object { $_.Name -notlike '_*' } |
-                                Select-Object -ExpandProperty Name
+                    if ($k -eq '03_DCDiag') {
+                        $props = @('DCName','TestName','PartitionOrScope','Result','ErrorDetails')
+                    } else {
+                        $props = $firstItem.PSObject.Properties |
+                                    Where-Object { $_.Name -notlike '_*' } |
+                                    Select-Object -ExpandProperty Name
+                    }
                     $localized = foreach ($row in $items) {
                         $h = [ordered]@{}
                         foreach ($p in $props) { $h[(Format-L10n -Text $p)] = (Format-L10n -Text $row.$p) }
