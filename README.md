@@ -1,9 +1,9 @@
-﻿# 🛡️ Active Directory Health Check v2.14.1
+﻿# 🛡️ Active Directory Health Check v2.14.2
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.14.1-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.14.2-brightgreen.svg)]()
 [![Checks](https://img.shields.io/badge/Checks-74-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
@@ -300,13 +300,13 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.14.1 (aktuell)
-- **Behoben:** Wurde im Auswahlfenster ein eigener Ausgabepfad gewählt, wurden die Verzeichnisse nur unter dem Standardpfad angelegt – der HTML-Report brach mit „Could not find a part of the path" ab. Die Ordner werden jetzt nach der Pfadübernahme angelegt; scheitert das (Rechte, Laufwerk, OneDrive), wird auf `C:\AD_Health_Check_Log` zurückgefallen und der Grund ausgegeben
-- `New-HtmlReport` und der CSV-Export stellen ihren Zielordner zusätzlich selbst sicher und melden Schreibfehler mit Zielpfad statt nur mit der Exception
-- **Neu – Selbst-Update per Klick:** Badge in der GUI bzw. Rückfrage in der Konsole lädt die neue Version, prüft Größe, SHA-256, Syntax und Versionsnummer, legt `AD_Health_Check.ps1.bak-<alteVersion>` an, ersetzt die Datei über einen Helferprozess und startet mit denselben Parametern neu. Nur nach ausdrücklicher Bestätigung; `-NoSelfUpdate` verbietet den Austausch, ein Fehlschlag lässt die alte Datei unverändert (der Helfer spielt das Backup zurück)
-- Neue Testskripte `test-reportpfad.ps1` und `test-selfupdate.ps1`; Version 2.14.1 (74 nummerierte Checks, zusätzlich die Teilprüfungen 04b, 32a-c und 55b)
+### v2.14.2 (aktuell)
+- **Fix: dcdiag /c** – `Invoke-DCDiag` ruft jetzt `dcdiag /c` auf, sodass alle Primär-, Partition- und Unternehmenstests laufen; Report zeigt eine Check-Tabelle mit Nr., DC, Bereich, Test, Ergebnis und Fehlerdetails
+- **Fix: Ergebniswörter ohne Punkteliste** – Fehlt das `.....`-Präfix, werden `bestanden`, `nicht bestanden`, `ist fehlgeschlagen` trotzdem dem laufenden Test zugewiesen; `bestanden wurde` löst keinen Befund aus
+- **Fix: AD-Backup-Status (Check 35)** – `repadmin /showbackup` bekam den Domänen-DN statt DC-Hostnamen (Win32 8419); jetzt jeder DC einzeln abfragen; Lesefehler = WARN „nicht lesbar“, nicht CRITICAL „KEIN AD-Backup“
+- **Rohausgabe bei unklaren Zeilen** – Bleibt ein dcdiag-Test unklar, wird die Original-Ausgabe als `Dcdiag_Rohausgabe_<DC>_<Zeit>.txt` im Reportordner abgelegt
 
-### v2.14
+### v2.14.1
 - **Behoben (Check 34):** `LastSyncTime` wurde auf deutschen Systemen nie gelesen (Label „Letzte erfolgr. Synchronisierungszeit"). Nutzt der PDC die lokale Uhr, wird die konfigurierte NTP-Gegenstelle jetzt wie mit `w32tm /stripchart` angesprochen; ein Timeout (`0x800705B4`) belegt „antwortet nicht". Peer-Status, letzter Fehlercode und Time-Service-Ereignisse stehen im Befund
 - **Check 34 trennt drei Fälle:** keine NTP-Quelle konfiguriert (CRITICAL) / Quelle konfiguriert, antwortet nicht (CRITICAL) / Quelle antwortet, erster Sync steht aus (WARN). Ein Nicht-PDC ohne Sync erbt die Ursache des PDC (INFO) statt eines zweiten CRITICAL
 - **Behoben (Check 55):** „Kein CSVLK installiert - SRV-Eintrag vermutlich veraltet" war eine unbelegte Vermutung. Neue Spalte `ZielIP` löst das SRV-Ziel auf und gleicht es mit den DC-Adressen ab – zeigt ein alter Name auf einen aktuellen DC, ist der SRV-Eintrag veraltet
@@ -701,13 +701,13 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.14.1 (current)
-- **Fixed:** If a custom output path was selected in the GUI, the directories were only created under the default path and the HTML report failed with "Could not find a part of the path". The folders are now created after the path is applied; if that fails (permissions, drive, OneDrive), the script falls back to `C:\AD_Health_Check_Log` and prints the reason
-- `New-HtmlReport` and the CSV export additionally ensure their target folder themselves and report write errors with the target path instead of the bare exception
-- **New – self-update with one click:** the badge in the GUI or the prompt in the console downloads the new version, checks size, SHA-256, syntax and version, creates `AD_Health_Check.ps1.bak-<oldVersion>`, replaces the file via a helper process and restarts with the same parameters. Only after explicit confirmation; `-NoSelfUpdate` disables the replacement, a failure leaves the old file untouched (the helper restores the backup)
-- New test scripts `test-reportpfad.ps1` and `test-selfupdate.ps1`; version 2.14.1 (74 numbered checks, plus sub-checks 04b, 32a-c and 55b)
+### v2.14.2 (current)
+- **Fix: dcdiag /c** – `Invoke-DCDiag` now calls `dcdiag /c` so all primary, partition, and enterprise tests run; report shows a check table with No., DC, Area, Test, Result, and error details
+- **Fix: Result words without dot list** – If the `.....` prefix is missing, `passed`, `not passed`, `failed` are still assigned to the running test; `bestanden wurde` triggers no finding
+- **Fix: AD backup status (check 35)** – `repadmin /showbackup` received the domain DN instead of DC hostnames (Win32 8419); now each DC is queried individually; read errors = WARN "not readable", not CRITICAL "NO AD BACKUP"
+- **Raw output on unclear rows** – If a dcdiag test remains unclear, the original output is saved as `Dcdiag_Rohausgabe_<DC>_<time>.txt` in the report folder
 
-### v2.14
+### v2.14.1
 - **Fixed (check 34):** `LastSyncTime` was never read on German systems (label "Letzte erfolgr. Synchronisierungszeit"). If the PDC uses the local clock, the configured NTP peer is now probed like `w32tm /stripchart`; a timeout (`0x800705B4`) proves "does not respond". Peer status, last error code and time service events are part of the finding
 - **Check 34 separates three cases:** no NTP source configured (CRITICAL) / source configured but not answering (CRITICAL) / source answers, first sync pending (WARN). A non-PDC without sync inherits the PDC root cause (INFO) instead of a second CRITICAL
 - **Fixed (check 55):** "No CSVLK installed - SRV record probably stale" was an unproven assumption. The new `ZielIP` column resolves the SRV target and compares it with the DC addresses – if an old name points to a current DC, the SRV record is stale

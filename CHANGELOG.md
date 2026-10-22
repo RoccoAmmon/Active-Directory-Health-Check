@@ -9,7 +9,7 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
-### [Unreleased]
+### [2.14.2] - 2026-10-23
 
 #### Behoben
 - **DCDiag-Ergebnisse auf deutschen Systemen falsch bewertet** – Die Ergebniszeile lautet dort „… hat den Test Connectivity bestanden", der Parser erwartete den Testnamen aber hinter „bestanden". Folge: Connectivity, DNS und DNS-Detailtests erschienen als Warnung, die Zusammenfassung zeigte „0 OK | 0 FAILED", obwohl dcdiag alles bestanden hatte
@@ -25,6 +25,7 @@ All notable changes to this project are documented here.
 - **AD-Backup-Status (Check 35) repariert** – `repadmin /showbackup` bekam den Domänen-DN statt DC-Hostnamen → Win32 8419. Jetzt wird jeder aufgelöste DC einzeln abgefragt; die Tabelle zeigt pro DC: `DCName`, `LastBackup`, `AgeDays`, `MaxAllowedDays`, `BackupOverdue` und `RawOutput` (gekürzt). Ein Lesefehler wird als **„nicht lesbar“** (WARN) geführt und nicht mehr als fehlendes Backup gewertet. Row-Flags färben: OK / WARN / CRITICAL.
 - **Fehler werden ausgeschrieben, aber nur der erste** – Bei mehreren Fehlern im selben Test steht der erste vollständig (inkl. Ereigniszeichenfolge) direkt in der Zeile, dahinter die Anzahl der übrigen, z. B. „(+2 weitere Fehler)"
 - **Fehlerdetails gekürzt** – Statt der kompletten dcdiag-Ausgabe in einer Tabellenzelle erscheinen höchstens drei Zeilen mit je 160 Zeichen
+- **Rohausgabe bei unklaren Zeilen** – Bleibt ein dcdiag-Test trotzdem unklar, legt das Skript die Original-dcdiag-Ausgabe als `Dcdiag_Rohausgabe_<DC>_<Zeit>.txt` im Reportordner ab – saubere Läufe bleiben ohne Datei
 
 #### Aufgeräumt
 - Der komplette HELPER-Block (39 Funktionen, u. a. `Invoke-DCDiag` und `Get-TimeSyncStatus`) lag doppelt in der Datei; die zweite Kopie wurde entfernt, `Get-WindowsFeatures` daraus bleibt erhalten
@@ -378,7 +379,7 @@ All notable changes to this project are documented here.
 
 ## 🇬🇧 English
 
-### [Unreleased]
+### [2.14.2] - 2026-10-23
 
 #### Fixed
 - **DCDiag results were misjudged on German systems** – the result line reads "… hat den Test Connectivity bestanden", but the parser expected the test name after "bestanden". As a result, Connectivity, DNS and the DNS sub-tests were reported as warnings and the summary showed "0 OK | 0 FAILED" although dcdiag had passed everything
@@ -394,6 +395,7 @@ All notable changes to this project are documented here.
 - **AD backup status (check 35) fixed** – `repadmin /showbackup` received the domain DN instead of DC hostnames → Win32 8419. Now each resolved DC is queried individually; the table shows per DC: `DCName`, `LastBackup`, `AgeDays`, `MaxAllowedDays`, `BackupOverdue`, and `RawOutput` (truncated). A read error is reported as **“not readable”** (WARN) and no longer treated as a missing backup. Row flags colour: OK / WARN / CRITICAL.
 - **Errors are written out, but only the first one** – If a test has several errors, the first is shown in full (including the event description) directly in the row, followed by the number of remaining ones, e.g. "(+2 more errors)"
 - **Shortened details** – Instead of the complete dcdiag output in a single table cell, at most three lines of 160 characters are shown
+- **Raw output on unclear rows** – If a dcdiag test remains unclear, the script saves the original dcdiag output as `Dcdiag_Rohausgabe_<DC>_<time>.txt` in the report folder – clean runs stay file-free
 
 #### Cleanup
 - The entire HELPER block (39 functions, including `Invoke-DCDiag` and `Get-TimeSyncStatus`) existed twice in the file; the second copy was removed, `Get-WindowsFeatures` from it is preserved

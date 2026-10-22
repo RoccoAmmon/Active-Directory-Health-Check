@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.14.1 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.14.2 mit Best-Practice-Bewertung.
 .DESCRIPTION
     74 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
@@ -37,7 +37,7 @@
     Sinnvoll, wenn die Datei zentral verteilt oder per GPO bereitgestellt wird.
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.14.1 (74 Checks + Teilpruefung 55b, Internationalisierung DE/EN, Update-Anzeige GitLab)
+    Version : 2.14.2 (74 Checks + Teilpruefung 55b, Internationalisierung DE/EN, Update-Anzeige GitLab)
     Sprache : automatisch aus dem Betriebssystem, sonst -Language <de|en>
     LogPfad : C:\ScriptLog
 .EXAMPLE
@@ -69,7 +69,7 @@ param(
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.14.1"
+$Global:ScriptVersion   = "2.14.2"
 $Global:NoUpdateCheck   = [bool]$NoUpdateCheck
 $Global:NoSelfUpdate    = [bool]$NoSelfUpdate
 # Startparameter fuer einen Neustart nach dem Selbst-Update (gleiche Checks/Pfade/Sprache)
