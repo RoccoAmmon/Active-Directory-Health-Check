@@ -1,0 +1,36 @@
+# Kodierungs-Erkennung für GitHub / Git
+* text=auto eol=crlf
+
+# Explizit UTF-8 für alle Textdateien
+*.md text eol=crlf
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf
+*.txt text eol=crlf
+*.json text eol=lf
+*.xml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.csv text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.ps1xml text eol=crlf
+
+# Binärdateien nicht konvertieren
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.7z binary
+*.dll binary
+*.exe binary
+*.msi binary
