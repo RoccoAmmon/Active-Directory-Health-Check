@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.14.2 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.14.3 mit Best-Practice-Bewertung.
 .DESCRIPTION
     74 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
@@ -37,7 +37,7 @@
     Sinnvoll, wenn die Datei zentral verteilt oder per GPO bereitgestellt wird.
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.14.2 (74 Checks + Teilpruefung 55b, Internationalisierung DE/EN, Update-Anzeige GitLab)
+    Version : 2.14.3 (74 Checks + Teilpruefung 55b, Internationalisierung DE/EN, Update-Anzeige GitLab)
     Sprache : automatisch aus dem Betriebssystem, sonst -Language <de|en>
     LogPfad : C:\ScriptLog
 .EXAMPLE
@@ -69,7 +69,7 @@ param(
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.14.2"
+$Global:ScriptVersion   = "2.14.3"
 $Global:NoUpdateCheck   = [bool]$NoUpdateCheck
 $Global:NoSelfUpdate    = [bool]$NoSelfUpdate
 # Startparameter fuer einen Neustart nach dem Selbst-Update (gleiche Checks/Pfade/Sprache)
@@ -2054,6 +2054,20 @@ function Show-HealthCheckGUI {
     # Initial Count
     & $updateCount $state $lblCount
 
+    # === Scope-Sicherheit fuer .GetNewClosure()-Event-Handler ================
+    # Ein .GetNewClosure()-Handler laeuft in einem eigenen Modul-Scope, dessen
+    # Befehlssuche NUR den globalen Scope erreicht. Startet der Benutzer das
+    # Skript in einem Kind-Scope (z. B. ".\AD_Health_Check.ps1" am Prompt oder
+    # "& 'datei'"), liegen Format-L10n und Set-HealthCheckLanguage im
+    # Skript-Scope und werden im Handler nicht gefunden - Folge:
+    # CommandNotFoundException ("... wurde nicht als Name eines Cmdlet ...
+    # erkannt"), geworfen aus $window.ShowDialog(). Uebergebene Argumente und
+    # Skript-Variablen werden dagegen per Wert mitgefangen und funktionieren.
+    # Gefangene Funktions-Skripte sind an die Definitionsstelle gebunden und
+    # laufen deshalb in jedem Start-Stil (Global-, Kind- und Dot-Scope).
+    $l10n    = ${function:Format-L10n}
+    $setLang = ${function:Set-HealthCheckLanguage}
+
     # === Sprachumschalter DE/EN (wirkt live auf alle GUI-Texte) ==============
     $applyLanguage = {
         foreach ($e in $state.LocalizedControls) {
@@ -2073,13 +2087,13 @@ function Show-HealthCheckGUI {
 
     $btnLangDe.Add_Click({
         param($s,$e)
-        Set-HealthCheckLanguage -Code 'de'
+        & $setLang -Code 'de'
         & $applyLanguage
     }.GetNewClosure())
 
     $btnLangEn.Add_Click({
         param($s,$e)
-        Set-HealthCheckLanguage -Code 'en'
+        & $setLang -Code 'en'
         & $applyLanguage
     }.GetNewClosure())
 
@@ -2089,7 +2103,7 @@ function Show-HealthCheckGUI {
     # === Button-Events ===
     $btnBrowse.Add_Click({
         $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
-        $fbd.Description = (Format-L10n -Text 'Ausgabepfad waehlen')
+        $fbd.Description = (& $l10n -Text 'Ausgabepfad waehlen')
         $fbd.SelectedPath = $txtOutputPath.Text
         if ($fbd.ShowDialog() -eq 'OK') { $txtOutputPath.Text = $fbd.SelectedPath }
     }.GetNewClosure())
@@ -2146,7 +2160,7 @@ function Show-HealthCheckGUI {
             if ($state.AllCheckBoxes[$k].IsChecked) { $selected += $k }
         }
         if ($selected.Count -eq 0) {
-            [System.Windows.MessageBox]::Show((Format-L10n -Text 'Bitte mindestens einen Check auswaehlen.'), (Format-L10n -Text 'Hinweis'),
+            [System.Windows.MessageBox]::Show((& $l10n -Text 'Bitte mindestens einen Check auswaehlen.'), (& $l10n -Text 'Hinweis'),
                 [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning) | Out-Null
             return
         }

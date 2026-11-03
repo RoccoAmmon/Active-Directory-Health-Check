@@ -9,6 +9,18 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [2.14.3] - 2026-11-03
+
+#### Behoben
+- **GUI-Absturz „Die Benennung 'Format-L10n' wurde nicht als Name eines Cmdlet … erkannt"** – Wurde das Skript in einem Kind-Scope gestartet (`.\AD_Health_Check.ps1` am Prompt wie in der README, `& 'datei'` oder `-Command "& …"`), lagen `Format-L10n` und `Set-HealthCheckLanguage` im Skript-Scope. Die `.GetNewClosure()`-Event-Handler der GUI suchen ihre Befehle aber nur im globalen Scope → `CommandNotFoundException`, geworfen aus `$window.ShowDialog()`
+  - Oft erst beim **zweiten Start** in derselben Konsole sichtbar: Ohne Administratorrechte startet die Elevation das Skript mit `-File` neu (globaler Scope → funktioniert). `$Global:ElevationHandled` ist beim nächsten Lauf gesetzt, der Neustart entfällt – und die GUI läuft im Kind-Scope
+  - Betroffen waren genau vier Stellen: Button „Durchsuchen…" (Ausgabepfad), Button „Start" ohne gewählten Check sowie die Sprachschalter DE/EN
+  - Behoben durch gefangene Funktions-Skripte (`${function:Format-L10n}` bzw. `${function:Set-HealthCheckLanguage}`) in den Handlern, aufgerufen über `& $l10n` / `& $setLang`: gebunden an die Definitionsstelle und damit in jedem Start-Stil gültig (globaler Scope, Kind-Scope, Dot-Sourcing). Die Variablen-Fangwirkung der Closures bleibt erhalten
+  - Mit dem echten Skript in allen drei Startarten geprüft (Prompt-Aufruf, `powershell -File`, `& 'datei'`): Sprachumschaltung, Gruppen- und Suite-Buttons sowie Check-Auswahl laufen fehlerfrei
+
+#### Version
+- Version auf 2.14.3 erhöht; Skript-Header und README angeglichen
+
 ### [2.14.2] - 2026-10-23
 
 #### Behoben
@@ -378,6 +390,18 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [2.14.3] - 2026-11-03
+
+#### Fixed
+- **GUI crash "The name 'Format-L10n' was not recognized as the name of a cmdlet …"** – When the script was started in a child scope (typing `.\AD_Health_Check.ps1` at the prompt as shown in this README, `& 'file'`, or `-Command "& …"`), `Format-L10n` and `Set-HealthCheckLanguage` lived in the script scope. The GUI's `.GetNewClosure()` event handlers, however, only look up commands in the **global** scope → `CommandNotFoundException`, thrown from `$window.ShowDialog()`
+  - Usually visible only on the **second run** in the same console: without administrator rights the elevation restarts the script with `-File` (global scope → works). `$Global:ElevationHandled` is already set on the next run, so that restart is skipped – and the GUI runs in the child scope
+  - Exactly four places were affected: the "Browse…" button (output path), the "Start" button when no check is selected, and the DE/EN language toggles
+  - Fixed by capturing the functions as script blocks (`${function:Format-L10n}` and `${function:Set-HealthCheckLanguage}`) inside the handlers and calling them via `& $l10n` / `& $setLang`: bound to their definition site, they work in every launch style (global scope, child scope, dot-sourcing). The closures keep capturing their variables
+  - Verified with the real script in all three launch styles (prompt invocation, `powershell -File`, `& 'file'`): language switch, group/suite buttons and check selection all run without errors
+
+#### Version
+- Version bumped to 2.14.3; script header and README aligned
 
 ### [2.14.2] - 2026-10-23
 

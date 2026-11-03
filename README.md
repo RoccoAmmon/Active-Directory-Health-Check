@@ -1,9 +1,9 @@
-﻿# 🛡️ Active Directory Health Check v2.14.2
+﻿# 🛡️ Active Directory Health Check v2.14.3
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.14.2-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.14.3-brightgreen.svg)]()
 [![Checks](https://img.shields.io/badge/Checks-74-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
@@ -300,7 +300,11 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.14.2 (aktuell)
+### v2.14.3 (aktuell)
+- **Fix: GUI-Absturz „Die Benennung 'Format-L10n' wurde nicht … erkannt"** – Die `.GetNewClosure()`-Handler der GUI suchten ihre Befehle nur im globalen Scope und fanden `Format-L10n` / `Set-HealthCheckLanguage` nicht, wenn das Skript in einem Kind-Scope lief (Prompt-Aufruf `.\AD_Health_Check.ps1`, `& 'datei'`). Die vier betroffenen Stellen („Durchsuchen…", „Start" ohne Auswahl, Sprachschalter DE/EN) rufen die Funktionen jetzt über gefangene Funktions-Skripte auf – gültig in jedem Start-Stil
+- **Sichtbar meist erst beim zweiten Start:** Der Elevation-Neustart (`-File`) überspringt den Kind-Scope; `$Global:ElevationHandled` verhindert diesen Neustart beim nächsten Lauf in derselben Konsole. Mit Prompt-Aufruf, `powershell -File` und `& 'datei'` geprüft
+
+### v2.14.2
 - **Fix: dcdiag /c** – `Invoke-DCDiag` ruft jetzt `dcdiag /c` auf, sodass alle Primär-, Partition- und Unternehmenstests laufen; Report zeigt eine Check-Tabelle mit Nr., DC, Bereich, Test, Ergebnis und Fehlerdetails
 - **Fix: Ergebniswörter ohne Punkteliste** – Fehlt das `.....`-Präfix, werden `bestanden`, `nicht bestanden`, `ist fehlgeschlagen` trotzdem dem laufenden Test zugewiesen; `bestanden wurde` löst keinen Befund aus
 - **Fix: AD-Backup-Status (Check 35)** – `repadmin /showbackup` bekam den Domänen-DN statt DC-Hostnamen (Win32 8419); jetzt jeder DC einzeln abfragen; Lesefehler = WARN „nicht lesbar“, nicht CRITICAL „KEIN AD-Backup“
@@ -701,7 +705,11 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.14.2 (current)
+### v2.14.3 (current)
+- **Fix: GUI crash "The name 'Format-L10n' was not recognized …"** – The GUI's `.GetNewClosure()` handlers only looked up commands in the global scope and could not find `Format-L10n` / `Set-HealthCheckLanguage` when the script ran in a child scope (prompt invocation `.\AD_Health_Check.ps1`, `& 'file'`). The four affected places ("Browse…", "Start" with no selection, DE/EN language toggles) now call the functions through captured script blocks – valid in every launch style
+- **Usually visible only on the second run:** The elevation restart (`-File`) bypasses the child scope; `$Global:ElevationHandled` skips that restart on the next run in the same console. Verified with prompt invocation, `powershell -File` and `& 'file'`
+
+### v2.14.2
 - **Fix: dcdiag /c** – `Invoke-DCDiag` now calls `dcdiag /c` so all primary, partition, and enterprise tests run; report shows a check table with No., DC, Area, Test, Result, and error details
 - **Fix: Result words without dot list** – If the `.....` prefix is missing, `passed`, `not passed`, `failed` are still assigned to the running test; `bestanden wurde` triggers no finding
 - **Fix: AD backup status (check 35)** – `repadmin /showbackup` received the domain DN instead of DC hostnames (Win32 8419); now each DC is queried individually; read errors = WARN "not readable", not CRITICAL "NO AD BACKUP"
