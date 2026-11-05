@@ -237,7 +237,12 @@ $Global:ReportTitles = [ordered]@{
     '36_InstalledPrograms'       = 'Installierte Programme'
     '37_WindowsUpdates'          = 'Windows Updates'
     '38_SPNDuplicates'           = 'SPN-Dubletten'
-    '39_ASREPRoasting'           = 'AS-REP-Roasting-Risiko'
+    # --- TEMPORAER AUSGEBLENDET (05.11.2026): Check stuerzt waehrend des Laufs ab. ---
+    # Ausblenden = diese Zeile auskommentieren. Der gesamte Code bleibt erhalten:
+    #   Get-ASREPRoastingRisk (Datensammler), Test-Check-ASREPRoasting (Bewertung),
+    #   Dispatcher-Zeile, CSV/HTML-Spalten und die Gruppen-Eintraege.
+    # Wieder aktivieren: Kommentarzeichen entfernen, dann laeuft er normal mit.
+    #'39_ASREPRoasting'           = 'AS-REP-Roasting-Risiko'
     '40_AdminSDHolderDrift'      = 'AdminSDHolder / AdminCount-Drift'
     '41_FGPP'                    = 'Fine-Grained Password Policies'
     '42_DNSHygiene'              = 'DNS-Hygiene (Aging / Scavenging)'
