@@ -1,10 +1,10 @@
-﻿# 🛡️ Active Directory Health Check v2.14.3
+﻿# 🛡️ Active Directory Health Check v2.15.0
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.14.3-brightgreen.svg)]()
-[![Checks](https://img.shields.io/badge/Checks-74-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.15.0-brightgreen.svg)]()
+[![Checks](https://img.shields.io/badge/Checks-75-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
 > 🇩🇪 [Deutsch](#-deutsch) | 🇬🇧 [English](#-english)
@@ -24,7 +24,7 @@
 ### 📑 Inhaltsverzeichnis
 
 - [Features](#-features)
-- [Die 74 Checks](#-die-74-checks)
+- [Die 75 Checks](#-die-75-checks)
 - [Systemanforderungen](#-systemanforderungen)
 - [Installation](#-installation)
 - [Verwendung](#-verwendung)
@@ -41,7 +41,7 @@
 
 ### ✨ Features
 
-- 🎯 **74 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring, Hybrid/Cloud) – inkl. Teilprüfung 55b (ADBA)
+- 🎯 **75 Best-Practice-Checks** thematisch sortiert (DC-Basis, Security, Struktur, Monitoring, Hybrid/Cloud, DHCP) – inkl. Teilprüfung 55b (ADBA)
 - 🖼️ **Moderne WPF-GUI** (Light Theme) mit Gruppen-Auswahl, Suite-Buttons und Ausgabepfad-Wahl
 - 🎨 **Farbcodierter HTML-Report** mit Executive Dashboard (OK / WARN / KRITISCH / INFO)
 - 📋 **Gesamtübersicht der Auffälligkeiten** – alle auffälligen Checks in einer Tabelle, nach Schwere sortiert, Befunde je Check gekürzt
@@ -58,7 +58,7 @@
 - 📝 **Ausführliches Logging** (`C:\ScriptLog`)
 - 🔧 **Modular aufgebaut** - einzelne Checks können gezielt ausgeführt werden
 
-### 📋 Die 74 Checks
+### 📋 Die 75 Checks
 
 ### 🏗️ DC-Basis-Infrastruktur
 | # | Check | Beschreibung |
@@ -122,6 +122,13 @@
 | 74 | **Entra: Cloud-Anbindung (Inventar)** | Doku-Inventar: Hybrid-Join-SCP (`Device Registration Configuration`, Tenant-ID/Name), Kerberos-Cloud-Trust (`AzureADKerberos`), Hybrid-Join-Geräte (`msDS-DeviceID`), Sync-Konten und UPN-Suffixe |
 
 > **Nur lesend, rein lokal:** Die Gruppe liest ausschließlich das AD – keine Cloud-API, kein `Connect-MgGraph`. Check 74 ist bewusst ein Inventar (INFO) ohne Schwere-Bewertung; nicht auslesbare Bereiche werden als solche benannt.
+
+### 📡 Netzwerk-Dienste (DHCP)
+| # | Check | Beschreibung |
+|---|---|---|
+| 75 | **Windows DHCP** | Alle DHCP-Server (AD-Autorisierung, Fallback AD-Suche bzw. lokaler Dienst) mit Erreichbarkeit, Dienststatus und Version; je Server alle IPv4-Scopes mit Bereich, Subnetzmaske, Status, Lease-Dauer und belegten/freien Adressen; Failover-Beziehungen (je Paar einmal) und die Synchronisation der Scopes. Nicht synchronisierte Scopes, Failover-State ≠ Normal und Konfigurationsabweichungen sind FAIL |
+
+> **Nur lesend:** Ausschließlich `Get-*`-Cmdlets des DhcpServer-Moduls. Fehlendes Modul, nicht erreichbare Server oder fehlende Rechte erscheinen als Meldung im Ergebnis und brechen den Lauf nicht ab. Kein Failover konfiguriert ist ein Hinweis (INFO), kein Fehler. Details: [Wiki → Checks-DHCP](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/wikis/Checks-DHCP)
 
 ### 🌐 AD-Struktur
 | # | Check | Beschreibung |
@@ -206,7 +213,7 @@ cd Active-Directory-Health-Check
 # Skript ausführen (interaktiv)
 .\AD_Health_Check.ps1
 
-# Oder automatisiert (alle 74 Checks)
+# Oder automatisiert (alle 75 Checks)
 .\AD_Health_Check.ps1 -FullRun
 ```
 
@@ -300,7 +307,14 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.14.3 (aktuell)
+### v2.15.0 (aktuell)
+- **Neuer Check 75: Windows DHCP** (neue GUI-Gruppe "Netzwerk-Dienste (DHCP)"): ermittelt alle DHCP-Server über die AD-Autorisierung (`Get-DhcpServerInDC`, Fallback AD-Suche und lokaler Dienst), prüft Erreichbarkeit, Dienststatus und Version, listet die IPv4-Scopes mit Statistik und wertet die Failover-Beziehungen aus
+- **Synchronisation:** nicht synchronisierte Scopes, Failover-State ≠ Normal, einseitige Beziehungen und Konfigurationsabweichungen zwischen Partnern sind FAIL; kein Failover ist ein Hinweis
+- Neuer Schwellwert `DHCPStatDivergencePct` (20 Prozentpunkte)
+- Rein lesend (nur `Get-*`-Cmdlets); fehlendes Modul, nicht erreichbare Server und fehlende Rechte brechen den Lauf nicht ab
+- Version 2.15.0 (75 Checks)
+
+### v2.14.3
 - **Fix: GUI-Absturz „Die Benennung 'Format-L10n' wurde nicht … erkannt"** – Die `.GetNewClosure()`-Handler der GUI suchten ihre Befehle nur im globalen Scope und fanden `Format-L10n` / `Set-HealthCheckLanguage` nicht, wenn das Skript in einem Kind-Scope lief (Prompt-Aufruf `.\AD_Health_Check.ps1`, `& 'datei'`). Die vier betroffenen Stellen („Durchsuchen…", „Start" ohne Auswahl, Sprachschalter DE/EN) rufen die Funktionen jetzt über gefangene Funktions-Skripte auf – gültig in jedem Start-Stil
 - **Sichtbar meist erst beim zweiten Start:** Der Elevation-Neustart (`-File`) überspringt den Kind-Scope; `$Global:ElevationHandled` verhindert diesen Neustart beim nächsten Lauf in derselben Konsole. Mit Prompt-Aufruf, `powershell -File` und `& 'datei'` geprüft
 
@@ -429,7 +443,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 ### 📑 Table of Contents
 
 - [Features](#-features)
-- [The 74 Checks](#-the-74-checks)
+- [The 75 Checks](#-the-75-checks)
 - [System Requirements](#-system-requirements)
 - [Installation](#-installation)
 - [Usage](#-usage)
@@ -446,7 +460,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 
 ### ✨ Features
 
-- 🎯 **74 best-practice checks**, sorted thematically (DC fundamentals, security, structure, monitoring, hybrid/cloud) – incl. sub-check 55b (ADBA)
+- 🎯 **75 best-practice checks**, sorted thematically (DC fundamentals, security, structure, monitoring, hybrid/cloud, DHCP) – incl. sub-check 55b (ADBA)
 - 🖼️ **Modern WPF GUI** (light theme) with group selection, suite buttons and output path selection
 - 🎨 **Color-coded HTML report** with executive dashboard (OK / WARN / CRITICAL / INFO)
 - 📋 **Overall summary of findings** – all flagged checks in a single table, sorted by severity, findings per check capped
@@ -463,7 +477,7 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 - 📝 **Verbose logging** (`C:\ScriptLog`)
 - 🔧 **Modular design** – individual checks can be run selectively
 
-### 📋 The 74 Checks
+### 📋 The 75 Checks
 
 ### 🏗️ DC Core Infrastructure
 | # | Check | Description |
@@ -527,6 +541,13 @@ Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
 | 74 | **Entra: Cloud connectivity (inventory)** | Documentation inventory: hybrid join SCP (`Device Registration Configuration`, tenant ID/name), Kerberos cloud trust (`AzureADKerberos`), hybrid join devices (`msDS-DeviceID`), sync accounts and UPN suffixes |
 
 > **Read-only, purely local:** this group only reads AD – no cloud API, no `Connect-MgGraph`. Check 74 is deliberately an inventory (INFO) without severity assessment; areas that cannot be read are named as such.
+
+### 📡 Network Services (DHCP)
+| # | Check | Description |
+|---|---|---|
+| 75 | **Windows DHCP** | All DHCP servers (AD authorization, fallback AD search or local service) with reachability, service status and version; per server all IPv4 scopes with range, subnet mask, state, lease duration and used/free addresses; failover relationships (once per pair) and scope synchronization. Unsynchronized scopes, failover state ≠ Normal and configuration deviations are FAIL |
+
+> **Read-only:** only `Get-*` cmdlets of the DhcpServer module. A missing module, unreachable servers or missing permissions appear as messages in the result and do not abort the run. No failover configured is a notice (INFO), not an error. Details: [Wiki → Checks-DHCP](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/wikis/Checks-DHCP)
 
 ### 🌐 AD Structure
 | # | Check | Description |
@@ -611,7 +632,7 @@ cd Active-Directory-Health-Check
 # Run the script (interactive)
 .\AD_Health_Check.ps1
 
-# Or automated (all 74 checks)
+# Or automated (all 75 checks)
 .\AD_Health_Check.ps1 -FullRun
 ```
 
@@ -705,7 +726,14 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.14.3 (current)
+### v2.15.0 (current)
+- **New check 75: Windows DHCP** (new GUI group "Netzwerk-Dienste (DHCP)"): discovers all DHCP servers via AD authorization (`Get-DhcpServerInDC`, fallback AD search and local service), checks reachability, service status and version, lists IPv4 scopes with statistics and evaluates failover relationships
+- **Synchronization:** unsynchronized scopes, failover state ≠ Normal, one-sided relationships and configuration deviations between partners are FAIL; no failover is a notice
+- New threshold `DHCPStatDivergencePct` (20 percentage points)
+- Read-only (only `Get-*` cmdlets); a missing module, unreachable servers and missing permissions do not abort the run
+- Version 2.15.0 (75 checks)
+
+### v2.14.3
 - **Fix: GUI crash "The name 'Format-L10n' was not recognized …"** – The GUI's `.GetNewClosure()` handlers only looked up commands in the global scope and could not find `Format-L10n` / `Set-HealthCheckLanguage` when the script ran in a child scope (prompt invocation `.\AD_Health_Check.ps1`, `& 'file'`). The four affected places ("Browse…", "Start" with no selection, DE/EN language toggles) now call the functions through captured script blocks – valid in every launch style
 - **Usually visible only on the second run:** The elevation restart (`-File`) bypasses the child scope; `$Global:ElevationHandled` skips that restart on the next run in the same console. Verified with prompt invocation, `powershell -File` and `& 'file'`
 

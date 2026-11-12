@@ -9,6 +9,21 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [2.15.0] - 2026-11-11
+
+#### Hinzugefügt
+- **Neuer Check 75: Windows DHCP** (neue GUI-Gruppe „Netzwerk-Dienste (DHCP)") – rein lesend, nur `Get-*`-Cmdlets des DhcpServer-Moduls
+  - Ermittlung aller DHCP-Server über die AD-Autorisierung (`Get-DhcpServerInDC`); Fallback auf die AD-Suche und den lokalen Dienst. Je Server Erreichbarkeit, Dienststatus und Version/Betriebssystem
+  - Je Server alle IPv4-Scopes mit Name, Bereich, Subnetzmaske, Status, Lease-Dauer sowie belegten und freien Adressen
+  - Failover-Beziehungen (Partner, Modus, Status, Serverrolle, MaxClientLeadTime, AutoStateTransition, StateSwitchInterval, ScopeNames) – jede Beziehung nur einmal ausgegeben
+  - Synchronisationsprüfung: nicht synchronisierte Scopes, Failover-State ≠ Normal, einseitige Beziehungen und Konfigurationsabweichungen zwischen Partnern sind FAIL; kein Failover ist ein Hinweis (INFO)
+  - Fehlendes Modul, nicht erreichbare Server und fehlende Berechtigungen erscheinen als Meldung und brechen den Lauf nicht ab
+- Neuer Schwellwert `$Global:DHCPStatDivergencePct` (20 Prozentpunkte) für die Auslastungsabweichung zwischen Failover-Partnern
+- Neue Wiki-Seite `Checks-DHCP` mit Prüfumfang, Voraussetzungen, Bewertung und Troubleshooting
+
+#### Version
+- Version auf 2.15.0 erhöht (75 Checks); Skript-Header, README und Wiki angeglichen
+
 ### [2.14.3] - 2026-11-03
 
 #### Behoben
@@ -390,6 +405,21 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [2.15.0] - 2026-11-11
+
+#### Added
+- **New check 75: Windows DHCP** (new GUI group "Netzwerk-Dienste (DHCP)") – read-only, only `Get-*` cmdlets of the DhcpServer module
+  - Discovery of all DHCP servers via AD authorization (`Get-DhcpServerInDC`); fallback to AD search and the local service. Per server: reachability, service status and version/operating system
+  - Per server all IPv4 scopes with name, range, subnet mask, state, lease duration and used/free addresses
+  - Failover relationships (partner, mode, state, server role, MaxClientLeadTime, AutoStateTransition, StateSwitchInterval, ScopeNames) – each relationship reported only once
+  - Synchronization check: unsynchronized scopes, failover state ≠ Normal, one-sided relationships and configuration deviations between partners are FAIL; no failover is a notice (INFO)
+  - A missing module, unreachable servers and missing permissions appear as messages and do not abort the run
+- New threshold `$Global:DHCPStatDivergencePct` (20 percentage points) for the utilisation difference between failover partners
+- New wiki page `Checks-DHCP` with scope, requirements, assessment and troubleshooting
+
+#### Version
+- Version raised to 2.15.0 (75 checks); script header, README and wiki aligned
 
 ### [2.14.3] - 2026-11-03
 

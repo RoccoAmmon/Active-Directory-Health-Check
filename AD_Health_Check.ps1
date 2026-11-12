@@ -1,8 +1,8 @@
 ﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.14.3 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.15.0 mit Best-Practice-Bewertung.
 .DESCRIPTION
-    74 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
+    75 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
     interaktivem Startmenue.
     Zweisprachig (Deutsch/Englisch): Die Ausgabesprache wird automatisch aus der
@@ -37,7 +37,7 @@
     Sinnvoll, wenn die Datei zentral verteilt oder per GPO bereitgestellt wird.
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.14.3 (74 Checks + Teilpruefung 55b, Internationalisierung DE/EN, Update-Anzeige GitLab)
+    Version : 2.15.0 (75 Checks + Teilpruefung 55b, Windows-DHCP-Check, Internationalisierung DE/EN, Update-Anzeige GitLab)
     Sprache : automatisch aus dem Betriebssystem, sonst -Language <de|en>
     LogPfad : C:\ScriptLog
 .EXAMPLE
@@ -69,7 +69,7 @@ param(
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.14.3"
+$Global:ScriptVersion   = "2.15.0"
 $Global:NoUpdateCheck   = [bool]$NoUpdateCheck
 $Global:NoSelfUpdate    = [bool]$NoSelfUpdate
 # Startparameter fuer einen Neustart nach dem Selbst-Update (gleiche Checks/Pfade/Sprache)
@@ -111,6 +111,7 @@ $Global:RC4EventSampleLimit  = 5000
 $Global:EncTypesAesCoverageMin = 90
 $Global:DNSZoneRefreshMaxHours = 24
 $Global:DNSZoneExpireMinDays   = 7
+$Global:DHCPStatDivergencePct  = 20
 $Global:ReportOverviewFindingsMax = 5
 $Global:SPNMaxObjSpns        = 20
 $Global:SPNMaxDnsProbe       = 200
@@ -173,6 +174,9 @@ $Global:CheckGroups = [ordered]@{
     )
     'Hybrid & Cloud (Entra)' = @(
         '72_EntraSyncAccounts','73_SeamlessSSO','74_CloudInventory'
+    )
+    'Netzwerk-Dienste (DHCP)' = @(
+        '75_DHCP'
     )
     'Identity & Kerberos' = @(
         '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
@@ -275,6 +279,7 @@ $Global:ReportTitles = [ordered]@{
     '72_EntraSyncAccounts'       = 'Entra: Sync-Dienstkonten (MSOL_/AAD_)'
     '73_SeamlessSSO'             = 'Entra: Seamless SSO (AZUREADSSOACC)'
     '74_CloudInventory'          = 'Entra: Cloud-Anbindung (Inventar)'
+    '75_DHCP'                    = 'DHCP: Server, Scopes & Failover-Synchronisation'
 }
 
 #endregion
@@ -1137,6 +1142,63 @@ Es wird der Standardpfad verwendet: =>The default path is used:
 HTML-Report nicht geschrieben: =>HTML report not written: 
 Schreibrechte und Pfad pruefen (Laufwerk vorhanden, OneDrive synchronisiert).=>Check write permissions and path (drive present, OneDrive synced).
 CSV-Ordner nicht anlegbar: =>CSV folder cannot be created: 
+# ---- Check 75: Windows DHCP ----
+Netzwerk-Dienste (DHCP)=>Network services (DHCP)
+DHCP: Server, Scopes & Failover-Synchronisation=>DHCP: servers, scopes & failover synchronization
+Erreichbar=>Reachable
+Dienst=>Service
+Subnetz=>Subnet
+Belegt=>In use
+Frei=>Free
+Prozent=>Percent
+Beziehung=>Relationship
+Modus=>Mode
+Rolle=>Role
+LeaseDauer=>Lease duration
+ScopeStatus=>Scope status
+FailoverStatus=>Failover status
+MaxClientLeadTime=>Max client lead time
+AutoStateTransition=>Auto state transition
+StateSwitchInterval=>State switch interval
+FailoverScopes=>Failover scopes
+Get-DhcpServerInDC fehlgeschlagen=>Get-DhcpServerInDC failed
+DhcpServer-Modul (RSAT-DHCP) nicht verfuegbar - Serverliste ueber AD ermittelt=>DhcpServer module (RSAT-DHCP) not available - server list determined via AD
+DhcpServer-Modul (RSAT-DHCP) nicht verfuegbar=>DhcpServer module (RSAT-DHCP) not available
+AD-Abfrage der DHCP-Server fehlgeschlagen=>AD query of DHCP servers failed
+Keine DHCP-Server im AD autorisiert gefunden=>No DHCP servers authorized in AD found
+keine Abfrage moeglich (nicht erreichbar oder fehlende Berechtigung)=>no query possible (not reachable or missing permission)
+nicht ermittelbar=>not determinable
+IPv4-Scope(s)=>IPv4 scope(s)
+Dienststatus nicht ermittelbar=>service status not determinable
+DHCP-Dienst nicht gestartet=>DHCP service not started
+Failover-Abfrage fehlgeschlagen=>Failover query failed
+Scope-Statistik nicht lesbar=>scope statistics not readable
+Failover-State=>Failover state
+Beziehung nicht im Normalbetrieb=>relationship not in normal operation
+Failover-Partner=>Failover partner
+ist nicht als DHCP-Server ermittelt=>is not identified as a DHCP server
+Synchronisation nicht pruefbar=>synchronization not checkable
+Beziehung nur auf=>relationship only on
+eingerichtet=>configured
+kennt sie nicht=>does not know it
+ist in der Failover-Beziehung hinterlegt, existiert aber nicht auf=>is listed in the failover relationship but does not exist on
+fehlt auf=>is missing on
+nicht synchronisiert=>not synchronized
+Scope-Konfiguration weicht ab=>scope configuration differs
+Auslastung weicht stark ab=>utilization differs strongly
+Differenz=>difference
+Punkte=>points
+ist keiner Failover-Beziehung zugeordnet=>is not assigned to any failover relationship
+in Failover-Beziehung=>in failover relationship
+Failover-Beziehungen=>Failover relationships
+kein Failover-Scope=>no failover scope
+kein Failover auf diesem Server=>no failover on this server
+Beziehung im Normalbetrieb=>relationship in normal operation
+Scopes synchron=>scopes in sync
+Kein Failover eingerichtet=>No failover configured
+Synchronisationspruefung entfaellt=>synchronization check skipped
+(Hinweis, kein Fehler)=>(notice, no error)
+DHCP-Server:=>DHCP servers:
 '@
 
 # --- Tabelle + Regex aufbauen -------------------------------------------------
@@ -2313,7 +2375,7 @@ function Show-ScriptMenu {
                 '39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                 '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
                 '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','55b_ADBA','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints',
-                '72_EntraSyncAccounts','73_SeamlessSSO','74_CloudInventory')
+                '72_EntraSyncAccounts','73_SeamlessSSO','74_CloudInventory','75_DHCP')
     $sec = @('09_TLS','10_Cipher','11_SMB','12_NTLMAuth','13_LLMNR','14_LDAPSecurity','15_WindowsFirewall',
              '16_PrivilegedAccounts','17_PasswordPolicy','18_Kerberos','19_UnconstrainedDelegation',
              '20_KerberoastingRisk','21_LSAProtection','22_PrintSpooler','23_SecureBoot','24_Certificates',
@@ -8572,6 +8634,419 @@ function Test-Check-CloudInventory {
 
 #endregion
 
+#region ============= CHECK 75: WINDOWS DHCP ================================
+
+function New-DhcpRow {
+    <# Einheitliche Spaltenstruktur fuer alle DHCP-Ergebniszeilen. #>
+    param([string]$Kind, [string]$RowKey, [hashtable]$Values = @{})
+    $row = [ordered]@{
+        Kind = $Kind; RowKey = $RowKey; Server = ''; Erreichbar = ''; Dienst = ''; Betriebssystem = ''
+        Scope = ''; ScopeId = ''; Bereich = ''; Subnetz = ''; ScopeStatus = ''; LeaseDauer = ''
+        Belegt = ''; Frei = ''; Prozent = ''; Beziehung = ''; Partner = ''; Modus = ''
+        FailoverStatus = ''; Rolle = ''; MaxClientLeadTime = ''; AutoStateTransition = ''
+        StateSwitchInterval = ''; FailoverScopes = ''; Bewertung = 'OK'; Detail = ''
+    }
+    foreach ($k in $Values.Keys) { $row[$k] = $Values[$k] }
+    [pscustomobject]$row
+}
+
+function Get-DhcpPropValue {
+    <# Liest das erste vorhandene Property aus einer Namensliste (Cmdlet-Eigenschaften variieren je OS-Version). #>
+    param($Object, [string[]]$Names)
+    if ($null -eq $Object) { return $null }
+    foreach ($n in $Names) {
+        $p = $Object.PSObject.Properties[$n]
+        if ($p -and $null -ne $p.Value) { return $p.Value }
+    }
+    return $null
+}
+
+function Get-DhcpShortName {
+    param([string]$Name)
+    if (-not $Name) { return '' }
+    return ($Name.Trim().TrimEnd('.').Split('.')[0]).ToLowerInvariant()
+}
+
+function Get-DhcpRelationKey {
+    <# Eindeutiger Schluessel einer Failover-Beziehung unabhaengig von der Blickrichtung. #>
+    param([string]$A, [string]$B)
+    $pair = @((Get-DhcpShortName $A), (Get-DhcpShortName $B)) | Sort-Object
+    return ($pair -join '|')
+}
+
+function Join-DhcpPair {
+    <# Zwei Seiten einer Beziehung anzeigen: gleicher Wert einmal, abweichend als "A | B". #>
+    param($A, $B)
+    $a1 = if ("$A") { "$A" } else { '-' }
+    $b1 = if ("$B") { "$B" } else { '-' }
+    if ($a1 -eq $b1) { return $a1 }
+    return "$a1 | $b1"
+}
+
+function Get-DhcpWorst {
+    param([string[]]$Values)
+    if ($Values -contains 'CRITICAL') { return 'CRITICAL' }
+    if ($Values -contains 'WARN') { return 'WARN' }
+    return 'OK'
+}
+
+function Import-DhcpServerModuleSafe {
+    if (Get-Command -Name Get-DhcpServerv4Scope -ErrorAction SilentlyContinue) { return $true }
+    try { Import-Module -Name DhcpServer -ErrorAction Stop; return $true } catch { return $false }
+}
+
+function Get-DhcpServerCandidates {
+    <#
+    .SYNOPSIS
+        Ermittelt alle DHCP-Server: primaer Get-DhcpServerInDC (AD-Autorisierung), Fallback
+        die dhcpClass-Objekte im AD (Attribut dHCPServers), zuletzt der lokale DHCP-Dienst.
+    #>
+    $out = [pscustomobject]@{ Servers = @(); Quelle = ''; Fehler = '' }
+    $names = @()
+    if (Import-DhcpServerModuleSafe) {
+        try {
+            $names = @(Get-DhcpServerInDC -ErrorAction Stop |
+                ForEach-Object { if ($_.DnsName) { "$($_.DnsName)" } else { "$($_.IPAddress)" } } |
+                Where-Object { $_ } | Select-Object -Unique)
+            if ($names.Count -gt 0) { $out.Quelle = 'Get-DhcpServerInDC' }
+        } catch { $out.Fehler = "Get-DhcpServerInDC fehlgeschlagen: $($_.Exception.Message)" }
+    } else {
+        $out.Fehler = 'DhcpServer-Modul (RSAT-DHCP) nicht verfuegbar - Serverliste ueber AD ermittelt'
+    }
+
+    if ($names.Count -eq 0) {
+        try {
+            $root = (Get-ADRootDSE -ErrorAction Stop).configurationNamingContext
+            $cls = @(Get-ADObject -SearchBase $root -LDAPFilter '(&(objectClass=dhcpClass)(dHCPServers=*))' -Properties dHCPServers -ErrorAction Stop)
+            foreach ($c in $cls) {
+                foreach ($v in @($c.dHCPServers)) {
+                    $p = "$v".Split('$')
+                    if ($p.Count -ge 2 -and $p[1]) { $names += $p[1] }
+                }
+            }
+            $names = @($names | Select-Object -Unique)
+            if ($names.Count -gt 0) { $out.Quelle = 'AD (dhcpClass)' }
+        } catch {
+            if (-not $out.Fehler) { $out.Fehler = "AD-Abfrage der DHCP-Server fehlgeschlagen: $($_.Exception.Message)" }
+        }
+    }
+
+    if ($names.Count -eq 0 -and (Get-Service -Name DHCPServer -ErrorAction SilentlyContinue)) {
+        $names = @($env:COMPUTERNAME); $out.Quelle = 'lokaler DHCP-Dienst'
+    }
+    $out.Servers = @($names)
+    return $out
+}
+
+function Get-DhcpServerSnapshot {
+    <#
+    .SYNOPSIS
+        Liest je DHCP-Server Erreichbarkeit, Dienst, Betriebssystem, IPv4-Scopes, Scope-Statistik
+        und Failover-Beziehungen. Nicht erreichbare Server liefern Erreichbar = $false.
+    #>
+    param([string]$ServerName)
+    $snap = [pscustomobject]@{ Name = $ServerName; Erreichbar = $false; Dienst = ''; OS = ''; Fehler = ''
+        Scopes = @(); Failover = @(); FailoverFehler = '' }
+    if (-not (Import-DhcpServerModuleSafe)) { $snap.Fehler = 'DhcpServer-Modul (RSAT-DHCP) nicht verfuegbar'; return $snap }
+    $cs = if (Test-IsLocalComputer -ComputerName $ServerName) { @{} } else { @{ ComputerName = $ServerName } }
+
+    try { $scopes = @(Get-DhcpServerv4Scope @cs -ErrorAction Stop) }
+    catch { $snap.Fehler = "keine Abfrage moeglich (nicht erreichbar oder fehlende Berechtigung): $($_.Exception.Message)"; return $snap }
+    $snap.Erreichbar = $true
+
+    foreach ($s in $scopes) {
+        $st = $null; $stErr = ''
+        try { $st = Get-DhcpServerv4ScopeStatistics @cs -ScopeId $s.ScopeId -ErrorAction Stop }
+        catch { $stErr = $_.Exception.Message }
+        $snap.Scopes += [pscustomobject]@{
+            Name = "$($s.Name)"; ScopeId = "$($s.ScopeId)"; SubnetMask = "$($s.SubnetMask)"
+            StartRange = "$($s.StartRange)"; EndRange = "$($s.EndRange)"; State = "$($s.State)"
+            LeaseDuration = "$($s.LeaseDuration)"
+            InUse = Get-DhcpPropValue $st @('InUse','AddressesInUse')
+            Free = Get-DhcpPropValue $st @('Free','AddressesFree')
+            Pct = Get-DhcpPropValue $st @('PercentageInUse')
+            StatFehler = $stErr
+        }
+    }
+
+    try { $svc = Get-Service @cs -Name DHCPServer -ErrorAction Stop; $snap.Dienst = "$($svc.Status)" }
+    catch { $snap.Dienst = 'unbekannt' }
+
+    try {
+        $os = Get-CimInstance -ClassName Win32_OperatingSystem @cs -ErrorAction Stop
+        $snap.OS = "$($os.Caption)".Trim() + " ($($os.Version))"
+    } catch { $snap.OS = 'nicht ermittelbar' }
+
+    try {
+        foreach ($f in @(Get-DhcpServerv4Failover @cs -ErrorAction Stop)) {
+            $snap.Failover += [pscustomobject]@{
+                Partner = "$(Get-DhcpPropValue $f @('PartnerServer','PartnerServerName'))"
+                Mode = "$(Get-DhcpPropValue $f @('Mode'))"
+                State = "$(Get-DhcpPropValue $f @('State'))"
+                Role = "$(Get-DhcpPropValue $f @('ServerRole'))"
+                MaxClientLeadTime = "$(Get-DhcpPropValue $f @('MaxClientLeadTime'))"
+                AutoStateTransition = "$(Get-DhcpPropValue $f @('AutoStateTransition'))"
+                StateSwitchInterval = "$(Get-DhcpPropValue $f @('StateSwitchInterval'))"
+                ScopeNames = @(@(Get-DhcpPropValue $f @('ScopeNames')) | ForEach-Object { "$_" } | Where-Object { $_ })
+            }
+        }
+    } catch {
+        $msg = $_.Exception.Message
+        if ($msg -notmatch '(?i)not configured|does not exist|not found|nicht konfiguriert|existiert nicht|nicht gefunden|FAILOVER_NOT|RELATIONSHIP_NOT') {
+            $snap.FailoverFehler = $msg
+        }
+    }
+    return $snap
+}
+
+function Add-DhcpFinding {
+    <# Fuegt einen Befund hinzu; identische Befunde (z.B. von beiden Partnern) werden nur einmal aufgenommen. #>
+    param([System.Collections.ArrayList]$List, [hashtable]$Seen, [string]$Kind = 'Sync', [string]$Server,
+          [string]$Scope = '', [string]$ScopeId = '', [string]$Beziehung = '', [string]$Partner = '',
+          [string]$Bewertung, [string]$Detail)
+    $key = "$Kind|$Bewertung|$Server|$ScopeId|$Beziehung|$Detail"
+    if ($Seen.ContainsKey($key)) { return }
+    $Seen[$key] = $true
+    $ziel = if ($ScopeId) { "Scope|$(Get-DhcpShortName $Server)|$ScopeId" } else { '' }
+    $null = $List.Add([pscustomobject]@{ Kind = $Kind; Server = $Server; Scope = $Scope; ScopeId = $ScopeId
+        Beziehung = $Beziehung; Partner = $Partner; Bewertung = $Bewertung; Detail = $Detail; Ziel = $ziel })
+}
+
+function Get-DHCPConfiguration {
+    <#
+    .SYNOPSIS
+        Erhebt alle Windows-DHCP-Server (AD-Autorisierung) mit IPv4-Scopes, Auslastung und Failover
+        und prueft die Synchronisation der Failover-Beziehungen.
+    .NOTES
+        Nur Get-Cmdlets (DhcpServer-Modul, Get-Service, Get-CimInstance, Get-ADObject), keine Aenderung.
+        Nicht erreichbare Server, fehlendes Modul oder fehlende Rechte erzeugen Meldungen statt Abbruch.
+        Je Beziehung werden beide Partner geprueft: State, Scope-Zuordnung, Scope-Konfiguration, Auslastung.
+    #>
+    $rows = @()
+    $cand = Get-DhcpServerCandidates
+    if ($cand.Fehler) {
+        $rows += New-DhcpRow -Kind 'Fehler' -RowKey 'Fehler|Ermittlung' -Values @{ Bewertung = 'WARN'; Detail = $cand.Fehler }
+    }
+    if (@($cand.Servers).Count -eq 0) {
+        if (-not $cand.Fehler) {
+            $rows += New-DhcpRow -Kind 'Hinweis' -RowKey 'Hinweis|Keine Server' -Values @{ Bewertung = 'INFO'; Detail = 'Keine DHCP-Server im AD autorisiert gefunden' }
+        }
+        $rows += New-DhcpRow -Kind 'Summary' -RowKey 'Summary|0' -Values @{ Bewertung = 'INFO'; Detail = 'DHCP-Server: 0' }
+        return $rows
+    }
+
+    $snaps = @()
+    foreach ($n in @($cand.Servers)) { $snaps += Get-DhcpServerSnapshot -ServerName $n }
+    $byShort = @{}
+    foreach ($sn in $snaps) { $byShort[(Get-DhcpShortName $sn.Name)] = $sn }
+    $reach = @($snaps | Where-Object { $_.Erreichbar })
+    $findings = New-Object System.Collections.ArrayList
+    $seen = @{}
+    $coveredBy = @{}
+
+    foreach ($sn in $snaps) {
+        if (-not $sn.Erreichbar) {
+            $rows += New-DhcpRow -Kind 'Server' -RowKey "Server|$($sn.Name)" -Values @{ Server = $sn.Name; Erreichbar = 'nein'
+                Bewertung = 'WARN'; Detail = "Abfrage fehlgeschlagen: $($sn.Fehler)" }
+            continue
+        }
+        $svcBew = 'OK'; $svcDet = "$(@($sn.Scopes).Count) IPv4-Scope(s)"
+        if ($sn.Dienst -eq 'unbekannt') { $svcBew = 'WARN'; $svcDet = 'Dienststatus nicht ermittelbar' }
+        elseif ($sn.Dienst -ne 'Running') { $svcBew = 'CRITICAL'; $svcDet = "DHCP-Dienst nicht gestartet (Status: $($sn.Dienst))" }
+        $rows += New-DhcpRow -Kind 'Server' -RowKey "Server|$($sn.Name)" -Values @{ Server = $sn.Name; Erreichbar = 'ja'
+            Dienst = $sn.Dienst; Betriebssystem = $sn.OS; Bewertung = $svcBew; Detail = $svcDet }
+
+        if ($sn.FailoverFehler) {
+            Add-DhcpFinding -List $findings -Seen $seen -Kind 'Fehler' -Server $sn.Name -Bewertung 'WARN' `
+                -Detail "Failover-Abfrage fehlgeschlagen: $($sn.FailoverFehler)"
+        }
+        foreach ($sc in @($sn.Scopes | Where-Object { $_.StatFehler })) {
+            Add-DhcpFinding -List $findings -Seen $seen -Kind 'Fehler' -Server $sn.Name -Bewertung 'WARN' `
+                -Detail "Scope-Statistik nicht lesbar ($($sc.ScopeId)): $($sc.StatFehler)"
+        }
+
+        $sShort = Get-DhcpShortName $sn.Name
+        $sFails = @($sn.Failover)
+        $covered = @{}
+        foreach ($f in $sFails) {
+            $rel = Get-DhcpRelationKey -A $sn.Name -B $f.Partner
+            $pSn = $byShort[(Get-DhcpShortName $f.Partner)]
+            $pShort = Get-DhcpShortName $f.Partner
+            $pOk = [bool]($pSn -and $pSn.Erreichbar)
+            if ($f.State -ne 'Normal') {
+                Add-DhcpFinding -List $findings -Seen $seen -Server $sn.Name -Partner $f.Partner -Beziehung $rel -Bewertung 'CRITICAL' `
+                    -Detail "Failover-State '$($f.State)' (Modus $($f.Mode), Rolle $($f.Role)) - Beziehung nicht im Normalbetrieb"
+            }
+            if (-not $pSn) {
+                Add-DhcpFinding -List $findings -Seen $seen -Server $sn.Name -Partner $f.Partner -Beziehung $rel -Bewertung 'WARN' `
+                    -Detail "Failover-Partner $($f.Partner) ist nicht als DHCP-Server ermittelt - Synchronisation nicht pruefbar"
+            } elseif (-not $pSn.Erreichbar) {
+                Add-DhcpFinding -List $findings -Seen $seen -Server $sn.Name -Partner $f.Partner -Beziehung $rel -Bewertung 'WARN' `
+                    -Detail "Failover-Partner $($f.Partner) nicht erreichbar - Synchronisation nicht pruefbar"
+            } elseif (-not $pSn.FailoverFehler) {
+                $pFail = @($pSn.Failover | Where-Object { (Get-DhcpRelationKey -A $pSn.Name -B $_.Partner) -eq $rel })
+                if ($pFail.Count -eq 0) {
+                    Add-DhcpFinding -List $findings -Seen $seen -Server $sn.Name -Partner $f.Partner -Beziehung $rel -Bewertung 'CRITICAL' `
+                        -Detail "Beziehung nur auf $sShort eingerichtet - Failover-Partner $($f.Partner) kennt sie nicht"
+                }
+            }
+
+            foreach ($scName in @($f.ScopeNames)) {
+                $sc = @($sn.Scopes | Where-Object { $_.Name -eq $scName -or $_.ScopeId -eq $scName })[0]
+                if (-not $sc) {
+                    Add-DhcpFinding -List $findings -Seen $seen -Server $sn.Name -Partner $f.Partner -Beziehung $rel -Bewertung 'CRITICAL' `
+                        -Detail "Scope '$scName' ist in der Failover-Beziehung hinterlegt, existiert aber nicht auf $sShort"
+                    continue
+                }
+                $covered[$sc.ScopeId] = $rel
+                if (-not $pOk) { continue }
+                $psc = @($pSn.Scopes | Where-Object { $_.ScopeId -eq $sc.ScopeId })[0]
+                if (-not $psc) {
+                    Add-DhcpFinding -List $findings -Seen $seen -Server $sn.Name -ScopeId $sc.ScopeId -Scope $sc.Name -Partner $f.Partner `
+                        -Beziehung $rel -Bewertung 'CRITICAL' `
+                        -Detail "Scope '$($sc.Name)' ($($sc.ScopeId)) fehlt auf Failover-Partner $($f.Partner) - nicht synchronisiert"
+                    continue
+                }
+                if ($sShort -lt $pShort) {
+                    $diffs = @()
+                    foreach ($prop in 'Name','SubnetMask','StartRange','EndRange','LeaseDuration','State') {
+                        if ("$($sc.$prop)" -ne "$($psc.$prop)") { $diffs += "$prop $($sc.$prop) / $($psc.$prop)" }
+                    }
+                    if ($diffs.Count -gt 0) {
+                        Add-DhcpFinding -List $findings -Seen $seen -Server $sn.Name -ScopeId $sc.ScopeId -Scope $sc.Name -Partner $f.Partner `
+                            -Beziehung $rel -Bewertung 'CRITICAL' `
+                            -Detail "Scope-Konfiguration weicht ab ($sShort / $pShort): $($diffs -join '; ')"
+                    }
+                    if ($null -ne $sc.Pct -and $null -ne $psc.Pct) {
+                        $d = [math]::Abs([double]$sc.Pct - [double]$psc.Pct)
+                        if ($d -gt $Global:DHCPStatDivergencePct) {
+                            Add-DhcpFinding -List $findings -Seen $seen -Server $sn.Name -ScopeId $sc.ScopeId -Scope $sc.Name -Partner $f.Partner `
+                                -Beziehung $rel -Bewertung 'CRITICAL' `
+                                -Detail ("Auslastung weicht stark ab ($sShort {0:N1} % / $pShort {1:N1} %, Differenz {2:N1} Punkte)" -f [double]$sc.Pct, [double]$psc.Pct, $d)
+                        }
+                    }
+                }
+            }
+        }
+        $coveredBy[$sn.Name] = $covered
+
+        foreach ($sc in @($sn.Scopes)) {
+            if ($sFails.Count -gt 0 -and -not $covered.ContainsKey($sc.ScopeId)) {
+                Add-DhcpFinding -List $findings -Seen $seen -Server $sn.Name -ScopeId $sc.ScopeId -Scope $sc.Name -Bewertung 'CRITICAL' `
+                    -Detail "Scope '$($sc.Name)' ($($sc.ScopeId)) ist keiner Failover-Beziehung zugeordnet - nicht synchronisiert"
+            }
+        }
+    }
+
+    foreach ($sn in $reach) {
+        $sFails = @($sn.Failover)
+        foreach ($sc in @($sn.Scopes)) {
+            $rel = ''
+            if ($coveredBy[$sn.Name] -and $coveredBy[$sn.Name].ContainsKey($sc.ScopeId)) { $rel = $coveredBy[$sn.Name][$sc.ScopeId] }
+            $ziel = "Scope|$(Get-DhcpShortName $sn.Name)|$($sc.ScopeId)"
+            $scFindings = @($findings | Where-Object { $_.Ziel -eq $ziel })
+            $bew = if ($sFails.Count -eq 0) { 'INFO' } else { Get-DhcpWorst @($scFindings | ForEach-Object { $_.Bewertung }) }
+            $det = if ($scFindings.Count -gt 0) { @($scFindings | ForEach-Object { $_.Detail }) -join '; ' }
+                   elseif ($rel) { "in Failover-Beziehung $rel" }
+                   elseif ($sFails.Count -gt 0) { 'kein Failover-Scope' }
+                   else { 'kein Failover auf diesem Server' }
+            $belegt = if ($null -ne $sc.InUse) { "$($sc.InUse)" } else { '' }
+            $frei = if ($null -ne $sc.Free) { "$($sc.Free)" } else { '' }
+            $pct = if ($null -ne $sc.Pct) { [string][math]::Round([double]$sc.Pct, 1) } else { '' }
+            $rows += New-DhcpRow -Kind 'Scope' -RowKey "Scope|$($sn.Name)|$($sc.ScopeId)" -Values @{
+                Server = $sn.Name; Scope = $sc.Name; ScopeId = $sc.ScopeId; Bereich = "$($sc.StartRange) - $($sc.EndRange)"
+                Subnetz = $sc.SubnetMask; ScopeStatus = $sc.State; LeaseDauer = $sc.LeaseDuration
+                Belegt = $belegt; Frei = $frei; Prozent = $pct; Beziehung = $rel
+                Bewertung = $bew; Detail = $det }
+        }
+    }
+
+    $relDone = @{}
+    foreach ($sn in $reach) {
+        foreach ($f in @($sn.Failover)) {
+            $rel = Get-DhcpRelationKey -A $sn.Name -B $f.Partner
+            if ($relDone.ContainsKey($rel)) { continue }
+            $relDone[$rel] = $true
+            $pSn = $byShort[(Get-DhcpShortName $f.Partner)]
+            $pFail = $null
+            if ($pSn -and $pSn.Erreichbar) {
+                $pFail = @($pSn.Failover | Where-Object { (Get-DhcpRelationKey -A $pSn.Name -B $_.Partner) -eq $rel })[0]
+            }
+            $pm = if ($pFail) { $pFail } else { [pscustomobject]@{ Mode = ''; State = ''; Role = ''; MaxClientLeadTime = ''; AutoStateTransition = ''; StateSwitchInterval = ''; ScopeNames = @() } }
+            $scopeNames = @(@($f.ScopeNames) + @($pm.ScopeNames) | Select-Object -Unique | Sort-Object)
+            $relFindings = @($findings | Where-Object { $_.Beziehung -eq $rel })
+            $det = if ($relFindings.Count -gt 0) { @($relFindings | ForEach-Object { $_.Detail }) -join '; ' }
+                   else { 'Beziehung im Normalbetrieb, Scopes synchron' }
+            $rows += New-DhcpRow -Kind 'Failover' -RowKey "Failover|$rel" -Values @{
+                Server = $sn.Name; Partner = $f.Partner; Beziehung = $rel
+                Modus = (Join-DhcpPair $f.Mode $pm.Mode)
+                FailoverStatus = (Join-DhcpPair $f.State $pm.State)
+                Rolle = (Join-DhcpPair $f.Role $pm.Role)
+                MaxClientLeadTime = (Join-DhcpPair $f.MaxClientLeadTime $pm.MaxClientLeadTime)
+                AutoStateTransition = (Join-DhcpPair $f.AutoStateTransition $pm.AutoStateTransition)
+                StateSwitchInterval = (Join-DhcpPair $f.StateSwitchInterval $pm.StateSwitchInterval)
+                FailoverScopes = ($scopeNames -join ', ')
+                Bewertung = (Get-DhcpWorst @($relFindings | ForEach-Object { $_.Bewertung }))
+                Detail = $det }
+        }
+    }
+
+    $n = 0
+    foreach ($fd in $findings) {
+        $n++
+        $kind = if ($fd.Kind -eq 'Fehler') { 'Fehler' } else { 'Sync' }
+        $rows += New-DhcpRow -Kind $kind -RowKey "$kind|$n" -Values @{
+            Server = $fd.Server; Scope = $fd.Scope; ScopeId = $fd.ScopeId; Beziehung = $fd.Beziehung
+            Partner = $fd.Partner; Bewertung = $fd.Bewertung; Detail = $fd.Detail }
+    }
+
+    if ($reach.Count -gt 0 -and $relDone.Count -eq 0) {
+        $rows += New-DhcpRow -Kind 'Hinweis' -RowKey 'Hinweis|Kein Failover' -Values @{ Bewertung = 'INFO'
+            Detail = 'Kein Failover eingerichtet - Synchronisationspruefung entfaellt (Hinweis, kein Fehler)' }
+    }
+
+    $scopeCount = @($rows | Where-Object { $_.Kind -eq 'Scope' }).Count
+    $crit = @($rows | Where-Object { $_.Kind -in @('Sync','Server') -and $_.Bewertung -eq 'CRITICAL' }).Count
+    $warn = @($rows | Where-Object { $_.Kind -in @('Sync','Server','Fehler') -and $_.Bewertung -eq 'WARN' }).Count
+    $rows += New-DhcpRow -Kind 'Summary' -RowKey 'Summary|0' -Values @{ Bewertung = 'INFO'
+        Detail = "DHCP-Server: $($snaps.Count) | erreichbar: $($reach.Count) | Scopes: $scopeCount | Failover-Beziehungen: $($relDone.Count) | FAIL: $crit | WARN: $warn" }
+    return $rows
+}
+
+function Test-Check-DHCP {
+    <#
+    .SYNOPSIS
+        Bewertet die DHCP-Erhebung.
+    .NOTES
+        FAIL (CRITICAL): Scope nicht synchron (fehlt auf Partner, nicht in Beziehung, Konfiguration oder
+        Auslastung weicht ab), Failover-State nicht Normal, nur einseitig konfigurierte Beziehung,
+        DHCP-Dienst gestoppt. WARN: Server/Partner nicht erreichbar, Abfragefehler, fehlendes Modul.
+        INFO: kein Failover eingerichtet (Hinweis, kein Fehler). OK: Beziehungen und Scopes synchron.
+    #>
+    param($data)
+    $rows = @($data | Where-Object { $_ -and $_.Kind -ne 'Summary' })
+    if ($rows.Count -eq 0) { return New-Assessment -OverallStatus 'NODATA' -Summary 'Keine Daten' }
+
+    $flags = @{}; $findings = @()
+    foreach ($r in $rows) {
+        if ($r.Bewertung -notin @('CRITICAL','WARN')) { continue }
+        $flags[$r.RowKey] = $r.Bewertung
+        if ($r.Kind -in @('Sync','Server','Fehler')) {
+            $findings += $(if ($r.Server) { "$($r.Server): $($r.Detail)" } else { "$($r.Detail)" })
+        }
+    }
+    $serverCount = @($rows | Where-Object { $_.Kind -eq 'Server' }).Count
+    $scopeCount = @($rows | Where-Object { $_.Kind -eq 'Scope' }).Count
+    $failCount = @($rows | Where-Object { $_.Kind -eq 'Failover' }).Count
+    $crit = @($rows | Where-Object { $_.Kind -in @('Sync','Server') -and $_.Bewertung -eq 'CRITICAL' }).Count
+    $warn = @($rows | Where-Object { $_.Kind -in @('Sync','Server','Fehler') -and $_.Bewertung -eq 'WARN' }).Count
+    $status = if ($crit -gt 0) { 'CRITICAL' } elseif ($warn -gt 0) { 'WARN' } elseif ($failCount -eq 0) { 'INFO' } else { 'OK' }
+    $summary = "DHCP-Server: $serverCount | Scopes: $scopeCount | Failover-Beziehungen: $failCount | FAIL: $crit | WARN: $warn"
+    New-Assessment -OverallStatus $status -Summary $summary -Findings $findings -RowFlags $flags
+}
+
+#endregion
+
 #region ============= ASSESSMENT-ENGINE ======================================
 
 function New-Assessment {
@@ -9577,6 +10052,7 @@ function Invoke-AllAssessments {
         '72_EntraSyncAccounts'       = { Test-Check-EntraSyncAccounts        $Global:Results['72_EntraSyncAccounts'] }
         '73_SeamlessSSO'             = { Test-Check-SeamlessSSO              $Global:Results['73_SeamlessSSO'] }
         '74_CloudInventory'          = { Test-Check-CloudInventory           $Global:Results['74_CloudInventory'] }
+        '75_DHCP'                    = { Test-Check-DHCP                     $Global:Results['75_DHCP'] }
     }
     $toAssess = @()
     foreach ($k in $Global:ReportTitles.Keys) {
@@ -9857,6 +10333,7 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
                             '72_EntraSyncAccounts'       { $row.Konto }
                             '73_SeamlessSSO'             { $row.Objekt }
                             '74_CloudInventory'          { $row.Detail }
+                            '75_DHCP'                    { $row.RowKey }
                             default                      { '' }
                         }
                         $cls = ''
@@ -10182,7 +10659,7 @@ function Start-ADHealthCheck {
                                              '28_ADRecycleBin','29_TombstoneLifetime','30_Levels','31_GPO','35_Backup',
                                              '38_SPNDuplicates','39_ASREPRoasting','40_AdminSDHolderDrift','41_FGPP','42_DNSHygiene','43_LAPS','44_AccountsWithoutAES',
                                              '47_RCAESMigration','48_DCSyncPermissions','49_RBCDDelegation','50_dMSA',
-                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','55b_ADBA','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints','72_EntraSyncAccounts','73_SeamlessSSO','74_CloudInventory') |
+                                             '51_MachineAccountQuota','52_AnonymousLDAP','53_GPPPasswords','54_ProtectedUsers','55_KMS','55b_ADBA','56_StaleDCs','57_RCAudit','58_SPNInventory','59_EncryptionTypes','60_ZonenSOA','61_Forwarder','62_ReverseLookup','63_SubnetReverse','64_IPv6','65_ComputerSPNs','66_UserSPNs','67_PKICA','68_PKIRoots','69_PKITemplates','70_PKIWlanMail','71_PKIEndpoints','72_EntraSyncAccounts','73_SeamlessSSO','74_CloudInventory','75_DHCP') |
                      Where-Object { $Global:SelectedChecks -contains $_ }
         $selInact = if ((Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')) { 1 } else { 0 }
         $Global:ProgressStats.TotalChecks = ($selPerDC.Count * $dcCountReachable) + $selForest.Count + $selInact + $dcCount
@@ -10278,6 +10755,7 @@ function Start-ADHealthCheck {
         if (Test-IsCheckSelected '72_EntraSyncAccounts')       { $r = Invoke-TimedCheck -CheckKey '72_EntraSyncAccounts'       -ScriptBlock { Get-EntraSyncAccounts };         $Global:Results['72_EntraSyncAccounts'] = @($r) }
         if (Test-IsCheckSelected '73_SeamlessSSO')             { $r = Invoke-TimedCheck -CheckKey '73_SeamlessSSO'             -ScriptBlock { Get-SeamlessSSOStatus };         $Global:Results['73_SeamlessSSO']      = @($r) }
         if (Test-IsCheckSelected '74_CloudInventory')          { $r = Invoke-TimedCheck -CheckKey '74_CloudInventory'          -ScriptBlock { Get-CloudConnectivityInventory }; $Global:Results['74_CloudInventory']   = @($r) }
+        if (Test-IsCheckSelected '75_DHCP')                    { $r = Invoke-TimedCheck -CheckKey '75_DHCP'                    -ScriptBlock { Get-DHCPConfiguration };         $Global:Results['75_DHCP']             = @($r) }
 
         # Inaktive Accounts - einmaliger Aufruf fuer 3 Check-Keys
         $wantInact = (Test-IsCheckSelected '32a_InactiveUsers') -or (Test-IsCheckSelected '32b_InactiveComputers') -or (Test-IsCheckSelected '32c_PasswordNeverExpires')
