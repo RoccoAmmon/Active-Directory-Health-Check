@@ -9,6 +9,11 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [2.15.2] - 2026-11-12
+
+#### Behoben
+- DHCP-Report (Check 75): Die Tabelle „Server, Scopes & Failover-Synchronisation“ war zu breit. Sie ist jetzt in sieben Tabellen aufgeteilt (Server-Liste, Scopes Konfiguration, Scopes Auslastung & Failover, Failover-Beziehungen, Failover-Parameter, Befunde Sync/Fehler, Hinweise), jeweils maximal 7 Spalten, leere Abschnitte entfallen
+
 ### [2.15.1] - 2026-11-12
 
 #### Behoben
@@ -412,6 +417,11 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [2.15.2] - 2026-11-12
+
+#### Fixed
+- DHCP report (check 75): the table "Server, Scopes & Failover Synchronization" was too wide. It is now split into seven tables with at most 7 columns each (server list, scope configuration, scope utilization & failover, failover relationships, failover parameters, findings sync/errors, notes); empty sections are omitted
 
 ### [2.15.1] - 2026-11-12
 

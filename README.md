@@ -1,9 +1,9 @@
-﻿# 🛡️ Active Directory Health Check v2.15.1
+﻿# 🛡️ Active Directory Health Check v2.15.2
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.15.1-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.15.2-brightgreen.svg)]()
 [![Checks](https://img.shields.io/badge/Checks-75-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
@@ -307,7 +307,10 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.15.1 (aktuell)
+### v2.15.2 (aktuell)
+- **Fix: DHCP-Report zu breit:** Die Tabelle „Server, Scopes & Failover-Synchronisation“ (Check 75) ist in sieben Tabellen mit jeweils maximal 7 Spalten aufgeteilt; leere Abschnitte entfallen
+
+### v2.15.1
 - **Fix: Absturz des Fensters bei großen Umgebungen:** Transkript-Log (`*.transcript.txt`), globaler Fehlerfang mit Sicherung der Teilergebnisse (CSV/HTML) und Pause bei Fehlern
 - **Check-Timeout:** hängende Checks werden nach `$Global:CheckTimeoutSec` (Standard 600 s) abgebrochen, als Warnung protokolliert und als fehlgeschlagen gezählt
 - `CHECK START`/`CHECK ENDE`/`CHECK FEHLER`-Zeilen im Log zur Ursachenanalyse
@@ -731,7 +734,10 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.15.1 (current)
+### v2.15.2 (current)
+- **Fix: DHCP report too wide:** the table "Server, Scopes & Failover Synchronization" (check 75) is split into seven tables with at most 7 columns each; empty sections are omitted
+
+### v2.15.1 (previous)
 - **Fix: window closing in large environments:** transcript log (`*.transcript.txt`), global error catch that saves partial results (CSV/HTML) and pauses on errors
 - **Check timeout:** hanging checks are aborted after `$Global:CheckTimeoutSec` (default 600 s), logged as a warning and counted as failed
 - `CHECK START`/`CHECK ENDE`/`CHECK FEHLER` log lines for root-cause analysis

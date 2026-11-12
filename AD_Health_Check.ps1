@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.15.1 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.15.2 mit Best-Practice-Bewertung.
 .DESCRIPTION
     75 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
@@ -37,7 +37,7 @@
     Sinnvoll, wenn die Datei zentral verteilt oder per GPO bereitgestellt wird.
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.15.1 (75 Checks + Teilpruefung 55b, Windows-DHCP-Check, Internationalisierung DE/EN, Update-Anzeige GitLab)
+    Version : 2.15.2 (75 Checks + Teilpruefung 55b, Windows-DHCP-Check, Internationalisierung DE/EN, Update-Anzeige GitLab)
     Sprache : automatisch aus dem Betriebssystem, sonst -Language <de|en>
     LogPfad : C:\ScriptLog
 .EXAMPLE
@@ -69,7 +69,7 @@ param(
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.15.1"
+$Global:ScriptVersion   = "2.15.2"
 $Global:NoUpdateCheck   = [bool]$NoUpdateCheck
 $Global:NoSelfUpdate    = [bool]$NoSelfUpdate
 # Startparameter fuer einen Neustart nach dem Selbst-Update (gleiche Checks/Pfade/Sprache)
@@ -1196,6 +1196,13 @@ kein Failover-Scope=>no failover scope
 kein Failover auf diesem Server=>no failover on this server
 Beziehung im Normalbetrieb=>relationship in normal operation
 Scopes synchron=>scopes in sync
+Server-Liste=>Server list
+Scopes: Konfiguration=>Scopes: configuration
+Scopes: Auslastung & Failover=>Scopes: utilization & failover
+Failover: Beziehungen=>Failover: relationships
+Failover: Parameter=>Failover: parameters
+Befunde (Sync / Fehler)=>Findings (sync / errors)
+Hinweise (Info)=>Notes (info)
 Kein Failover eingerichtet=>No failover configured
 Synchronisationspruefung entfaellt=>synchronization check skipped
 (Hinweis, kein Fehler)=>(notice, no error)
@@ -10223,6 +10230,7 @@ tr.row-warn{background:#fff3cd !important;}
 tr.row-crit{background:#f8d7da !important;}
 .dcdiag-checks th:first-child,.dcdiag-checks td:first-child{width:42px;text-align:center;}
 .dcdiag-checks td:nth-child(3),.dcdiag-checks th:nth-child(3){width:110px;}
+h3.dhcp-sub{color:#003366;margin:18px 0 4px 0;font-size:15px;}
 .group-banner{background:#003366;color:#fff;padding:10px 12px;margin-top:30px;border-radius:6px;font-size:16px;font-weight:bold;}
 tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
 .overview tbody tr:hover { background:#8ecdfa; cursor:pointer; }
@@ -10296,6 +10304,41 @@ tr.group-row td{background:#003366;color:#fff;font-weight:bold;padding:6px 8px;}
             if ($null -eq $items -or @($items).Count -eq 0) {
                 [void]$sb.AppendLine("<p><i>$(Format-L10n -Text 'Keine Daten.')</i></p>")
                 Write-Host ("  [-] {0,-32} -> leer" -f $k) -ForegroundColor DarkGray
+                continue
+            }
+            if ($k -eq '75_DHCP') {
+                # Je Zeilenart eine eigene Tabelle mit nur den relevanten Spalten (eine Tabelle mit allen Spalten waere zu breit)
+                $dhcpSections = @(
+                    @{ Titel = 'Server-Liste';                  Kinds = @('Server');            Cols = @('Server','Erreichbar','Dienst','Betriebssystem','Bewertung','Detail') }
+                    @{ Titel = 'Scopes: Konfiguration';         Kinds = @('Scope');             Cols = @('Server','Scope','ScopeId','Subnetz','Bereich','ScopeStatus','LeaseDauer') }
+                    @{ Titel = 'Scopes: Auslastung & Failover'; Kinds = @('Scope');             Cols = @('Server','Scope','Belegt','Frei','Prozent','Beziehung','Bewertung') }
+                    @{ Titel = 'Failover: Beziehungen';         Kinds = @('Failover');          Cols = @('Server','Partner','Beziehung','Modus','FailoverStatus','Rolle','Bewertung') }
+                    @{ Titel = 'Failover: Parameter';           Kinds = @('Failover');          Cols = @('Beziehung','MaxClientLeadTime','AutoStateTransition','StateSwitchInterval','FailoverScopes','Detail') }
+                    @{ Titel = 'Befunde (Sync / Fehler)';       Kinds = @('Sync','Fehler');     Cols = @('Server','Scope','ScopeId','Beziehung','Partner','Bewertung','Detail') }
+                    @{ Titel = 'Hinweise (Info)';               Kinds = @('Hinweis','Summary'); Cols = @('Bewertung','Detail') }
+                )
+                foreach ($sec in $dhcpSections) {
+                    $secRows = @($items | Where-Object { $_.Kind -in $sec.Kinds })
+                    if ($secRows.Count -eq 0) { continue }
+                    [void]$sb.AppendLine("<h3 class='dhcp-sub'>$(Format-L10n -Text $sec.Titel)</h3>")
+                    [void]$sb.AppendLine("<table><thead><tr>")
+                    foreach ($p in $sec.Cols) { [void]$sb.AppendLine("<th>$(Format-L10n -Text $p)</th>") }
+                    [void]$sb.AppendLine("</tr></thead><tbody>")
+                    foreach ($row in $secRows) {
+                        $cls = ''
+                        if ($a.RowFlags -and $a.RowFlags.ContainsKey($row.RowKey)) {
+                            $cls = switch ($a.RowFlags[$row.RowKey]) { 'CRITICAL'{'row-crit'} 'WARN'{'row-warn'} default{''} }
+                        }
+                        [void]$sb.AppendLine("<tr class='$cls'>")
+                        foreach ($p in $sec.Cols) {
+                            $ve = "$(Format-L10n -Text $row.$p)" -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;'
+                            [void]$sb.AppendLine("<td>$ve</td>")
+                        }
+                        [void]$sb.AppendLine("</tr>")
+                    }
+                    [void]$sb.AppendLine("</tbody></table>")
+                }
+                Write-Host ("  [+] {0,-32} -> {1,4} Zeilen (Status: {2})" -f $k, @($items).Count, $a.OverallStatus) -ForegroundColor Green
                 continue
             }
             if ($k -eq '03_DCDiag') {
