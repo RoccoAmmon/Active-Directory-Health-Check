@@ -2467,16 +2467,20 @@ function Invoke-TimedCheck {
         [Parameter(Mandatory)][scriptblock]$ScriptBlock
     )
     Write-CheckProgress -CheckKey $CheckKey -DCName $DCName -Status 'Start'
+    $logName = if ($DCName) { "$CheckKey @ $DCName" } else { $CheckKey }
+    Write-Log "CHECK START: $logName" -Level DEBUG -NoConsole
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         $r = & $ScriptBlock; $sw.Stop()
         $c = @($r).Count
         $m = if ($c -gt 0) { "$c Eintraege" } else { "Keine Daten" }
+        Write-Log ("CHECK ENDE: {0} ({1:N2}s) - {2}" -f $logName, $sw.Elapsed.TotalSeconds, $m) -Level DEBUG -NoConsole
         Write-CheckProgress -CheckKey $CheckKey -DCName $DCName -Status 'OK' -Duration $sw.Elapsed.TotalSeconds -Message $m
         $Global:ProgressStats.CompletedChecks++
         return $r
     } catch {
         $sw.Stop()
+        Write-Log ("CHECK FEHLER: {0} ({1:N2}s) - {2}`n{3}" -f $logName, $sw.Elapsed.TotalSeconds, $_, $_.ScriptStackTrace) -Level ERROR -NoConsole
         Write-CheckProgress -CheckKey $CheckKey -DCName $DCName -Status 'Error' -Duration $sw.Elapsed.TotalSeconds -Message "$_"
         $Global:ProgressStats.CompletedChecks++
         $Global:ProgressStats.FailedChecks++
@@ -10471,6 +10475,7 @@ function Start-ElevatedRestart {
 #region ============= MAIN ===================================================
 
 function Start-ADHealthCheck {
+    $runFailed = $false
     try {
         Initialize-LogEnvironment
         $Global:ProgressStats.StartTime = Get-Date
@@ -10578,6 +10583,11 @@ function Start-ADHealthCheck {
                 }
             }
         }
+
+        # Transcript sichert die komplette Konsolenausgabe, auch bei Absturz
+        try {
+            Start-Transcript -Path (Join-Path $Global:LogDirectory "$Global:ScriptName`_$Global:Timestamp.transcript.txt") -Force -ErrorAction Stop | Out-Null
+        } catch { Write-Host "  [!] Transcript nicht moeglich: $_" -ForegroundColor Yellow }
 
         # --- Banner ---
         Clear-Host
@@ -10832,9 +10842,25 @@ function Start-ADHealthCheck {
         }
 
     } catch {
+        $runFailed = $true
         Write-Progress -Activity "AD Health Check" -Completed
-        Write-Log "FATAL: $_" -Level ERROR
-        throw
+        Write-Log ("FATAL: {0}`n{1}" -f $_, $_.ScriptStackTrace) -Level ERROR
+        Write-Host ""
+        Write-Host ("  [X] Abbruch durch Fehler: {0}" -f $_) -ForegroundColor Red
+        Write-Host ("      Log: {0}" -f $Global:LogFile) -ForegroundColor Yellow
+        try {
+            if ($Global:Results.Count -gt 0) {
+                Invoke-AllAssessments
+                Export-ResultsToCsv
+                New-HtmlReport
+                Write-Host ("  [i] Teilergebnis gespeichert: {0}" -f $Global:HtmlReport) -ForegroundColor Yellow
+            }
+        } catch { Write-Log "Teilergebnis nicht speicherbar: $_" -Level WARN -NoConsole }
+    } finally {
+        try { Stop-Transcript | Out-Null } catch {}
+        if ($runFailed -and -not $NoInteractive -and [Environment]::UserInteractive) {
+            Microsoft.PowerShell.Utility\Read-Host -Prompt 'Fehler aufgetreten - Enter zum Beenden' | Out-Null
+        }
     }
 }
 
