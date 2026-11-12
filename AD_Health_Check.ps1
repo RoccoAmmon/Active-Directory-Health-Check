@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.15.0 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.15.1 mit Best-Practice-Bewertung.
 .DESCRIPTION
     75 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
@@ -37,7 +37,7 @@
     Sinnvoll, wenn die Datei zentral verteilt oder per GPO bereitgestellt wird.
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.15.0 (75 Checks + Teilpruefung 55b, Windows-DHCP-Check, Internationalisierung DE/EN, Update-Anzeige GitLab)
+    Version : 2.15.1 (75 Checks + Teilpruefung 55b, Windows-DHCP-Check, Internationalisierung DE/EN, Update-Anzeige GitLab)
     Sprache : automatisch aus dem Betriebssystem, sonst -Language <de|en>
     LogPfad : C:\ScriptLog
 .EXAMPLE
@@ -69,7 +69,7 @@ param(
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.15.0"
+$Global:ScriptVersion   = "2.15.1"
 $Global:NoUpdateCheck   = [bool]$NoUpdateCheck
 $Global:NoSelfUpdate    = [bool]$NoSelfUpdate
 # Startparameter fuer einen Neustart nach dem Selbst-Update (gleiche Checks/Pfade/Sprache)
@@ -130,6 +130,7 @@ $Global:DNSSystemZones       = @('TrustAnchors')
 
 # Ping-Skip-Verhalten
 $Global:SkipUnreachableDCs   = $true
+$Global:CheckTimeoutSec      = 600   # Max. Laufzeit pro Check in Sekunden; 0 = kein Timeout
 $Global:PingCount            = 2
 $Global:TryWinRMIfNoPing     = $true
 
@@ -2460,6 +2461,44 @@ function Write-CheckProgress {
     Write-Log -Message "[$Status] $title$dcP$tP$mP" -Level $lvl -NoConsole
 }
 
+function Invoke-CheckWithTimeout {
+    param(
+        [Parameter(Mandatory)][scriptblock]$ScriptBlock,
+        [Parameter(Mandatory)][int]$TimeoutSec
+    )
+    # Eigener Runspace mit Funktionen, Variablen und Modulen der Hauptsitzung,
+    # damit ein haengender Check abgebrochen werden kann.
+    $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    foreach ($f in Get-ChildItem Function:) {
+        if ($f.ScriptBlock -and -not $f.Source -and @($iss.Commands[$f.Name]).Count -eq 0) {
+            $iss.Commands.Add([System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new($f.Name, $f.ScriptBlock.ToString()))
+        }
+    }
+    foreach ($v in Get-Variable -Scope Global) {
+        if ($v.Options -match 'ReadOnly|Constant' -or @($iss.Variables[$v.Name]).Count -gt 0) { continue }
+        $iss.Variables.Add([System.Management.Automation.Runspaces.SessionStateVariableEntry]::new($v.Name, $v.Value, $v.Description))
+    }
+    $mods = @(Get-Module | Select-Object -ExpandProperty Name)
+    if ($mods.Count -gt 0) { $iss.ImportPSModule($mods) }
+
+    $rs = [runspacefactory]::CreateRunspace($iss)
+    $rs.Open()
+    $ps = [powershell]::Create()
+    try {
+        $ps.Runspace = $rs
+        [void]$ps.AddScript($ScriptBlock.ToString())
+        $h = $ps.BeginInvoke()
+        if (-not $h.AsyncWaitHandle.WaitOne([TimeSpan]::FromSeconds($TimeoutSec))) {
+            [void]$ps.BeginStop($null, $null)
+            throw [System.TimeoutException]::new("Check-Timeout nach $TimeoutSec s")
+        }
+        return @($ps.EndInvoke($h))
+    } finally {
+        try { $ps.Dispose() } catch {}
+        try { $rs.Dispose() } catch {}
+    }
+}
+
 function Invoke-TimedCheck {
     param(
         [Parameter(Mandatory)][string]$CheckKey,
@@ -2471,7 +2510,8 @@ function Invoke-TimedCheck {
     Write-Log "CHECK START: $logName" -Level DEBUG -NoConsole
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
-        $r = & $ScriptBlock; $sw.Stop()
+        $r = if ($Global:CheckTimeoutSec -gt 0) { Invoke-CheckWithTimeout -ScriptBlock $ScriptBlock -TimeoutSec $Global:CheckTimeoutSec } else { & $ScriptBlock }
+        $sw.Stop()
         $c = @($r).Count
         $m = if ($c -gt 0) { "$c Eintraege" } else { "Keine Daten" }
         Write-Log ("CHECK ENDE: {0} ({1:N2}s) - {2}" -f $logName, $sw.Elapsed.TotalSeconds, $m) -Level DEBUG -NoConsole
@@ -2480,6 +2520,13 @@ function Invoke-TimedCheck {
         return $r
     } catch {
         $sw.Stop()
+        if ($_.Exception -is [System.TimeoutException]) {
+            Write-Log ("CHECK TIMEOUT: {0} nach {1:N0}s - Check uebersprungen" -f $logName, $sw.Elapsed.TotalSeconds) -Level WARN -NoConsole
+            Write-CheckProgress -CheckKey $CheckKey -DCName $DCName -Status 'Warn' -Duration $sw.Elapsed.TotalSeconds -Message "Timeout nach $Global:CheckTimeoutSec s"
+            $Global:ProgressStats.CompletedChecks++
+            $Global:ProgressStats.FailedChecks++
+            return $null
+        }
         Write-Log ("CHECK FEHLER: {0} ({1:N2}s) - {2}`n{3}" -f $logName, $sw.Elapsed.TotalSeconds, $_, $_.ScriptStackTrace) -Level ERROR -NoConsole
         Write-CheckProgress -CheckKey $CheckKey -DCName $DCName -Status 'Error' -Duration $sw.Elapsed.TotalSeconds -Message "$_"
         $Global:ProgressStats.CompletedChecks++

@@ -9,6 +9,13 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [2.15.1] - 2026-11-12
+
+#### Behoben
+- Absturz des Fensters bei großen Umgebungen: Transkript-Log (`*.transcript.txt`) im Log-Verzeichnis, globaler Fehlerfang mit Sicherung der Teilergebnisse (CSV/HTML) und Pause vor dem Schließen bei Fehlern
+- Hängende Checks werden nach `$Global:CheckTimeoutSec` (Standard 600 s) abgebrochen, als Warnung protokolliert und als fehlgeschlagen gezählt; der Lauf läuft weiter
+- `CHECK START`/`CHECK ENDE`/`CHECK FEHLER`-Zeilen im Log zur Ursachenanalyse
+
 ### [2.15.0] - 2026-11-11
 
 #### Hinzugefügt
@@ -405,6 +412,13 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [2.15.1] - 2026-11-12
+
+#### Fixed
+- Window closing in large environments: transcript log (`*.transcript.txt`) in the log directory, global error catch that saves partial results (CSV/HTML) and pauses before closing on errors
+- Hanging checks are aborted after `$Global:CheckTimeoutSec` (default 600 s), logged as a warning and counted as failed; the run continues
+- `CHECK START`/`CHECK ENDE`/`CHECK FEHLER` log lines for root-cause analysis
 
 ### [2.15.0] - 2026-11-11
 
