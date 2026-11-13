@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Umfassender Active Directory Health Check v2.15.2 mit Best-Practice-Bewertung.
+    Umfassender Active Directory Health Check v2.15.3 mit Best-Practice-Bewertung.
 .DESCRIPTION
     75 thematisch sortierte Pruefpunkte auf allen DCs im Forest mit farbcodiertem
     HTML-Report, Executive Dashboard, CSV-Exporten, Loopback-Erkennung und
@@ -37,7 +37,7 @@
     Sinnvoll, wenn die Datei zentral verteilt oder per GPO bereitgestellt wird.
 .NOTES
     Autor   : Rocco Ammon
-    Version : 2.15.2 (75 Checks + Teilpruefung 55b, Windows-DHCP-Check, Internationalisierung DE/EN, Update-Anzeige GitLab)
+    Version : 2.15.3 (75 Checks + Teilpruefung 55b, Windows-DHCP-Check, Internationalisierung DE/EN, Update-Anzeige GitLab)
     Sprache : automatisch aus dem Betriebssystem, sonst -Language <de|en>
     LogPfad : C:\ScriptLog
 .EXAMPLE
@@ -69,7 +69,7 @@ param(
 #region ============================ VARIABLEN ================================
 
 $Global:ScriptName      = "AD_Health_Check"
-$Global:ScriptVersion   = "2.15.2"
+$Global:ScriptVersion   = "2.15.3"
 $Global:NoUpdateCheck   = [bool]$NoUpdateCheck
 $Global:NoSelfUpdate    = [bool]$NoSelfUpdate
 # Startparameter fuer einen Neustart nach dem Selbst-Update (gleiche Checks/Pfade/Sprache)
@@ -2481,9 +2481,19 @@ function Invoke-CheckWithTimeout {
             $iss.Commands.Add([System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new($f.Name, $f.ScriptBlock.ToString()))
         }
     }
+    # $null/$true/$false duerfen nicht in den Runspace kopiert werden (stoert die Variablenaufloesung)
+    $skipNames = @('null','true','false')
     foreach ($v in Get-Variable -Scope Global) {
-        if ($v.Options -match 'ReadOnly|Constant' -or @($iss.Variables[$v.Name]).Count -gt 0) { continue }
+        if ($v.Options -match 'ReadOnly|Constant' -or $v.Name -in $skipNames -or @($iss.Variables[$v.Name]).Count -gt 0) { continue }
         $iss.Variables.Add([System.Management.Automation.Runspaces.SessionStateVariableEntry]::new($v.Name, $v.Value, $v.Description))
+    }
+    # Lokale Variablen des Aufrufers (z.B. $dcName, $pdcEmulator), die der ScriptBlock verwendet
+    $usedVars = $ScriptBlock.Ast.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] }, $true) |
+                ForEach-Object { $_.VariablePath.UserPath } | Sort-Object -Unique
+    foreach ($n in $usedVars) {
+        if ($n -in $skipNames -or @($iss.Variables[$n]).Count -gt 0) { continue }
+        $v = Get-Variable -Name $n -ErrorAction SilentlyContinue
+        if ($v) { $iss.Variables.Add([System.Management.Automation.Runspaces.SessionStateVariableEntry]::new($n, $v.Value, '')) }
     }
     $mods = @(Get-Module | Select-Object -ExpandProperty Name)
     if ($mods.Count -gt 0) { $iss.ImportPSModule($mods) }

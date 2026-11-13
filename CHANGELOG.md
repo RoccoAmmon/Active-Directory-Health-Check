@@ -9,6 +9,11 @@ All notable changes to this project are documented here.
 
 ## 🇩🇪 Deutsch
 
+### [2.15.3] - 2026-11-12
+
+#### Behoben
+- Pro-DC-Checks lieferten seit 2.15.1 „Keine Daten“: Der Check-Timeout-Runspace erhielt lokale Variablen des Aufrufers (z. B. `$dcName`, `$pdcEmulator`) nicht. `Invoke-CheckWithTimeout` übernimmt jetzt alle vom Check verwendeten Variablen des Aufrufers. `$null`, `$true` und `$false` werden nicht kopiert, da sie die Variablenauflösung im Runspace störten
+
 ### [2.15.2] - 2026-11-12
 
 #### Behoben
@@ -417,6 +422,11 @@ All notable changes to this project are documented here.
 ---
 
 ## 🇬🇧 English
+
+### [2.15.3] - 2026-11-12
+
+#### Fixed
+- Per-DC checks returned "no data" since 2.15.1: the check-timeout runspace did not receive local variables of the caller (e.g. `$dcName`, `$pdcEmulator`). `Invoke-CheckWithTimeout` now copies all caller variables used by the check. `$null`, `$true` and `$false` are not copied, as they disturbed variable resolution in the runspace
 
 ### [2.15.2] - 2026-11-12
 

@@ -1,9 +1,9 @@
-﻿# 🛡️ Active Directory Health Check v2.15.2
+﻿# 🛡️ Active Directory Health Check v2.15.3
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20Server%202016%2B-lightgrey.svg)](https://www.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.15.2-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.15.3-brightgreen.svg)]()
 [![Checks](https://img.shields.io/badge/Checks-75-orange.svg)]()
 [![Releases](https://img.shields.io/gitlab/v/release/RoccoAmmon/Active-Directory-Health-Check)](https://gitlab.com/RoccoAmmon/Active-Directory-Health-Check/-/releases)
 
@@ -307,7 +307,10 @@ Siehe [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-
 
 ### 📋 Changelog
 
-### v2.15.2 (aktuell)
+### v2.15.3 (aktuell)
+- **Fix: Pro-DC-Checks liefern „Keine Daten“:** Der Check-Timeout übernimmt jetzt die lokalen Variablen des Aufrufers (z. B. `$dcName`), die seit 2.15.1 fehlten
+
+### v2.15.2
 - **Fix: DHCP-Report zu breit:** Die Tabelle „Server, Scopes & Failover-Synchronisation“ (Check 75) ist in sieben Tabellen mit jeweils maximal 7 Spalten aufgeteilt; leere Abschnitte entfallen
 
 ### v2.15.1
@@ -734,7 +737,10 @@ See [Wiki → Troubleshooting](https://gitlab.com/RoccoAmmon/Active-Directory-He
 
 ### 📋 Changelog
 
-### v2.15.2 (current)
+### v2.15.3 (current)
+- **Fix: per-DC checks return "no data":** the check timeout now passes the caller's local variables (e.g. `$dcName`) that were missing since 2.15.1
+
+### v2.15.2 (previous)
 - **Fix: DHCP report too wide:** the table "Server, Scopes & Failover Synchronization" (check 75) is split into seven tables with at most 7 columns each; empty sections are omitted
 
 ### v2.15.1 (previous)
